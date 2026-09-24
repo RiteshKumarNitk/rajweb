@@ -6,6 +6,7 @@ import { PERMISSIONS } from "@/security/rbac/permissions";
 import { assertTournamentDistrictAccess } from "@/security/rbac/district-scope";
 import { createAuditLog } from "@/services/audit/audit-service";
 import { createRegistrationCategory } from "@/modules/tournaments/tournament.service";
+import { revalidatePublicTournaments } from "@/modules/tournaments/public-tournaments";
 
 const categorySchema = z.object({
   name: z.string().min(2).max(100),
@@ -33,6 +34,8 @@ export const POST = withApiHandler(
       entityId: category.id,
       details: { event: "TOURNAMENT_CATEGORY_CREATED", tournamentId, name: category.name, type: category.type, fee: category.fee },
     });
+
+    revalidatePublicTournaments();
 
     return jsonSuccess(category, requestId, `Registration category "${category.name}" added`);
   },

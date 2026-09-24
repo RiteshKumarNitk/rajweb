@@ -10,11 +10,17 @@ export default async function AdminRequestsPage() {
     where: districtId
       ? { OR: [{ player: { districtId } }, { coach: { districtId } }] }
       : undefined,
-    include: {
+    select: {
+      id: true,
+      requestNumber: true,
+      playerId: true,
+      type: true,
+      status: true,
+      createdAt: true,
       user: { select: { name: true, email: true } },
-      player: { include: { district: true } },
-      coach: { include: { district: true } },
-      requestedDistrict: true,
+      player: { select: { district: { select: { name: true } } } },
+      coach: { select: { district: { select: { name: true } } } },
+      requestedDistrict: { select: { name: true } },
     },
     orderBy: { createdAt: "desc" },
     take: 200,

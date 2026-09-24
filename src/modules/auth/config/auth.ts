@@ -89,11 +89,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       return true;
     },
-    // Runs on every request that reads the session, not just initial sign-in
-    // — role/permissions/active-status/district are re-fetched from the DB
-    // each time so a Super Admin's change (deactivate, reassign role/district)
-    // takes effect on the user's next request instead of waiting out the
-    // 30-minute session lifetime.
+    // Role, permissions, active status, and district are re-read from the
+    // database on sign-in and then at least every 60 seconds. A Super Admin
+    // change still applies well inside the 30-minute session lifetime, without
+    // a database round trip on every navigation.
     async jwt({ token, user, account }) {
       if (user?.email) {
         token.email = user.email;
@@ -102,9 +101,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const email = token.email as string | undefined;
       if (!email) return token;
 
+      // Repeat navigations were opening two Neon queries on every session read.
+      // Refresh role, permissions, and active status at least every 60 seconds
+      // so a deactivation or permission change still applies quickly, without
+      // waiting out the 30-minute session.
+      const checkedAt = typeof token.authCheckedAt === "number" ? token.authCheckedAt : 0;
+      const sessionIsFresh =
+        !user && token.id && token.isActive !== false && Date.now() - checkedAt < 60_000;
+      if (sessionIsFresh) return token;
+
       const dbUser = await prisma.user.findUnique({
         where: { email },
-        include: { role: true },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          isActive: true,
+          districtId: true,
+          isFederationWide: true,
+          roleId: true,
+          role: { select: { slug: true } },
+        },
       });
 
       if (!dbUser || !dbUser.isActive) {
@@ -121,6 +138,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       token.districtId = dbUser.districtId;
       token.isFederationWide = dbUser.isFederationWide;
       token.isActive = true;
+      token.authCheckedAt = Date.now();
 
       if (user) {
         // This is the initial sign-in for this token — record it once.

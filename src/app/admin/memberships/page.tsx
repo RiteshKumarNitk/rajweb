@@ -15,9 +15,24 @@ async function getMemberships(districtId?: string) {
     const { default: prisma } = await import("@/infrastructure/database/prisma");
     const where = districtId ? { districtId } : undefined;
     const [clubs, schools, academies] = await Promise.all([
-      prisma.clubMembership.findMany({ where, include: { district: true }, orderBy: { createdAt: "desc" } }),
-      prisma.schoolMembership.findMany({ where, include: { district: true }, orderBy: { createdAt: "desc" } }),
-      prisma.academyMembership.findMany({ where, include: { district: true }, orderBy: { createdAt: "desc" } }),
+      prisma.clubMembership.findMany({
+        where,
+        select: { id: true, membershipId: true, clubName: true, status: true, district: { select: { name: true } } },
+        orderBy: { createdAt: "desc" },
+        take: 100,
+      }),
+      prisma.schoolMembership.findMany({
+        where,
+        select: { id: true, membershipId: true, schoolName: true, status: true, district: { select: { name: true } } },
+        orderBy: { createdAt: "desc" },
+        take: 100,
+      }),
+      prisma.academyMembership.findMany({
+        where,
+        select: { id: true, membershipId: true, academyName: true, status: true, district: { select: { name: true } } },
+        orderBy: { createdAt: "desc" },
+        take: 100,
+      }),
     ]);
     return {
       clubs: clubs.map((c) => ({

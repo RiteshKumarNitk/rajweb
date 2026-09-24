@@ -34,6 +34,7 @@ declare module "next-auth/jwt" {
     districtId?: string | null;
     isFederationWide: boolean;
     isActive: boolean;
+    authCheckedAt?: number;
   }
 }
 

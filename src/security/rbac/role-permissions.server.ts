@@ -15,7 +15,7 @@ import type { PermissionSlug } from "@/security/rbac/permissions";
 export async function getPermissionsForRole(roleId: string): Promise<PermissionSlug[]> {
   const rolePermissions = await prisma.rolePermission.findMany({
     where: { roleId },
-    include: { permission: true },
+    select: { permission: { select: { slug: true } } },
   });
   return rolePermissions.map((rp) => rp.permission.slug as PermissionSlug);
 }

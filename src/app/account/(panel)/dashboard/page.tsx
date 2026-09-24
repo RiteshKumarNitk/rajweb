@@ -33,18 +33,48 @@ export default async function AccountDashboardPage() {
   if (!authUser) redirect("/account/login");
 
   const [user, player, coach, club, school, academy, upcomingTournaments, requests] = await Promise.all([
-    prisma.user.findUnique({ where: { id: authUser.id }, include: { profile: true } }),
+    prisma.user.findUnique({
+      where: { id: authUser.id },
+      select: {
+        name: true,
+        phone: true,
+        profile: { select: { address: true, city: true, state: true, pincode: true } },
+      },
+    }),
     prisma.player.findUnique({
       where: { userId: authUser.id },
-      include: { _count: { select: { certificates: { where: { isRevoked: false } } } } },
+      select: {
+        id: true,
+        status: true,
+        playerId: true,
+        createdAt: true,
+        rejectionReason: true,
+        _count: { select: { certificates: { where: { isRevoked: false } } } },
+      },
     }),
     prisma.coach.findUnique({
       where: { userId: authUser.id },
-      include: { _count: { select: { certificates: { where: { isRevoked: false } } } } },
+      select: {
+        id: true,
+        status: true,
+        coachId: true,
+        createdAt: true,
+        rejectionReason: true,
+        _count: { select: { certificates: { where: { isRevoked: false } } } },
+      },
     }),
-    prisma.clubMembership.findUnique({ where: { userId: authUser.id } }),
-    prisma.schoolMembership.findUnique({ where: { userId: authUser.id } }),
-    prisma.academyMembership.findUnique({ where: { userId: authUser.id } }),
+    prisma.clubMembership.findUnique({
+      where: { userId: authUser.id },
+      select: { id: true, status: true, rejectionReason: true },
+    }),
+    prisma.schoolMembership.findUnique({
+      where: { userId: authUser.id },
+      select: { id: true, status: true, rejectionReason: true },
+    }),
+    prisma.academyMembership.findUnique({
+      where: { userId: authUser.id },
+      select: { id: true, status: true, rejectionReason: true },
+    }),
     prisma.tournament.count({ where: { status: { in: ["REGISTRATION_OPEN", "IN_PROGRESS"] } } }),
     prisma.request.findMany({ where: { userId: authUser.id }, select: { id: true, status: true } }),
   ]);
@@ -83,6 +113,7 @@ export default async function AccountDashboardPage() {
         where: { OR: ownedEntities },
         orderBy: { createdAt: "desc" },
         take: 5,
+        select: { id: true, action: true, module: true, createdAt: true },
       })
     : [];
 

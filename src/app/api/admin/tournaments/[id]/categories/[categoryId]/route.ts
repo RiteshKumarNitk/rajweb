@@ -6,6 +6,7 @@ import { PERMISSIONS } from "@/security/rbac/permissions";
 import { assertTournamentDistrictAccess } from "@/security/rbac/district-scope";
 import { createAuditLog } from "@/services/audit/audit-service";
 import { updateRegistrationCategory, removeOrDisableRegistrationCategory } from "@/modules/tournaments/tournament.service";
+import { revalidatePublicTournaments } from "@/modules/tournaments/public-tournaments";
 
 const updateCategorySchema = z.object({
   name: z.string().min(2).max(100).optional(),
@@ -54,6 +55,8 @@ export const PATCH = withApiHandler(
           : { event: "TOURNAMENT_CATEGORY_UPDATED", tournamentId },
     });
 
+    revalidatePublicTournaments();
+
     return jsonSuccess(updated, requestId, `Registration category "${updated.name}" updated`);
   },
   { module: "admin-tournament-categories", requireCsrf: true }
@@ -80,6 +83,8 @@ export const DELETE = withApiHandler(
         ? { event: "TOURNAMENT_CATEGORY_DELETED", tournamentId }
         : { event: "TOURNAMENT_CATEGORY_DISABLED", tournamentId },
     });
+
+    revalidatePublicTournaments();
 
     return jsonSuccess(
       result,

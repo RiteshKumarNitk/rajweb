@@ -6,6 +6,7 @@ import { PERMISSIONS } from "@/security/rbac/permissions";
 import { assertDistrictAccess, assertTournamentDistrictAccess, isFederationWide } from "@/security/rbac/district-scope";
 import { createAuditLog } from "@/services/audit/audit-service";
 import { updateTournament } from "@/modules/tournaments/tournament.service";
+import { revalidatePublicTournaments } from "@/modules/tournaments/public-tournaments";
 
 const isValidUrl = (value: string) => {
   try {
@@ -80,6 +81,8 @@ export const PATCH = withApiHandler(
           ? { event: "TOURNAMENT_STATUS_CHANGED", from: previousStatus, to: body.status }
           : { event: "TOURNAMENT_UPDATED" },
     });
+
+    revalidatePublicTournaments();
 
     return jsonSuccess(
       { id: tournament.id, name: tournament.name, status: tournament.status },

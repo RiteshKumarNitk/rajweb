@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { AppError } from "@/core/errors/app-error";
 import { auth } from "@/modules/auth/config/auth";
 import {
@@ -7,20 +8,17 @@ import {
   type SessionUser,
 } from "@/security/rbac/permissions";
 
-export async function getSession() {
-  return auth();
-}
+export const getSession = cache(async () => auth());
 
-export async function getCurrentUser(): Promise<SessionUser | null> {
+export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   const session = await getSession();
   if (!session?.user) return null;
   const user = session.user as SessionUser;
-  // isActive is refreshed from the DB on every request (see auth.ts jwt
-  // callback) — a deactivation takes effect on the user's next request, not
-  // after their session naturally expires.
+  // isActive is refreshed from the database on a short interval (see auth.ts).
+  // A deactivation still applies well inside the 30-minute session lifetime.
   if (user.isActive === false) return null;
   return user;
-}
+});
 
 export async function requireAuth(): Promise<SessionUser> {
   const user = await getCurrentUser();

@@ -10,7 +10,14 @@ async function getAuditLogs() {
   try {
     const { default: prisma } = await import("@/infrastructure/database/prisma");
     return prisma.auditLog.findMany({
-      include: { user: true },
+      select: {
+        id: true,
+        action: true,
+        module: true,
+        entityId: true,
+        createdAt: true,
+        user: { select: { name: true } },
+      },
       orderBy: { createdAt: "desc" },
       take: 100,
     });

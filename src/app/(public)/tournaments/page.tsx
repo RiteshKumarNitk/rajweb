@@ -3,11 +3,11 @@ import Link from "next/link";
 import { PageHeader, PageContent } from "@/shared/components/layout";
 import { Button } from "@/shared/components/ui/button";
 import { tournamentEvents } from "@/shared/config/site";
-import { PUBLIC_TOURNAMENT_STATUSES } from "@/modules/tournaments/tournament-dates";
+import { getPublishedTournaments } from "@/modules/tournaments/public-tournaments";
 import { TournamentEventCard } from "./tournament-event-card";
 import { ConfiguredTournamentCard } from "./configured-tournament-card";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 export const metadata: Metadata = {
   title: "Tournaments",
@@ -15,24 +15,13 @@ export const metadata: Metadata = {
     "Racquetball Training Camp & State Championship — Rajasthan Racquetball Association, Jaipur, 30 June 2026.",
 };
 
-async function getPublishedTournaments() {
-  try {
-    const { default: prisma } = await import("@/infrastructure/database/prisma");
-    return prisma.tournament.findMany({
-      where: { status: { in: [...PUBLIC_TOURNAMENT_STATUSES] } },
-      include: {
-        district: true,
-        registrationCategories: { where: { isActive: true }, orderBy: { createdAt: "asc" } },
-      },
-      orderBy: { startDate: "asc" },
-    });
-  } catch {
-    return [];
-  }
-}
-
 export default async function TournamentsPage() {
-  const published = await getPublishedTournaments();
+  let published: Awaited<ReturnType<typeof getPublishedTournaments>> = [];
+  try {
+    published = await getPublishedTournaments();
+  } catch {
+    published = [];
+  }
 
   return (
     <>

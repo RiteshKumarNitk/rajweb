@@ -27,30 +27,31 @@ export default async function AdminTournamentDetailPage({
   }
 
   const districtWhere = getDistrictWhereClause(user);
-  const tournament = await prisma.tournament.findFirst({
-    where: { id, ...districtWhere },
-    include: {
-      district: true,
-      registrationCategories: { orderBy: { createdAt: "asc" } },
-      registrations: {
-        orderBy: { registeredAt: "desc" },
-        include: {
-          player: { select: { name: true, playerId: true } },
-          category: { select: { name: true } },
+  const [tournament, districts] = await Promise.all([
+    prisma.tournament.findFirst({
+      where: { id, ...districtWhere },
+      include: {
+        district: true,
+        registrationCategories: { orderBy: { createdAt: "asc" } },
+        registrations: {
+          orderBy: { registeredAt: "desc" },
+          include: {
+            player: { select: { name: true, playerId: true } },
+            category: { select: { name: true } },
+          },
         },
+        _count: { select: { registrations: true } },
       },
-      _count: { select: { registrations: true } },
-    },
-  });
+    }),
+    prisma.district.findMany({
+      where: isFederationWide(user) ? undefined : { id: user.districtId ?? undefined },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+  ]);
   if (!tournament) notFound();
 
   const canManage = hasPermission(user, PERMISSIONS.TOURNAMENTS_MANAGE);
-
-  const districts = await prisma.district.findMany({
-    where: isFederationWide(user) ? undefined : { id: user.districtId ?? undefined },
-    orderBy: { name: "asc" },
-    select: { id: true, name: true },
-  });
 
   return (
     <div>

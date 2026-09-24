@@ -2,17 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Calendar, MapPin } from "lucide-react";
-import prisma from "@/infrastructure/database/prisma";
-import { getCurrentUser } from "@/security/auth/session";
 import { PageHeader, PageContent } from "@/shared/components/layout";
 import { formatInr } from "@/modules/account/membership-pricing";
-import {
-  PUBLIC_TOURNAMENT_STATUSES,
-  formatTournamentSchedule,
-  formatTournamentStatus,
-} from "@/modules/tournaments/tournament-dates";
+import { formatTournamentSchedule, formatTournamentStatus } from "@/modules/tournaments/tournament-dates";
+import { getPublicTournamentBySlug } from "@/modules/tournaments/public-tournaments";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 export async function generateMetadata({
   params,
@@ -20,10 +15,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const tournament = await prisma.tournament.findFirst({
-    where: { slug, status: { in: [...PUBLIC_TOURNAMENT_STATUSES] } },
-    select: { name: true, description: true },
-  });
+  const tournament = await getPublicTournamentBySlug(slug);
   return {
     title: tournament?.name ?? "Tournament",
     description: tournament?.description ?? "Rajasthan Racquetball Association tournament",
@@ -36,19 +28,10 @@ export default async function PublicTournamentDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const tournament = await prisma.tournament.findFirst({
-    where: { slug, status: { in: [...PUBLIC_TOURNAMENT_STATUSES] } },
-    include: {
-      district: true,
-      registrationCategories: { where: { isActive: true }, orderBy: { createdAt: "asc" } },
-    },
-  });
+  const tournament = await getPublicTournamentBySlug(slug);
   if (!tournament) notFound();
 
-  const authUser = await getCurrentUser();
-  const registerHref = authUser
-    ? `/account/tournaments/${tournament.id}`
-    : `/account/login?callbackUrl=${encodeURIComponent(`/account/tournaments/${tournament.id}`)}`;
+  const registerHref = `/account/tournaments/${tournament.id}`;
   const place = [tournament.venue, tournament.city, tournament.district?.name ?? "State-wide"].filter(Boolean).join(" · ");
 
   return (
