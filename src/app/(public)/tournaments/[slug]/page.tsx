@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Calendar, MapPin } from "lucide-react";
 import prisma from "@/infrastructure/database/prisma";
+import { getCurrentUser } from "@/security/auth/session";
 import { PageHeader, PageContent } from "@/shared/components/layout";
 import { formatInr } from "@/modules/account/membership-pricing";
 import {
@@ -44,6 +45,10 @@ export default async function PublicTournamentDetailPage({
   });
   if (!tournament) notFound();
 
+  const authUser = await getCurrentUser();
+  const registerHref = authUser
+    ? `/account/tournaments/${tournament.id}`
+    : `/account/login?callbackUrl=${encodeURIComponent(`/account/tournaments/${tournament.id}`)}`;
   const place = [tournament.venue, tournament.city, tournament.district?.name ?? "State-wide"].filter(Boolean).join(" · ");
 
   return (
@@ -76,6 +81,14 @@ export default async function PublicTournamentDetailPage({
             <MapPin className="h-4 w-4 text-accent" />
             {place}
           </div>
+          <p className="text-sm text-slate-600">
+            {tournament.requiresApprovedPlayer
+              ? "Eligibility: approved player registration required."
+              : "Eligibility: a player profile is required."}
+          </p>
+          <p className="text-sm text-slate-600">
+            Capacity: {tournament.maxParticipants != null ? `${tournament.maxParticipants} participants` : "No participant limit set"}
+          </p>
           {tournament.registrationCategories.length > 0 && (
             <div>
               <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">Registration categories</p>
@@ -87,6 +100,11 @@ export default async function PublicTournamentDetailPage({
                 ))}
               </div>
             </div>
+          )}
+          {tournament.status === "REGISTRATION_OPEN" && (
+            <Link href={registerHref} className="inline-flex text-sm font-semibold text-secondary hover:underline">
+              Register
+            </Link>
           )}
           {tournament.banner && (
             <a

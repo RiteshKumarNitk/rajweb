@@ -12,7 +12,7 @@ import { isMutatingMethod, validateCsrf } from "@/security/csrf";
 
 type ApiHandler = (
   request: NextRequest,
-  context: { requestId: string; params?: Record<string, string | string[]> }
+  context: { requestId: string; params?: Record<string, string | string[] | undefined> }
 ) => Promise<NextResponse>;
 
 interface ApiHandlerOptions {
@@ -25,7 +25,7 @@ interface ApiHandlerOptions {
 export function withApiHandler(handler: ApiHandler, options: ApiHandlerOptions = {}) {
   return async function routeHandler(
     request: NextRequest,
-    routeContext?: { params?: Promise<Record<string, string | string[]>> }
+    routeContext: { params: Promise<Record<string, string | string[] | undefined>> }
   ) {
     const requestId = generateRequestId();
     const ip = getClientIp(request.headers);
@@ -48,7 +48,7 @@ export function withApiHandler(handler: ApiHandler, options: ApiHandlerOptions =
         throw AppError.forbidden("Invalid or missing CSRF token");
       }
 
-      const params = routeContext?.params ? await routeContext.params : undefined;
+      const params = await routeContext.params;
       const response = await handler(request, { requestId, params });
 
       logger.info({

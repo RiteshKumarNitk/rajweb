@@ -34,11 +34,12 @@ export default async function AccountTournamentsPage() {
     }),
     prisma.player.findUnique({
       where: { userId: authUser.id },
-      include: { tournamentRegistrations: { include: { tournament: true } } },
+      include: { tournamentRegistrations: { include: { tournament: true, category: true } } },
     }),
   ]);
 
   const registrations = player?.tournamentRegistrations ?? [];
+  const registeredTournamentIds = new Set(registrations.map((registration) => registration.tournamentId));
 
   return (
     <div className="space-y-8">
@@ -70,6 +71,9 @@ export default async function AccountTournamentsPage() {
                     <Calendar className="h-3.5 w-3.5 shrink-0" />
                     {formatTournamentSchedule(t.startDate)} – {formatTournamentSchedule(t.endDate)}
                   </p>
+                  {t.registrationDeadline && (
+                    <p className="text-xs text-slate-400">Registration closes {formatTournamentSchedule(t.registrationDeadline)}</p>
+                  )}
                   <p className="flex items-center gap-2">
                     <MapPin className="h-3.5 w-3.5 shrink-0" />
                     {t.venue ?? "Venue TBA"} · {t.district?.name ?? "State-wide"}
@@ -83,9 +87,14 @@ export default async function AccountTournamentsPage() {
                       ))}
                     </div>
                   )}
-                  <Link href={`/tournaments/${t.slug}`} className="inline-block pt-1 text-xs font-medium text-secondary hover:underline">
-                    View details
-                  </Link>
+                  <div className="flex gap-3 pt-1">
+                    <Link href={`/account/tournaments/${t.id}`} className="text-xs font-medium text-secondary hover:underline">
+                      {t.status === "REGISTRATION_OPEN" && !registeredTournamentIds.has(t.id) ? "Register" : "View details"}
+                    </Link>
+                    <Link href={`/tournaments/${t.slug}`} className="text-xs font-medium text-slate-500 hover:underline">
+                      Public page
+                    </Link>
+                  </div>
                 </CardContent>
               </Card>
             ))}
@@ -108,10 +117,13 @@ export default async function AccountTournamentsPage() {
                   <li key={reg.id} className="flex items-center justify-between border-b border-slate-100 pb-3 last:border-0">
                     <div>
                       <p className="text-sm font-medium text-primary">{reg.tournament.name}</p>
+                      <p className="text-xs text-slate-500">{reg.category?.name ?? "Category"}</p>
                       <p className="text-xs text-slate-400">
-                        Registered {formatDate(reg.registeredAt)}
-                        {reg.amount != null ? ` · ${formatInr(reg.amount)}` : ""}
+                        Registration amount: {reg.amount != null ? formatInr(reg.amount) : "Not recorded"}
+                        {" · "}
+                        {formatDate(reg.registeredAt)}
                       </p>
+                      <p className="font-mono text-[11px] text-slate-400">{reg.id}</p>
                     </div>
                     <StatusBadge status={reg.status} />
                   </li>

@@ -24,6 +24,11 @@ const otpSchema = z.object({
 });
 type OtpForm = z.infer<typeof otpSchema>;
 
+function accountCallbackUrl(value: string | null): string {
+  if (value && value.startsWith("/account/") && !value.startsWith("//")) return value;
+  return "/account/dashboard";
+}
+
 const GOOGLE_ERROR_MESSAGES: Record<string, string> = {
   account_exists_with_password: "This email is already registered with a password-based account. Sign in from the Admin Login page instead.",
   inactive: "This account is inactive. Contact RRA support for help.",
@@ -45,7 +50,7 @@ export function AccountLoginForm() {
   async function handleGoogleSignIn() {
     if (blockSubmitForStaticRelease("Continue with Google")) return;
     setGoogleLoading(true);
-    await signIn("google", { callbackUrl: "/account/dashboard" });
+    await signIn("google", { callbackUrl: accountCallbackUrl(searchParams.get("callbackUrl")) });
   }
 
   async function onRequestOtp(data: EmailForm) {
@@ -78,7 +83,7 @@ export function AccountLoginForm() {
       return;
     }
 
-    router.push("/account/dashboard");
+    router.push(accountCallbackUrl(searchParams.get("callbackUrl")));
     router.refresh();
   }
 

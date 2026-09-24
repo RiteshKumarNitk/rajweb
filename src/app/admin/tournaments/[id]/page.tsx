@@ -7,6 +7,7 @@ import { getDistrictWhereClause, isFederationWide } from "@/security/rbac/distri
 import { hasPermission, PERMISSIONS } from "@/security/rbac/permissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { StatusBadge } from "@/shared/components/ui/status-badge";
+import { formatInr } from "@/modules/account/membership-pricing";
 import { formatTournamentSchedule, formatTournamentStatus, toDatetimeLocalValue } from "@/modules/tournaments/tournament-dates";
 import { TournamentEditForm } from "./tournament-edit-form";
 import { CategoriesManager } from "./categories-manager";
@@ -31,6 +32,13 @@ export default async function AdminTournamentDetailPage({
     include: {
       district: true,
       registrationCategories: { orderBy: { createdAt: "asc" } },
+      registrations: {
+        orderBy: { registeredAt: "desc" },
+        include: {
+          player: { select: { name: true, playerId: true } },
+          category: { select: { name: true } },
+        },
+      },
       _count: { select: { registrations: true } },
     },
   });
@@ -148,6 +156,45 @@ export default async function AdminTournamentDetailPage({
           </CardContent>
         </Card>
       </div>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Registrations</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {tournament.registrations.length === 0 ? (
+            <p className="text-sm text-slate-500">No registrations yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left text-slate-500">
+                    <th className="pb-2 pr-4 font-medium">Player</th>
+                    <th className="pb-2 pr-4 font-medium">Category</th>
+                    <th className="pb-2 pr-4 font-medium">Amount</th>
+                    <th className="pb-2 pr-4 font-medium">Status</th>
+                    <th className="pb-2 font-medium">Registered</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tournament.registrations.map((registration) => (
+                    <tr key={registration.id} className="border-b border-slate-100 last:border-0">
+                      <td className="py-2 pr-4">
+                        <p className="font-medium text-primary">{registration.player.name}</p>
+                        <p className="font-mono text-xs text-slate-400">{registration.player.playerId}</p>
+                      </td>
+                      <td className="py-2 pr-4">{registration.category?.name ?? "—"}</td>
+                      <td className="py-2 pr-4">{registration.amount != null ? formatInr(registration.amount) : "—"}</td>
+                      <td className="py-2 pr-4">{registration.status}</td>
+                      <td className="py-2">{formatTournamentSchedule(registration.registeredAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
