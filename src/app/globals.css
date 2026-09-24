@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-primary: #0F172A;
+  --color-secondary: #DC2626;
+  --color-accent: #F59E0B;
+  --color-background: #F8FAFC;
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: #F8FAFC;
+  color: #0F172A;
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+::selection {
+  background: #F59E0B;
+  color: #0F172A;
+}

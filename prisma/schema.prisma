@@ -1,0 +1,767 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Auth & RBAC ───────────────────────────────────────────────
+
+enum AuthProvider {
+  CREDENTIALS
+  GOOGLE
+  OTP_EMAIL
+}
+
+model User {
+  id               String       @id @default(cuid())
+  email            String       @unique
+  passwordHash     String?
+  name             String
+  phone            String?
+  avatar           String?
+  emailVerified    DateTime?
+  isActive         Boolean      @default(true)
+  authProvider     AuthProvider @default(CREDENTIALS)
+  googleId         String?      @unique
+  lastLoginAt      DateTime?
+  isFederationWide Boolean      @default(false)
+  roleId           String
+  role             Role         @relation(fields: [roleId], references: [id])
+  districtId       String?
+  district         District?    @relation(fields: [districtId], references: [id])
+  refreshTokens    RefreshToken[]
+  auditLogs        AuditLog[]
+  profile          UserProfile?
+  player           Player?
+  coach            Coach?
+  clubMembership   ClubMembership?
+  schoolMembership SchoolMembership?
+  academyMembership AcademyMembership?
+  requests         Request[]
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([roleId])
+  @@index([districtId])
+  @@map("users")
+}
+
+model UserProfile {
+  id          String    @id @default(cuid())
+  userId      String    @unique
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dateOfBirth DateTime?
+  gender      Gender?
+  address     String?
+  city        String?
+  state       String?
+  country     String?   @default("India")
+  pincode     String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("user_profiles")
+}
+
+model EmailOtp {
+  id         String    @id @default(cuid())
+  email      String
+  otpHash    String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([email])
+  @@map("email_otps")
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  name        String           @unique
+  slug        String           @unique
+  description String?
+  isSystem    Boolean          @default(false)
+  users       User[]
+  permissions RolePermission[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  name        String           @unique
+  slug        String           @unique
+  module      String
+  action      String
+  description String?
+  roles       RolePermission[]
+  createdAt   DateTime         @default(now())
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ─── Districts ─────────────────────────────────────────────────
+
+model District {
+  id               String              @id @default(cuid())
+  name             String              @unique
+  slug             String              @unique
+  president        String?
+  secretary        String?
+  email            String?
+  phone            String?
+  address          String?
+  isActive         Boolean             @default(true)
+  users            User[]
+  players          Player[]
+  coaches          Coach[]
+  clubMemberships  ClubMembership[]
+  schoolMemberships SchoolMembership[]
+  academyMemberships AcademyMembership[]
+  tournaments      Tournament[]
+  requestedByRequests Request[]        @relation("RequestedDistrict")
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@map("districts")
+}
+
+// ─── Players ───────────────────────────────────────────────────
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+model Player {
+  id           String            @id @default(cuid())
+  playerId     String            @unique
+  name         String
+  dateOfBirth  DateTime
+  gender       Gender
+  email        String
+  mobile       String
+  photo        String?
+  districtId   String
+  district     District          @relation(fields: [districtId], references: [id])
+  userId       String?           @unique
+  user         User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  state        String            @default("Rajasthan")
+  category     String?
+  status       ApprovalStatus    @default(PENDING)
+  approvedAt   DateTime?
+  approvedBy   String?
+  rejectionReason String?
+  expiresAt    DateTime?
+  certificates PlayerCertificate[]
+  tournamentRegistrations TournamentRegistration[]
+  requests     Request[]
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@index([districtId])
+  @@index([status])
+  @@map("players")
+}
+
+model PlayerCertificate {
+  id                String   @id @default(cuid())
+  certificateNumber String   @unique
+  playerId          String
+  player            Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  qrCode            String   @unique
+  issuedAt          DateTime @default(now())
+  expiresAt         DateTime?
+  pdfPath           String?
+  isRevoked         Boolean  @default(false)
+  revokedAt         DateTime?
+  revokedReason     String?
+
+  @@index([playerId])
+  @@map("player_certificates")
+}
+
+// ─── Coaches ───────────────────────────────────────────────────
+
+enum CertificationLevel {
+  LEVEL_1
+  LEVEL_2
+  LEVEL_3
+  INTERNATIONAL
+}
+
+model Coach {
+  id              String            @id @default(cuid())
+  coachId         String            @unique
+  name            String
+  email           String
+  mobile          String
+  photo           String?
+  qualification   String
+  certificationLevel CertificationLevel
+  districtId      String
+  district        District          @relation(fields: [districtId], references: [id])
+  userId          String?           @unique
+  user            User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  status          ApprovalStatus    @default(PENDING)
+  approvedAt      DateTime?
+  approvedBy      String?
+  rejectionReason String?
+  expiresAt       DateTime?
+  certificates    CoachCertificate[]
+  requests        Request[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([districtId])
+  @@index([status])
+  @@map("coaches")
+}
+
+model CoachCertificate {
+  id                String   @id @default(cuid())
+  certificateNumber String   @unique
+  coachId           String
+  coach             Coach    @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  qrCode            String   @unique
+  issuedAt          DateTime @default(now())
+  expiresAt         DateTime?
+  pdfPath           String?
+  isRevoked         Boolean  @default(false)
+  revokedAt         DateTime?
+  revokedReason     String?
+
+  @@index([coachId])
+  @@map("coach_certificates")
+}
+
+// ─── Memberships ───────────────────────────────────────────────
+
+enum MembershipType {
+  CLUB
+  SCHOOL
+  ACADEMY
+}
+
+enum MembershipStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ACTIVE
+  EXPIRED
+  SUSPENDED
+}
+
+model ClubMembership {
+  id              String           @id @default(cuid())
+  membershipId    String           @unique
+  clubName        String
+  contactPerson   String
+  email           String
+  mobile          String
+  address         String
+  districtId      String
+  district        District         @relation(fields: [districtId], references: [id])
+  userId          String?          @unique
+  user            User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  numberOfCourts  Int              @default(1)
+  facilities      String?
+  status          MembershipStatus @default(PENDING)
+  approvedAt      DateTime?
+  approvedBy      String?
+  rejectionReason String?
+  expiresAt       DateTime?
+  certificatePath String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([districtId])
+  @@index([status])
+  @@map("club_memberships")
+}
+
+model SchoolMembership {
+  id              String           @id @default(cuid())
+  membershipId    String           @unique
+  schoolName      String
+  principalName   String
+  email           String
+  mobile          String
+  address         String
+  districtId      String
+  district        District         @relation(fields: [districtId], references: [id])
+  userId          String?          @unique
+  user            User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  studentCount    Int?
+  status          MembershipStatus @default(PENDING)
+  approvedAt      DateTime?
+  approvedBy      String?
+  rejectionReason String?
+  expiresAt       DateTime?
+  certificatePath String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([districtId])
+  @@index([status])
+  @@map("school_memberships")
+}
+
+model AcademyMembership {
+  id              String           @id @default(cuid())
+  membershipId    String           @unique
+  academyName     String
+  directorName    String
+  email           String
+  mobile          String
+  address         String
+  districtId      String
+  district        District         @relation(fields: [districtId], references: [id])
+  userId          String?          @unique
+  user            User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  coachCount      Int?
+  status          MembershipStatus @default(PENDING)
+  approvedAt      DateTime?
+  approvedBy      String?
+  rejectionReason String?
+  expiresAt       DateTime?
+  certificatePath String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([districtId])
+  @@index([status])
+  @@map("academy_memberships")
+}
+
+// ─── Player/Coach Requests ─────────────────────────────────────
+// Distinct from Player/Coach registration: a Request is raised by an
+// already-registered Player or Coach asking RRA to change or act on
+// something about their existing record. One generic table (not five) —
+// unlike Applications, every request type shares the same shape
+// (type/status/reason/resolution), so a per-type table would just be
+// column-for-column duplication.
+
+enum RequestType {
+  PROFILE_CORRECTION
+  CONTACT_UPDATE
+  ADDRESS_UPDATE
+  DISTRICT_CHANGE
+  CERTIFICATE_REQUEST
+  CERTIFICATE_CORRECTION
+  DOCUMENT_UPDATE
+  OTHER
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Request {
+  id             String        @id @default(cuid())
+  requestNumber  String        @unique
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  playerId       String?
+  player         Player?       @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  coachId        String?
+  coach          Coach?        @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  type           RequestType
+  status         RequestStatus @default(PENDING)
+  reason         String
+  // Freeform "before/after" pair, used by request types with no dedicated
+  // structured field below (PROFILE_CORRECTION, CERTIFICATE_*, DOCUMENT_UPDATE, OTHER).
+  currentValue   String?
+  requestedValue String?
+  // Structured fields for the request types whose approval can safely apply
+  // itself to the underlying record — see request.service.ts for exactly
+  // which types are auto-applied vs. informational-only.
+  requestedMobile     String?
+  requestedEmail      String?
+  requestedAddress    String?
+  requestedDistrictId String?
+  requestedDistrict   District? @relation("RequestedDistrict", fields: [requestedDistrictId], references: [id])
+  adminRemarks    String?
+  rejectionReason String?
+  resolvedAt      DateTime?
+  resolvedBy      String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([playerId])
+  @@index([coachId])
+  @@index([status])
+  @@map("requests")
+}
+
+// ─── Tournaments ───────────────────────────────────────────────
+
+enum TournamentCategory {
+  JUNIOR
+  SENIOR
+  OPEN
+  PROFESSIONAL
+}
+
+enum TournamentStatus {
+  DRAFT
+  REGISTRATION_OPEN
+  REGISTRATION_CLOSED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model Tournament {
+  id              String             @id @default(cuid())
+  name            String
+  slug            String             @unique
+  description     String?
+  category        TournamentCategory
+  status          TournamentStatus   @default(DRAFT)
+  districtId      String?
+  district        District?          @relation(fields: [districtId], references: [id])
+  venue           String?
+  city            String?
+  startDate       DateTime
+  endDate         DateTime
+  registrationStart    DateTime?
+  registrationDeadline DateTime?
+  maxParticipants Int?
+  // Google Drive poster link, per the client's approved requirement — not a
+  // file upload. Reuses the pre-existing (previously unused) `banner` column
+  // rather than adding a second field for the same concept.
+  banner          String?
+  contactName     String?
+  contactPhone    String?
+  contactEmail    String?
+  requiresApprovedPlayer Boolean     @default(true)
+  registrationCategories TournamentRegistrationCategory[]
+  registrations   TournamentRegistration[]
+  fixtures        Fixture[]
+  matches         Match[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([status])
+  @@index([districtId])
+  @@map("tournaments")
+}
+
+enum TournamentEventType {
+  SINGLES
+  DOUBLES
+}
+
+// Configurable, per-tournament registration option (e.g. "Junior Singles",
+// "Senior Doubles") with its own fee — independent from Tournament.category,
+// which is a single whole-tournament classification (Open/Junior/Senior/Pro)
+// unrelated to which purchasable event types a player can register for.
+model TournamentRegistrationCategory {
+  id           String              @id @default(cuid())
+  tournamentId String
+  tournament   Tournament          @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  name         String
+  type         TournamentEventType
+  fee          Int
+  isActive     Boolean             @default(true)
+  registrations TournamentRegistration[]
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  @@index([tournamentId])
+  @@map("tournament_registration_categories")
+}
+
+model TournamentRegistration {
+  id           String     @id @default(cuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  playerId     String
+  player       Player     @relation(fields: [playerId], references: [id])
+  categoryId   String?
+  category     TournamentRegistrationCategory? @relation(fields: [categoryId], references: [id])
+  // Snapshot of the category fee at the moment of registration — Phase I
+  // must write this once and never recompute it from the category's current
+  // fee, so a later Super Admin price change never alters a past registration.
+  amount       Int?
+  seed         Int?
+  status       ApprovalStatus @default(PENDING)
+  registeredAt DateTime   @default(now())
+
+  @@unique([tournamentId, playerId])
+  @@map("tournament_registrations")
+}
+
+model Fixture {
+  id           String     @id @default(cuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  round        Int
+  roundName    String
+  matchNumber  Int
+  player1Id    String?
+  player2Id    String?
+  winnerId     String?
+  scheduledAt  DateTime?
+  match        Match?
+
+  @@index([tournamentId])
+  @@map("fixtures")
+}
+
+model Match {
+  id           String     @id @default(cuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  fixtureId    String     @unique
+  fixture      Fixture    @relation(fields: [fixtureId], references: [id])
+  player1Score Int?
+  player2Score Int?
+  winnerId     String?
+  status       String     @default("scheduled")
+  playedAt     DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([tournamentId])
+  @@map("matches")
+}
+
+// ─── Media CMS ─────────────────────────────────────────────────
+
+model News {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  excerpt     String?
+  content     String
+  coverImage  String?
+  author      String?
+  category    String?
+  tags        String[]
+  isPublished Boolean  @default(false)
+  publishedAt DateTime?
+  metaTitle   String?
+  metaDescription String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isPublished])
+  @@map("news")
+}
+
+model Video {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  description String?
+  url         String
+  thumbnail   String?
+  category    String?
+  tags        String[]
+  isPublished Boolean  @default(false)
+  publishedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isPublished])
+  @@map("videos")
+}
+
+model Gallery {
+  id          String        @id @default(cuid())
+  title       String
+  slug        String        @unique
+  description String?
+  category    String?
+  isPublished Boolean       @default(false)
+  publishedAt DateTime?
+  images      GalleryImage[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([isPublished])
+  @@map("galleries")
+}
+
+model GalleryImage {
+  id        String  @id @default(cuid())
+  galleryId String
+  gallery   Gallery @relation(fields: [galleryId], references: [id], onDelete: Cascade)
+  url       String
+  caption   String?
+  alt       String?
+  order     Int     @default(0)
+
+  @@index([galleryId])
+  @@map("gallery_images")
+}
+
+// ─── Donations ─────────────────────────────────────────────────
+
+model Donation {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?
+  mobile    String?
+  amount    Float
+  message   String?
+  isAnonymous Boolean @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("donations")
+}
+
+// ─── Contact ───────────────────────────────────────────────────
+
+model ContactMessage {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  phone     String?
+  subject   String?
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("contact_messages")
+}
+
+model EquipmentOrder {
+  id        String   @id @default(cuid())
+  name      String
+  mobile    String
+  address   String
+  district  String
+  equipment String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("equipment_orders")
+}
+
+// ─── Website Content ───────────────────────────────────────────
+
+model WebsiteContent {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  title     String?
+  content   String
+  metadata  Json?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+
+  @@map("website_content")
+}
+
+model ExecutiveMember {
+  id        String   @id @default(cuid())
+  name      String
+  designation String
+  photo     String?
+  bio       String?
+  email     String?
+  phone     String?
+  order     Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("executive_members")
+}
+
+model Partner {
+  id        String   @id @default(cuid())
+  name      String
+  logo      String?
+  website   String?
+  type      String   @default("sponsor")
+  order     Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@map("partners")
+}
+
+// ─── Audit & Settings ──────────────────────────────────────────
+
+enum AuditAction {
+  CREATE
+  READ
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  DOWNLOAD
+  APPROVE
+  REJECT
+}
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  userId     String?
+  user       User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     AuditAction
+  module     String
+  entityId   String?
+  entityType String?
+  details    Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime    @default(now())
+
+  @@index([userId])
+  @@index([module])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  type      String   @default("string")
+  group     String   @default("general")
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}

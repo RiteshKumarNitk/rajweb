@@ -1,0 +1,48 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: rra-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rra
+      POSTGRES_PASSWORD: rra_password
+      POSTGRES_DB: rra_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rra -d rra_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rra-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://rra:rra_password@postgres:5432/rra_db?schema=public
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: change-this-in-production
+      JWT_SECRET: change-this-in-production
+      JWT_REFRESH_SECRET: change-this-in-production
+      APP_URL: http://localhost:3000
+      STORAGE_TYPE: local
+      STORAGE_LOCAL_PATH: /app/uploads
+      STORAGE_PUBLIC_URL: /uploads
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  uploads_data:
