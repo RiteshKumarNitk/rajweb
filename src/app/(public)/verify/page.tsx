@@ -1,39 +1,28 @@
 import type { Metadata } from "next";
-import { ShieldCheck } from "lucide-react";
+import { Suspense } from "react";
+import { ShieldCheck, Award } from "lucide-react";
 import { PageHeader, PageContent } from "@/shared/components/layout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { VerifyForm } from "./verify-form";
 
 export const metadata: Metadata = {
   title: "Certificate Verification",
   description:
-    "Verify the authenticity of RRA-issued player, coach, and membership certificates through the official verification portal.",
+    "Verify the authenticity of Rajasthan Racquetball Association issued player, coach, and championship certificates.",
 };
 
 export default function VerifyPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Resources"
+        eyebrow="Official Federation Portal"
         title="Certificate Verification"
-        description="Verify the authenticity of certificates issued by the Rajasthan Racquetball Association."
+        description="Verify the authenticity and merit ranking of certificates issued by the Rajasthan Racquetball Association."
       />
       <PageContent>
-        <div className="mx-auto max-w-xl">
-          <Card>
-            <CardHeader>
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-accent/10">
-                <ShieldCheck className="h-6 w-6 text-accent" />
-              </div>
-              <CardTitle>Verify Your Certificate</CardTitle>
-              <p className="text-sm text-slate-600">
-                Enter certificate number, player/coach ID, or scan the QR code from your RRA certificate.
-              </p>
-            </CardHeader>
-            <CardContent>
-              <VerifyForm />
-            </CardContent>
-          </Card>
+        <div className="mx-auto max-w-4xl">
+          <Suspense fallback={<div className="p-8 text-center text-sm text-slate-500">Loading verification portal...</div>}>
+            <VerifyForm />
+          </Suspense>
         </div>
       </PageContent>
     </>

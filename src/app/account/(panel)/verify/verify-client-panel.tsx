@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useState } from "react";
 import {
   ShieldCheck,
   Search,
@@ -10,6 +9,10 @@ import {
   Award,
   Sparkles,
   Loader2,
+  FileText,
+  User,
+  MapPin,
+  HelpCircle,
 } from "lucide-react";
 import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
@@ -19,12 +22,9 @@ import { OfficialStateCertificate } from "@/shared/components/certificates/offic
 import type { CertificateVerificationResult } from "@/modules/verify/verify.service";
 import { SAMPLE_CHAMPIONSHIP_CERTIFICATES } from "@/modules/verify/verify.service";
 
-export function VerifyForm() {
-  const searchParams = useSearchParams();
-  const initialCert = searchParams.get("certificateNumber") || searchParams.get("qrCode") || "";
-
+export function VerifyClientPanel({ initialQuery = "" }: { initialQuery?: string }) {
   const [searchMode, setSearchMode] = useState<"serial" | "details">("serial");
-  const [serialNumber, setSerialNumber] = useState(initialCert);
+  const [serialNumber, setSerialNumber] = useState(initialQuery);
   const [candidateName, setCandidateName] = useState("");
   const [district, setDistrict] = useState("");
   const [fatherName, setFatherName] = useState("");
@@ -32,12 +32,6 @@ export function VerifyForm() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<CertificateVerificationResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (initialCert) {
-      handleVerify(initialCert);
-    }
-  }, [initialCert]);
 
   async function handleVerify(queryOverride?: string) {
     const q = queryOverride !== undefined ? queryOverride : serialNumber;
@@ -87,6 +81,7 @@ export function VerifyForm() {
 
   return (
     <div className="space-y-6">
+      {/* Search Criteria Card */}
       <Card className="border-slate-200 shadow-sm">
         <CardHeader className="pb-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -95,13 +90,14 @@ export function VerifyForm() {
                 <ShieldCheck className="h-5 w-5" />
               </div>
               <div>
-                <CardTitle className="text-base sm:text-lg">State Certificate Authentication</CardTitle>
-                <CardDescription className="text-xs">
-                  Official verification system of Rajasthan Racquetball Association
+                <CardTitle className="text-lg">Verify Certificate Authenticity</CardTitle>
+                <CardDescription>
+                  Search by official serial number or candidate registration details.
                 </CardDescription>
               </div>
             </div>
 
+            {/* Mode Switcher */}
             <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1">
               <button
                 type="button"
@@ -112,7 +108,7 @@ export function VerifyForm() {
                     : "text-slate-500 hover:text-slate-900"
                 }`}
               >
-                Serial No.
+                Serial Number
               </button>
               <button
                 type="button"
@@ -123,7 +119,7 @@ export function VerifyForm() {
                     : "text-slate-500 hover:text-slate-900"
                 }`}
               >
-                Candidate Name
+                Candidate Details
               </button>
             </div>
           </div>
@@ -136,7 +132,7 @@ export function VerifyForm() {
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                   <Input
-                    placeholder="Enter Serial No. (e.g. RRA/STC/2026/001 or PLR-2025-001)"
+                    placeholder="e.g. RRA/STC/2026/001, RRA-2025-PLR001, or PLR-TEST-001"
                     value={serialNumber}
                     onChange={(e) => setSerialNumber(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleVerify()}
@@ -154,7 +150,7 @@ export function VerifyForm() {
                     </>
                   ) : (
                     <>
-                      <Search className="mr-2 h-4 w-4" /> Verify Certificate
+                      <Search className="mr-2 h-4 w-4" /> Verify Now
                     </>
                   )}
                 </Button>
@@ -163,10 +159,10 @@ export function VerifyForm() {
               {/* Sample Testing Chips */}
               <div className="rounded-lg bg-slate-50 p-3 border border-slate-100 space-y-2">
                 <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                  <Sparkles className="h-3.5 w-3.5 text-amber-500" /> Test Data (Click to verify instantly):
+                  <Sparkles className="h-3.5 w-3.5 text-amber-500" /> Admin & User Test Data (Click to verify instantly):
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {SAMPLE_CHAMPIONSHIP_CERTIFICATES.slice(0, 4).map((s) => (
+                  {SAMPLE_CHAMPIONSHIP_CERTIFICATES.slice(0, 5).map((s) => (
                     <button
                       key={s.certificateNumber}
                       type="button"
@@ -192,7 +188,7 @@ export function VerifyForm() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">District</Label>
+                  <Label className="text-xs">District (Optional)</Label>
                   <Input
                     placeholder="e.g. Jaipur"
                     value={district}
@@ -200,7 +196,7 @@ export function VerifyForm() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Father&apos;s Name</Label>
+                  <Label className="text-xs">Father&apos;s Name (Optional)</Label>
                   <Input
                     placeholder="e.g. Suresh Sharma"
                     value={fatherName}
@@ -216,11 +212,11 @@ export function VerifyForm() {
               >
                 {loading ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Verifying Candidate...
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Verifying Records...
                   </>
                 ) : (
                   <>
-                    <Search className="mr-2 h-4 w-4" /> Search & Verify Record
+                    <Search className="mr-2 h-4 w-4" /> Search & Verify Candidate
                   </>
                 )}
               </Button>
@@ -229,18 +225,20 @@ export function VerifyForm() {
         </CardContent>
       </Card>
 
+      {/* Error Message Alert */}
       {errorMsg && (
         <Card className="border-red-200 bg-red-50 text-red-800">
           <CardContent className="flex items-center gap-3 p-4">
             <XCircle className="h-5 w-5 shrink-0 text-red-600" />
             <div>
-              <p className="text-sm font-bold">Verification Notice</p>
+              <p className="text-sm font-bold">Verification Failed</p>
               <p className="text-xs text-red-700">{errorMsg}</p>
             </div>
           </CardContent>
         </Card>
       )}
 
+      {/* Verified Certificate Result */}
       {result && result.valid && (
         <div className="space-y-6 animate-in fade-in-50 duration-300">
           <OfficialStateCertificate cert={result} printable={true} />

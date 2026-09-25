@@ -51,7 +51,7 @@ const navSections = [
     items: [
       { name: "Tournaments", href: "/account/tournaments", icon: Trophy },
       { name: "Certificates", href: "/account/certificates", icon: Award },
-      { name: "Verify Certificate", href: "/verify", icon: ShieldCheck },
+      { name: "Verify Certificate", href: "/account/verify", icon: ShieldCheck },
     ],
   },
   {
