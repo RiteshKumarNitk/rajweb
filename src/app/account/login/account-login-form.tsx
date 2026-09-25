@@ -1,17 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2, Mail } from "lucide-react";
+import { Loader2, Mail, AlertCircle } from "lucide-react";
 import { Button } from "@/shared/components/ui/button";
 import { FormBuilder } from "@/shared/components/ui/form-builder";
-import { ComingSoonBanner } from "@/shared/components/ui/coming-soon-banner";
 import { apiFetch, handleApiFetch } from "@/lib/api-client";
-import { blockSubmitForStaticRelease } from "@/shared/lib/static-release";
 import { toast } from "sonner";
 
 const emailSchema = z.object({
@@ -33,11 +31,13 @@ const GOOGLE_ERROR_MESSAGES: Record<string, string> = {
   account_exists_with_password: "This email is already registered with a password-based account. Sign in from the Admin Login page instead.",
   inactive: "This account is inactive. Contact RRA support for help.",
   missing_email: "Google did not share an email address. Try a different Google account.",
-  Configuration: "Authentication server configuration error. Please verify Google OAuth setup.",
+  Configuration: "Authentication server configuration error. Please verify Google OAuth setup (Client ID, Secret, or Redirect URI).",
   AccessDenied: "Access was denied during sign-in. Please try again.",
   OAuthSignin: "Could not initiate Google sign-in. Please try again.",
   OAuthCallbackError: "Google authentication callback failed. Please try again.",
   OAuthAccountNotLinked: "This email is already associated with another login provider.",
+  Callback: "Error completing authentication callback.",
+  Default: "Sign-in failed. Please try again.",
 };
 
 export function AccountLoginForm() {
@@ -52,15 +52,30 @@ export function AccountLoginForm() {
   const emailForm = useForm<EmailForm>({ resolver: zodResolver(emailSchema) });
   const otpForm = useForm<OtpForm>({ resolver: zodResolver(otpSchema) });
 
+  useEffect(() => {
+    if (googleError) {
+      console.error("[AccountLogin] NextAuth returned error in URL:", googleError);
+    }
+  }, [googleError]);
+
   async function handleGoogleSignIn() {
-    if (blockSubmitForStaticRelease("Continue with Google")) return;
+    setError("");
     setGoogleLoading(true);
-    await signIn("google", { callbackUrl: accountCallbackUrl(searchParams.get("callbackUrl")) });
+    console.log("[AccountLogin] Initiating Google sign-in...");
+    try {
+      const callback = accountCallbackUrl(searchParams.get("callbackUrl"));
+      console.log("[AccountLogin] Using callback URL:", callback);
+      await signIn("google", { callbackUrl: callback });
+    } catch (err) {
+      console.error("[AccountLogin] Google sign-in caught error:", err);
+      setError(err instanceof Error ? err.message : "Failed to initiate Google sign-in.");
+      setGoogleLoading(false);
+    }
   }
 
   async function onRequestOtp(data: EmailForm) {
-    if (blockSubmitForStaticRelease("Gmail sign-in")) return;
     setError("");
+    console.log("[AccountLogin] Requesting OTP for:", data.email);
     try {
       const res = await apiFetch("/api/auth/otp/request", {
         method: "POST",
@@ -71,34 +86,50 @@ export function AccountLoginForm() {
       setStep("otp");
       toast.success("If that email can receive a code, we've sent it.");
     } catch (err) {
+      console.error("[AccountLogin] OTP request error:", err);
       setError(err instanceof Error ? err.message : "Failed to send code");
     }
   }
 
   async function onVerifyOtp(data: OtpForm) {
     setError("");
-    const result = await signIn("email-otp", {
-      email,
-      otp: data.otp,
-      redirect: false,
-    });
+    console.log("[AccountLogin] Verifying OTP for:", email);
+    try {
+      const result = await signIn("email-otp", {
+        email,
+        otp: data.otp,
+        redirect: false,
+      });
 
-    if (result?.error) {
-      setError("Incorrect or expired code. Please try again.");
-      return;
+      console.log("[AccountLogin] Verify OTP result:", result);
+
+      if (result?.error) {
+        console.error("[AccountLogin] Verify OTP error:", result.error);
+        setError("Incorrect or expired code. Please try again.");
+        return;
+      }
+
+      router.push(accountCallbackUrl(searchParams.get("callbackUrl")));
+      router.refresh();
+    } catch (err) {
+      console.error("[AccountLogin] Verify OTP exception:", err);
+      setError(err instanceof Error ? err.message : "Sign-in failed.");
     }
-
-    router.push(accountCallbackUrl(searchParams.get("callbackUrl")));
-    router.refresh();
   }
+
+  const displayedError = error || (googleError ? (GOOGLE_ERROR_MESSAGES[googleError] ?? `Sign-in failed (${googleError}). Please try again.`) : null);
 
   return (
     <div className="space-y-6">
-      <ComingSoonBanner feature="Account login" />
-
-      {googleError && (
-        <div className="rounded-md bg-secondary/10 px-4 py-3 text-sm text-secondary">
-          {GOOGLE_ERROR_MESSAGES[googleError] ?? "Sign-in failed. Please try again."}
+      {displayedError && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+          <div>
+            <p className="font-medium">{displayedError}</p>
+            {googleError && (
+              <p className="mt-1 text-xs text-red-600">Error code: {googleError}</p>
+            )}
+          </div>
         </div>
       )}
 
@@ -126,7 +157,6 @@ export function AccountLoginForm() {
             errors={emailForm.formState.errors}
             fields={[{ name: "email", label: "Email address", type: "email", placeholder: "you@example.com" }]}
           />
-          {error && <p className="text-sm text-secondary">{error}</p>}
           <Button type="submit" className="w-full" disabled={emailForm.formState.isSubmitting}>
             {emailForm.formState.isSubmitting ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -148,7 +178,6 @@ export function AccountLoginForm() {
             errors={otpForm.formState.errors}
             fields={[{ name: "otp", label: "Verification code", type: "text", placeholder: "123456" }]}
           />
-          {error && <p className="text-sm text-secondary">{error}</p>}
           <Button type="submit" className="w-full" disabled={otpForm.formState.isSubmitting}>
             {otpForm.formState.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify & Sign In"}
           </Button>

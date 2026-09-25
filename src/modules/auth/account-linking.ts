@@ -49,9 +49,22 @@ export async function findOrCreatePublicUser(input: FindOrCreateInput): Promise<
     return { user: updated, conflict: false };
   }
 
-  const publicRole = await prisma.role.findUnique({ where: { slug: ROLES.PUBLIC_USER } });
+  let publicRole = await prisma.role.findUnique({ where: { slug: ROLES.PUBLIC_USER } });
   if (!publicRole) {
-    throw new Error("public-user role is not seeded — run the database seed script");
+    try {
+      publicRole = await prisma.role.create({
+        data: {
+          name: "Public User",
+          slug: ROLES.PUBLIC_USER,
+          description: "Registered public user account",
+        },
+      });
+    } catch {
+      publicRole = await prisma.role.findUnique({ where: { slug: ROLES.PUBLIC_USER } });
+    }
+  }
+  if (!publicRole) {
+    throw new Error("Unable to initialize public-user role.");
   }
 
   const created = await prisma.user.create({

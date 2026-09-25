@@ -9,12 +9,8 @@ import { z } from "zod";
 import { Loader2, Shield, MapPin } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/shared/components/ui/button";
-import { Input } from "@/shared/components/ui/input";
-import { Label } from "@/shared/components/ui/label";
 import { FormBuilder } from "@/shared/components/ui/form-builder";
 import { LogoImage } from "@/shared/components/ui/media-image";
-import { ComingSoonBanner } from "@/shared/components/ui/coming-soon-banner";
-import { blockSubmitForStaticRelease } from "@/shared/lib/static-release";
 import { siteConfig, siteImages } from "@/shared/config/site";
 
 const loginSchema = z.object({
@@ -58,7 +54,6 @@ function LoginForm() {
   });
 
   async function loginWithCredentials(email: string, password: string) {
-    if (blockSubmitForStaticRelease("Admin portal login")) return false;
     setError("");
     const result = await signIn("credentials", {
       email,
@@ -100,7 +95,6 @@ function LoginForm() {
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-          <ComingSoonBanner feature="Admin portal login" />
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
             <FormBuilder
               register={register}

@@ -45,8 +45,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
     }),
     Google({
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      clientId: process.env.GOOGLE_CLIENT_ID ?? process.env.AUTH_GOOGLE_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? process.env.AUTH_GOOGLE_SECRET,
     }),
     Credentials({
       id: "email-otp",
@@ -72,22 +72,36 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async signIn({ account, profile }) {
       if (account?.provider !== "google") return true;
-      if (!profile?.email) return "/account/login?error=missing_email";
+      if (!profile?.email) {
+        console.error("[NextAuth Google signIn] Missing email in profile:", profile);
+        return "/account/login?error=missing_email";
+      }
 
       const googleProfile = profile as { sub?: string; name?: string; picture?: string };
 
-      const { user, conflict } = await findOrCreatePublicUser({
-        email: profile.email,
-        name: googleProfile.name,
-        avatar: googleProfile.picture,
-        googleId: googleProfile.sub,
-        provider: "GOOGLE",
-      });
+      try {
+        const { user, conflict } = await findOrCreatePublicUser({
+          email: profile.email,
+          name: googleProfile.name,
+          avatar: googleProfile.picture,
+          googleId: googleProfile.sub,
+          provider: "GOOGLE",
+        });
 
-      if (conflict) return "/account/login?error=account_exists_with_password";
-      if (!user || !user.isActive) return "/account/login?error=inactive";
+        if (conflict) {
+          console.warn("[NextAuth Google signIn] Account exists with credentials:", profile.email);
+          return "/account/login?error=account_exists_with_password";
+        }
+        if (!user || !user.isActive) {
+          console.warn("[NextAuth Google signIn] User inactive:", profile.email);
+          return "/account/login?error=inactive";
+        }
 
-      return true;
+        return true;
+      } catch (err) {
+        console.error("[NextAuth Google signIn] Error during findOrCreatePublicUser:", err);
+        return "/account/login?error=Callback";
+      }
     },
     // Role, permissions, active status, and district are re-read from the
     // database on sign-in and then at least every 60 seconds. A Super Admin
