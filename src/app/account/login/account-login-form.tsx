@@ -33,6 +33,11 @@ const GOOGLE_ERROR_MESSAGES: Record<string, string> = {
   account_exists_with_password: "This email is already registered with a password-based account. Sign in from the Admin Login page instead.",
   inactive: "This account is inactive. Contact RRA support for help.",
   missing_email: "Google did not share an email address. Try a different Google account.",
+  Configuration: "Authentication server configuration error. Please verify Google OAuth setup.",
+  AccessDenied: "Access was denied during sign-in. Please try again.",
+  OAuthSignin: "Could not initiate Google sign-in. Please try again.",
+  OAuthCallbackError: "Google authentication callback failed. Please try again.",
+  OAuthAccountNotLinked: "This email is already associated with another login provider.",
 };
 
 export function AccountLoginForm() {
