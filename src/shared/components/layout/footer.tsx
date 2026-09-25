@@ -118,6 +118,7 @@ export function Footer() {
           <div className="flex flex-col items-center justify-between gap-4 text-sm text-slate-400 sm:flex-row">
             <p>&copy; {new Date().getFullYear()} {siteConfig.name}. All rights reserved.</p>
             <div className="flex flex-wrap justify-center gap-x-6 gap-y-2">
+              <Link href="/verify" className="hover:text-accent font-medium">Verify Certificate</Link>
               <Link href="/governance/rti" className="hover:text-white">RTI</Link>
               <Link href="/governance/anti-doping" className="hover:text-white">Anti-Doping</Link>
               <Link href="/governance/privacy-policy" className="hover:text-white">Privacy Policy</Link>

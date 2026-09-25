@@ -26,6 +26,7 @@ const quickActions = [
   { label: "Apply for Membership", href: "/account/memberships" },
   { label: "Browse Tournaments", href: "/account/tournaments" },
   { label: "View Certificates", href: "/account/certificates" },
+  { label: "Verify Certificate", href: "/verify" },
 ];
 
 export default async function AccountDashboardPage() {

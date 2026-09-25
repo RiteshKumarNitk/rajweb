@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useState } from "react";
 import { Menu, X, ChevronDown } from "lucide-react";
 import { siteConfig, siteImages, navigation } from "@/shared/config/site";
-import { Button } from "@/shared/components/ui/button";
 import { LogoImage } from "@/shared/components/ui/media-image";
 import { HeaderAuth, MobileHeaderAuth } from "@/shared/components/layout/header-auth";
 import { cn } from "@/lib/utils";
@@ -75,18 +74,12 @@ export function Header() {
         </nav>
 
         <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
-          <div className="hidden items-center gap-2 sm:gap-3 lg:flex">
-            <Button variant="outline" size="sm" className="hidden sm:inline-flex" asChild>
-              <Link href="/verify" prefetch>
-                <span className="hidden lg:inline">Verify Certificate</span>
-                <span className="lg:hidden">Verify</span>
-              </Link>
-            </Button>
+          <div className="hidden items-center lg:flex">
             <HeaderAuth />
           </div>
 
           <button
-            className="rounded-md p-2 text-primary lg:hidden"
+            className="rounded-md p-2 text-primary transition-colors hover:bg-slate-100 lg:hidden"
             onClick={() => setMobileOpen(!mobileOpen)}
             aria-label="Toggle menu"
           >
@@ -125,12 +118,9 @@ export function Header() {
               ))}
             </div>
           ))}
-          <div className="flex flex-col gap-2 pt-4">
-            <Button variant="outline" asChild>
-              <Link href="/verify" prefetch>Verify Certificate</Link>
-            </Button>
+          <div className="pt-2">
+            <MobileHeaderAuth onNavigate={() => setMobileOpen(false)} />
           </div>
-          <MobileHeaderAuth onNavigate={() => setMobileOpen(false)} />
         </nav>
       </div>
     </header>
