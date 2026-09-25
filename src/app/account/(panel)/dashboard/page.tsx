@@ -120,7 +120,7 @@ export default async function AccountDashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-primary">Welcome back, {user.name.split(" ")[0]}</h1>
+        <h1 className="text-2xl font-bold text-primary">Welcome back, {(user.name || "User").split(" ")[0]}</h1>
         <p className="text-slate-500">Here&apos;s a summary of your RRA account.</p>
       </div>
 
