@@ -23,11 +23,22 @@ export default async function AccountClubMembershipPage() {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/account/login");
 
-  const [user, membership] = await Promise.all([
-    prisma.user.findUnique({ where: { id: authUser.id }, select: { name: true, email: true, phone: true } }),
-    prisma.clubMembership.findUnique({ where: { userId: authUser.id }, include: { district: true } }),
+  const [dbUser, membership] = await Promise.all([
+    prisma.user.findFirst({
+      where: { OR: [{ id: authUser.id }, { email: authUser.email ?? "" }] },
+      select: { name: true, email: true, phone: true },
+    }),
+    prisma.clubMembership.findFirst({
+      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
+      include: { district: true },
+    }),
   ]);
-  if (!user) redirect("/account/login");
+
+  const user = dbUser ?? {
+    name: authUser.name || "User",
+    email: authUser.email ?? "",
+    phone: null,
+  };
 
   if (membership) {
     const storage = getStorage();

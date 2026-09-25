@@ -24,10 +24,13 @@ export default async function AccountPlayerPage() {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/account/login");
 
-  const [user, player] = await Promise.all([
-    prisma.user.findUnique({ where: { id: authUser.id }, select: { name: true, email: true, phone: true } }),
-    prisma.player.findUnique({
-      where: { userId: authUser.id },
+  const [dbUser, player] = await Promise.all([
+    prisma.user.findFirst({
+      where: { OR: [{ id: authUser.id }, { email: authUser.email ?? "" }] },
+      select: { name: true, email: true, phone: true },
+    }),
+    prisma.player.findFirst({
+      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
       include: {
         district: true,
         certificates: { where: { isRevoked: false }, orderBy: { issuedAt: "desc" }, take: 1 },
@@ -35,7 +38,12 @@ export default async function AccountPlayerPage() {
       },
     }),
   ]);
-  if (!user) redirect("/account/login");
+
+  const user = dbUser ?? {
+    name: authUser.name || "User",
+    email: authUser.email ?? "",
+    phone: null,
+  };
 
   if (player) {
     const certificate = player.certificates[0];

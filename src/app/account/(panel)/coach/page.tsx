@@ -24,17 +24,25 @@ export default async function AccountCoachPage() {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/account/login");
 
-  const [user, coach] = await Promise.all([
-    prisma.user.findUnique({ where: { id: authUser.id }, select: { name: true, email: true, phone: true } }),
-    prisma.coach.findUnique({
-      where: { userId: authUser.id },
+  const [dbUser, coach] = await Promise.all([
+    prisma.user.findFirst({
+      where: { OR: [{ id: authUser.id }, { email: authUser.email ?? "" }] },
+      select: { name: true, email: true, phone: true },
+    }),
+    prisma.coach.findFirst({
+      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
       include: {
         district: true,
         certificates: { where: { isRevoked: false }, orderBy: { issuedAt: "desc" }, take: 1 },
       },
     }),
   ]);
-  if (!user) redirect("/account/login");
+
+  const user = dbUser ?? {
+    name: authUser.name || "User",
+    email: authUser.email ?? "",
+    phone: null,
+  };
 
   if (coach) {
     const certificate = coach.certificates[0];

@@ -16,11 +16,17 @@ export default async function AccountProfilePage() {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/account/login");
 
-  const user = await prisma.user.findUnique({
-    where: { id: authUser.id },
+  const dbUser = await prisma.user.findFirst({
+    where: { OR: [{ id: authUser.id }, { email: authUser.email ?? "" }] },
     include: { profile: true },
   });
-  if (!user) redirect("/account/login");
+
+  const user = dbUser ?? {
+    name: authUser.name || "User",
+    email: authUser.email ?? "",
+    phone: null,
+    profile: null,
+  };
 
   return (
     <div>

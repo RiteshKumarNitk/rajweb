@@ -24,11 +24,17 @@ export default async function AccountSettingsPage() {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/account/login");
 
-  const user = await prisma.user.findUnique({
-    where: { id: authUser.id },
+  const dbUser = await prisma.user.findFirst({
+    where: { OR: [{ id: authUser.id }, { email: authUser.email ?? "" }] },
     select: { email: true, authProvider: true, isActive: true, createdAt: true },
   });
-  if (!user) redirect("/account/login");
+
+  const user = dbUser ?? {
+    email: authUser.email ?? "",
+    authProvider: "GOOGLE" as const,
+    isActive: true,
+    createdAt: new Date(),
+  };
 
   return (
     <div>

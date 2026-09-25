@@ -32,17 +32,22 @@ export default async function AccountDashboardPage() {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/account/login");
 
-  const [user, player, coach, club, school, academy, upcomingTournaments, requests] = await Promise.all([
-    prisma.user.findUnique({
-      where: { id: authUser.id },
+  const userWhere = authUser.id
+    ? { id: authUser.id }
+    : { email: authUser.email ?? "" };
+
+  const [dbUser, player, coach, club, school, academy, upcomingTournaments, requests] = await Promise.all([
+    prisma.user.findFirst({
+      where: userWhere,
       select: {
+        id: true,
         name: true,
         phone: true,
         profile: { select: { address: true, city: true, state: true, pincode: true } },
       },
     }),
-    prisma.player.findUnique({
-      where: { userId: authUser.id },
+    prisma.player.findFirst({
+      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
       select: {
         id: true,
         status: true,
@@ -52,8 +57,8 @@ export default async function AccountDashboardPage() {
         _count: { select: { certificates: { where: { isRevoked: false } } } },
       },
     }),
-    prisma.coach.findUnique({
-      where: { userId: authUser.id },
+    prisma.coach.findFirst({
+      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
       select: {
         id: true,
         status: true,
@@ -63,22 +68,30 @@ export default async function AccountDashboardPage() {
         _count: { select: { certificates: { where: { isRevoked: false } } } },
       },
     }),
-    prisma.clubMembership.findUnique({
-      where: { userId: authUser.id },
+    prisma.clubMembership.findFirst({
+      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
       select: { id: true, status: true, rejectionReason: true },
     }),
-    prisma.schoolMembership.findUnique({
-      where: { userId: authUser.id },
+    prisma.schoolMembership.findFirst({
+      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
       select: { id: true, status: true, rejectionReason: true },
     }),
-    prisma.academyMembership.findUnique({
-      where: { userId: authUser.id },
+    prisma.academyMembership.findFirst({
+      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
       select: { id: true, status: true, rejectionReason: true },
     }),
     prisma.tournament.count({ where: { status: { in: ["REGISTRATION_OPEN", "IN_PROGRESS"] } } }),
-    prisma.request.findMany({ where: { userId: authUser.id }, select: { id: true, status: true } }),
+    prisma.request.findMany({
+      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
+      select: { id: true, status: true },
+    }),
   ]);
-  if (!user) redirect("/account/login");
+
+  const user = dbUser ?? {
+    name: authUser.name || "User",
+    phone: null,
+    profile: null,
+  };
 
   const pendingRequests = requests.filter((r) => r.status === "PENDING").length;
   const completedRequests = requests.filter((r) => r.status === "APPROVED" || r.status === "REJECTED").length;
