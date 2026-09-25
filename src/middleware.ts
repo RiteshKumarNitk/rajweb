@@ -38,6 +38,54 @@ function getClientIp(request: NextRequest) {
   );
 }
 
+async function getSessionToken(request: NextRequest) {
+  if (!authSecret) return null;
+
+  const isHttps =
+    request.nextUrl.protocol === "https:" ||
+    request.headers.get("x-forwarded-proto") === "https";
+
+  const candidateCookieNames = isHttps
+    ? [
+        "__Secure-authjs.session-token",
+        "authjs.session-token",
+        "__Secure-next-auth.session-token",
+        "next-auth.session-token",
+      ]
+    : [
+        "authjs.session-token",
+        "next-auth.session-token",
+        "__Secure-authjs.session-token",
+        "__Secure-next-auth.session-token",
+      ];
+
+  for (const cookieName of candidateCookieNames) {
+    if (request.cookies.has(cookieName)) {
+      try {
+        const token = await getToken({
+          req: request,
+          secret: authSecret,
+          cookieName,
+          secureCookie: cookieName.startsWith("__Secure-"),
+        });
+        if (token) return token;
+      } catch {
+        // try next candidate
+      }
+    }
+  }
+
+  try {
+    return await getToken({
+      req: request,
+      secret: authSecret,
+      secureCookie: isHttps,
+    });
+  } catch {
+    return null;
+  }
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -80,7 +128,7 @@ export async function middleware(request: NextRequest) {
   }
 
   if (request.nextUrl.pathname.startsWith("/admin")) {
-    const token = await getToken({ req: request, secret: authSecret });
+    const token = await getSessionToken(request);
 
     if (!token) {
       const loginUrl = new URL("/login", request.url);
@@ -101,7 +149,7 @@ export async function middleware(request: NextRequest) {
   }
 
   if (isProtectedAccountPath) {
-    const token = await getToken({ req: request, secret: authSecret });
+    const token = await getSessionToken(request);
 
     if (!token) {
       const loginUrl = new URL("/account/login", request.url);

@@ -13,9 +13,23 @@ export const metadata: Metadata = {
   description: "Sign in or create an RRA account with Google or your Gmail address.",
 };
 
-export default async function AccountLoginPage() {
+export default async function AccountLoginPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ error?: string; callbackUrl?: string }>;
+}) {
+  const params = searchParams ? await searchParams : undefined;
   const user = await getCurrentUser();
-  if (user) redirect("/account/dashboard");
+
+  if (user && !params?.error) {
+    const targetUrl =
+      params?.callbackUrl &&
+      params.callbackUrl.startsWith("/account") &&
+      params.callbackUrl !== "/account/login"
+        ? params.callbackUrl
+        : "/account/dashboard";
+    redirect(targetUrl);
+  }
 
   return (
     <div className="flex h-screen w-screen bg-primary">
