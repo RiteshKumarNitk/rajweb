@@ -16,8 +16,8 @@ import { Input } from "@/shared/components/ui/input";
 import { Label } from "@/shared/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
 import { OfficialStateCertificate } from "@/shared/components/certificates/official-state-certificate";
-import type { CertificateVerificationResult } from "@/modules/verify/verify.service";
-import { SAMPLE_CHAMPIONSHIP_CERTIFICATES } from "@/modules/verify/verify.service";
+import type { CertificateVerificationResult } from "@/modules/verify/verify.types";
+import { SAMPLE_CHAMPIONSHIP_CERTIFICATES } from "@/modules/verify/verify.types";
 
 export function VerifyForm() {
   const searchParams = useSearchParams();

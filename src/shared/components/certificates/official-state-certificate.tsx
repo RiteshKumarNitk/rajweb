@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/shared/components/ui/button";
 import { formatDate } from "@/lib/utils";
-import type { CertificateVerificationResult } from "@/modules/verify/verify.service";
+import type { CertificateVerificationResult } from "@/modules/verify/verify.types";
 
 export function OfficialStateCertificate({
   cert,
