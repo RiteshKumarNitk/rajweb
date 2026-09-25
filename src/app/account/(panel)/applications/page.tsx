@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "My Applications",
-  description: "All your RRA registrations and membership applications in one place.",
+  description: "All your Rajasthan Racquetball Association registrations and membership applications in one place.",
 };
 
 interface ApplicationRow {
@@ -32,37 +32,90 @@ export default async function AccountApplicationsPage() {
   if (!authUser) redirect("/account/login");
 
   const [player, coach, club, school, academy] = await Promise.all([
-    prisma.player.findUnique({ where: { userId: authUser.id } }),
-    prisma.coach.findUnique({ where: { userId: authUser.id } }),
-    prisma.clubMembership.findUnique({ where: { userId: authUser.id } }),
-    prisma.schoolMembership.findUnique({ where: { userId: authUser.id } }),
-    prisma.academyMembership.findUnique({ where: { userId: authUser.id } }),
+    prisma.player.findFirst({
+      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
+    }),
+    prisma.coach.findFirst({
+      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
+    }),
+    prisma.clubMembership.findFirst({
+      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
+    }),
+    prisma.schoolMembership.findFirst({
+      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
+    }),
+    prisma.academyMembership.findFirst({
+      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
+    }),
   ]);
 
   const rows: ApplicationRow[] = [];
   if (player) {
-    rows.push({ type: "Player", referenceId: player.playerId, name: player.name, status: player.status, rejectionReason: player.rejectionReason, submittedAt: player.createdAt, href: "/account/player" });
+    rows.push({
+      type: "Player Registration",
+      referenceId: player.playerId,
+      name: player.name,
+      status: player.status,
+      rejectionReason: player.rejectionReason,
+      submittedAt: player.createdAt,
+      href: "/account/player",
+    });
   }
   if (coach) {
-    rows.push({ type: "Coach", referenceId: coach.coachId, name: coach.name, status: coach.status, rejectionReason: coach.rejectionReason, submittedAt: coach.createdAt, href: "/account/coach" });
+    rows.push({
+      type: "Coach Registration",
+      referenceId: coach.coachId,
+      name: coach.name,
+      status: coach.status,
+      rejectionReason: coach.rejectionReason,
+      submittedAt: coach.createdAt,
+      href: "/account/coach",
+    });
   }
   if (club) {
-    rows.push({ type: "Club Membership", referenceId: club.membershipId, name: club.clubName, status: club.status, rejectionReason: club.rejectionReason, submittedAt: club.createdAt, href: "/account/memberships/club" });
+    rows.push({
+      type: "Club Affiliation",
+      referenceId: club.membershipId,
+      name: club.clubName,
+      status: club.status,
+      rejectionReason: club.rejectionReason,
+      submittedAt: club.createdAt,
+      href: "/account/memberships/club",
+    });
   }
   if (school) {
-    rows.push({ type: "School Membership", referenceId: school.membershipId, name: school.schoolName, status: school.status, rejectionReason: school.rejectionReason, submittedAt: school.createdAt, href: "/account/memberships/school" });
+    rows.push({
+      type: "School Affiliation",
+      referenceId: school.membershipId,
+      name: school.schoolName,
+      status: school.status,
+      rejectionReason: school.rejectionReason,
+      submittedAt: school.createdAt,
+      href: "/account/memberships/school",
+    });
   }
   if (academy) {
-    rows.push({ type: "Academy Membership", referenceId: academy.membershipId, name: academy.academyName, status: academy.status, rejectionReason: academy.rejectionReason, submittedAt: academy.createdAt, href: "/account/memberships/academy" });
+    rows.push({
+      type: "Academy Affiliation",
+      referenceId: academy.membershipId,
+      name: academy.academyName,
+      status: academy.status,
+      rejectionReason: academy.rejectionReason,
+      submittedAt: academy.createdAt,
+      href: "/account/memberships/academy",
+    });
   }
 
   rows.sort((a, b) => b.submittedAt.getTime() - a.submittedAt.getTime());
 
   const columns: ColumnDef<ApplicationRow>[] = [
-    { header: "Type", accessorKey: "type", className: "font-medium" },
-    { header: "Reference ID", cell: (r) => <code className="text-xs">{r.referenceId}</code> },
-    { header: "Name", accessorKey: "name" },
-    { header: "Submitted", cell: (r) => formatDate(r.submittedAt) },
+    { header: "Application Type", accessorKey: "type", className: "font-semibold text-primary" },
+    {
+      header: "Reference ID",
+      cell: (r) => <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-mono">{r.referenceId}</code>,
+    },
+    { header: "Registered Name", accessorKey: "name" },
+    { header: "Date Submitted", cell: (r) => formatDate(r.submittedAt) },
     {
       header: "Status",
       cell: (r) => (
@@ -77,18 +130,20 @@ export default async function AccountApplicationsPage() {
     {
       header: "",
       cell: (r) => (
-        <Button variant="outline" size="sm" asChild>
-          <Link href={r.href}>{r.status === "REJECTED" ? "Correct & Resubmit" : "View"}</Link>
+        <Button variant="outline" size="sm" asChild className="text-xs">
+          <Link href={r.href}>{r.status === "REJECTED" ? "Correct & Resubmit" : "View Application"}</Link>
         </Button>
       ),
     },
   ];
 
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-primary">My Applications</h1>
-        <p className="text-slate-500">Every registration and membership application you&apos;ve submitted.</p>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight text-primary sm:text-3xl">My Applications</h1>
+        <p className="text-sm text-slate-500">
+          Every player, coach, and institutional membership application you&apos;ve submitted.
+        </p>
       </div>
 
       <Card>
@@ -96,10 +151,10 @@ export default async function AccountApplicationsPage() {
           {rows.length === 0 ? (
             <EmptyState
               title="No applications yet"
-              description="You haven't submitted any player, coach, or membership applications."
+              description="You haven't submitted any player, coach, or membership applications yet."
               action={
-                <Button asChild>
-                  <Link href="/account/dashboard">Get Started</Link>
+                <Button asChild size="sm" className="bg-primary text-white hover:bg-slate-800">
+                  <Link href="/account/dashboard">Get Started on Dashboard</Link>
                 </Button>
               }
             />
