@@ -579,12 +579,6 @@ model News {
   author      String?
   category    String?
   tags        String[]
-  // Soft-visibility flag for the public newsfeed/home feed. Distinct from the
-  // legacy isPublished so seeded/static-migrated items can be hidden without
-  // deleting; the public pages now query isActive (falling back to isPublished
-  // for rows created before this field existed is not needed — the seed sets
-  // both).
-  isActive    Boolean  @default(true)
   isPublished Boolean  @default(false)
   publishedAt DateTime?
   metaTitle   String?
@@ -593,7 +587,6 @@ model News {
   updatedAt   DateTime @updatedAt
 
   @@index([isPublished])
-  @@index([isActive, publishedAt])
   @@map("news")
 }
 
@@ -841,24 +834,17 @@ model WebsiteContent {
 }
 
 model ExecutiveMember {
-  id          String   @id @default(cuid())
-  name        String
+  id        String   @id @default(cuid())
+  name      String
   designation String
-  photo       String?
-  bio         String?
-  // Additional RRA positions held in other bodies (e.g. IRA), stored as JSON:
-  // [{ role, organization }]. Null = no secondary positions (single-role card).
-  positions   Json?
-  // Accent badge on the committee card (e.g. "Support By RRA"); null = none.
-  badge       String?
-  email       String?
-  phone       String?
-  isActive    Boolean  @default(true)
-  sortOrder   Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  photo     String?
+  bio       String?
+  email     String?
+  phone     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@index([isActive, sortOrder])
   @@map("executive_members")
 }
 
@@ -867,49 +853,13 @@ model Partner {
   name      String
   logo      String?
   website   String?
-  type      String   @default("sponsor") // sponsor | federation | physio (partner groups on home / resources)
-  // Short role line (e.g. "Head Physio, Rajasthan Racquetball Association")
-  role      String?
-  location  String?
-  phone     String?
-  // JSON array of service strings (physio partner cards)
-  services  Json?
+  type      String   @default("sponsor")
   order     Int      @default(0)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([type, isActive, order])
   @@map("partners")
-}
-
-// Home-page stats bar ("33+ District Associations" style counters)
-model Achievement {
-  id        String   @id @default(cuid())
-  label     String
-  value     String
-  isActive  Boolean  @default(true)
-  sortOrder Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([isActive, sortOrder])
-  @@map("achievements")
-}
-
-// RRA-history timeline milestones (year/title/description) rendered on /about/history
-model TimelineItem {
-  id          String   @id @default(cuid())
-  year        String
-  title       String
-  description String
-  isActive    Boolean  @default(true)
-  sortOrder   Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([isActive, sortOrder])
-  @@map("timeline_items")
 }
 
 // ─── Audit & Settings ──────────────────────────────────────────

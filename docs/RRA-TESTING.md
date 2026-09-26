@@ -124,7 +124,8 @@ Districts accepted: any of the 33 Rajasthan district names (case-insensitive), e
 | P8 | `/resources/equipment` | Images + equipment order form submits (not gated) |
 | P9 | `/resources/court-specifications`, `/resources/physio-partners` | Load |
 | P10 | `/governance/rti|anti-doping|privacy-policy`, `/privacy` | Load |
-| P11 | `/contact` | Valid → success toast; invalid email / short message (<10) → validation error |
+| P11 | `/contact` | Valid → success toast; invalid email / short message (<10) → validation error; message stored + Super Admin email attempted |
+| P17 | `/equipment` | Active items with price/stock/category tabs; out-of-stock badge; Buy requires sign-in; placed orders appear in `/account/orders` and `/account/equipment` |
 | P12 | `/donations` | Live forms on: valid → thank-you; amount ≤ 0 → error |
 | P13 | `/verify` | See §3.1 |
 | P14 | Header/footer | Logo → `/`; dropdowns; mobile menu; user icon → portal; verify link in footer |
@@ -385,10 +386,20 @@ No baseline numbers have been recorded. Record measurements here when taken (dat
 | S19 | Gallery: `media:read`-only admin POST/PATCH/DELETE | 403 (`media:manage` required) |
 | S20 | Gallery: `driveUrl: "https://evil.example.com/x"` | 400 "Must be a valid Google Drive sharing URL…" |
 | S21 | Gallery: deactivate item → public `/media/gallery` | Item disappears immediately (cache revalidated); card UI/filters unchanged |
-| S22 | Content: logged out / public-user POST `/api/admin/content/committee` | 401 / 403 |
-| S23 | Content: `content:read`-only admin POST/PATCH/DELETE | 403 (`content:manage` required) |
-| S24 | Content: deactivate a committee member / timeline item / news item | Disappears from the public page after revalidation; still listed (Inactive) in admin |
-| S25 | Content: invalid image ref (`javascript:alert(1)`) or non-http(s) website URL | 400 validation error |
+| S22 | Contact: logged out / public-user `GET/PATCH/DELETE /api/admin/contact/*` | 401 / 403 (`contact:read`/`contact:manage`) |
+| S23 | Contact: invalid status value in PATCH | 400 (Zod enum) |
+| S24 | Equipment: invalid image ref (`javascript:alert(1)`) or negative price | 400 validation error |
+| S26 | Contact: logged-in user tries `GET/PATCH/DELETE /api/admin/contact/*` as public user | 401 / 403 (`contact:read`/`contact:manage`) |
+| S27 | Equipment: logged-out Buy Now → order placement | Redirected to `/account/login?callbackUrl=/equipment…`; no order created |
+| S28 | Equipment: concurrent purchase of last item (2+ parallel requests) | Exactly 1 succeeds; loser gets 409; stock never negative |
+| S29 | Equipment: order A's items after admin changes product price | A keeps its snapshot `unitPriceSnapshot` (₹old × qty) |
+| S30 | Equipment: DELETE product referenced by an order | Archived (deactivated), not deleted; historical order intact |
+| S31 | Equipment: admin sets `status: "PAID"` on a `PENDING_PAYMENT` order via PATCH | 400 — payment must be verified server-side |
+| S32 | Equipment: user B opens user A's order cancel endpoint | 404 (ownership from session) |
+| S33 | Videos: POST `https://vimeo.com/…` or malformed YouTube URL | 400 "Must be a valid YouTube URL" |
+| S34 | Videos: same YouTube video added twice | 409 "already been added" |
+| S35 | Videos: deactivate → public `/media/videos` | Disappears after revalidation (tag `public-videos`) |
+| S36 | Contact: stop RESEND_API_KEY, submit contact form | Message still stored (`emailSent=false`), visitor sees success, error only logged |
 
 ---
 

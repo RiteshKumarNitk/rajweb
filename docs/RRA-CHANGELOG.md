@@ -347,26 +347,36 @@ New `public-gallery` unstable_cache tag (60 s) + `/media/gallery` path revalidat
 
 ---
 
-## Website Content CMS (committee, timeline, stats, news, partners)
+## Contact inbox, Equipment shop, YouTube videos
 
 ### Date
 2026-09-26.
 
 ### Summary
-Static business/content data beyond Districts and Gallery became database-driven and admin-managed: executive committee, history timeline, home stats bar, news, and home sponsors/federations. Public pages keep their exact existing UI; each falls back to the former static data when the DB has no rows. Navigation, layouts, labels, forms, court specifications, about/history/racquetball prose, governance pages, hero slider, testimonials, SEO metadata and the tournament system remain in code (see Project Status §5.1 / the intentionally-static list).
+Three new modules on the existing architecture: (1) the contact form now persists and emails the Super Admin, with an admin inbox; (2) an authenticated equipment shop with a catalog, safe stock handling, snapshot-priced orders and member-facing order pages; (3) database-driven YouTube video management for the public videos page.
 
-### Features Added
-- `/admin/content/*` pages (Website Content sidebar section): Executive Committee, History Timeline, Statistics Bar, News & Updates, Partners & Federations (sponsor/federation tabs). Shared manager provides list, search, status filter, add/edit modal, activate/deactivate, delete, sort order.
-- Public pages now read the DB: `/about/executive-committee` (ExecutiveMember), `/about/history` milestones (TimelineItem), home StatsBar (Achievement), `/media/news` + home Latest News (News), home Partners/Federations (Partner). Static arrays retained only as fallback.
-- New APIs: `POST /api/admin/content/{committee,achievements,timeline,news,partners}` and `PATCH|DELETE /api/admin/content/{collection}/{id}` — all `content:manage` + CSRF + audit.
-- Permission `content:manage` (previously defined but unenforced) is now enforced server-side; `content:read` gates the admin pages. Federation-admin gains both via the seed.
-- Cache: new `public-content` tag (60 s) + path revalidation for `/`, committee, history, news on every write.
+### Contact
+- `ContactMessage` gained `status ContactStatus` (NEW/READ/REPLIED/CLOSED) + `emailSent`; the public form still stores first, then sends best-effort emails (Super Admin notification with reply-to, plus visitor confirmation). Recipient: Setting `contact_email` → `SUPER_ADMIN_EMAIL` env → site default — never hardcoded in code.
+- Admin inbox `/admin/contact` (+ detail/status/delete) gated by the new `contact:read`/`contact:manage` permissions.
+
+### Equipment
+- New models `EquipmentItem` (integer-rupee `price`, `stockQuantity`, category enum, slug) and `EquipmentPurchaseOrder`/`EquipmentPurchaseOrderItem` (name + unit-price snapshots; order totals never re-priced).
+- Public `/equipment` catalog (active items, category tabs, stock indicator, login-gated buy panel). New account pages `/account/orders` and `/account/equipment` (session-scoped queries).
+- Purchase flow: one transaction reserves stock via conditional atomic decrement (never negative, 409 on race loss) and snapshots prices; cancellation restocks. Payment verification fails closed — orders stay `PENDING_PAYMENT` until the Phase-J gateway exists; the browser can never mark an order paid.
+- Admin `/admin/equipment` (catalog CRUD) and `/admin/equipment/orders` (fulfilment status only) with the new `equipment:manage` permission; deletion of purchased items archives instead of destroying.
+
+### Videos
+- New `MediaVideo` model (normalized `youtubeVideoId`, original URL). The legacy unused `Video` model is untouched.
+- Admin `/admin/media/videos` (new `videos:manage` permission) validates YouTube IDs server-side; public `/media/videos` now reads the DB (active, `sortOrder` asc, cached tag `public-videos`) with the static list as fallback; thumbnails derive from the video ID.
+
+### Navigation
+Public navbar gains **Equipment Shop**; account sidebar gains Equipment → My Orders / My Equipment; admin sidebar gains Communications (Contact Messages, Videos) and Equipment Shop (Catalog, Orders).
 
 ### Database Changes
-`ExecutiveMember`: added `positions Json?`, `badge?`, `sortOrder`, `isActive`, `@@index([isActive, sortOrder])` (model was previously unused). `Partner`: added `role/location/phone/services Json?`, `updatedAt`, `@@index([type, isActive, order])` (previously unused). `News`: added `isActive @default(true)` + `@@index([isActive, publishedAt])`. New tables: `Achievement`, `TimelineItem` (both `isActive` + `sortOrder`). Applied with `npm run db:push`; seed upserts the previously hardcoded values exactly (no invented content).
+`ContactMessage`: +`status`, `emailSent`, `updatedAt`, index on status. New enums: `ContactStatus`, `EquipmentCategory`, `PurchaseStatus`, `PaymentStatus`. New models: `EquipmentItem`, `EquipmentPurchaseOrder`, `EquipmentPurchaseOrderItem`, `MediaVideo`. New permissions: `contact:read/manage`, `equipment:manage`, `videos:manage` (federation-admin seeded; re-run `npm run db:seed`). Seed also adds a demo equipment placeholder. Apply with `npm run db:push`.
 
-### Security Changes
-All mutations behind `requirePermission(CONTENT_MANAGE)` + CSRF; public queries filter `isActive`/`isPublished`; image refs and external URLs validated server-side (no server-side fetching introduced); audit events `COMMITTEE_MEMBER_* / ACHIEVEMENT_* / TIMELINE_ITEM_* / NEWS_ITEM_* / PARTNER_*` in module `content`.
+### Tournament payments untouched
+Equipment orders are separate business entities with their own snapshots; `TournamentRegistration.amount` and its pricing rule are unchanged, and no payment provider was introduced.
 
 ---
 

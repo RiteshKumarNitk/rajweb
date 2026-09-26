@@ -16,6 +16,8 @@ import {
   ShieldCheck,
   FileText,
   UserCog,
+  ShoppingBag,
+  Package,
   Settings,
   LogOut,
   Menu,
@@ -52,6 +54,13 @@ const navSections = [
       { name: "Tournaments", href: "/account/tournaments", icon: Trophy },
       { name: "Certificates", href: "/account/certificates", icon: Award },
       { name: "Verify Certificate", href: "/account/verify", icon: ShieldCheck },
+    ],
+  },
+  {
+    title: "Equipment",
+    items: [
+      { name: "My Orders", href: "/account/orders", icon: ShoppingBag },
+      { name: "My Equipment", href: "/account/equipment", icon: Package },
     ],
   },
   {

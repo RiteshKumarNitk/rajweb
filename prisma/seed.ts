@@ -301,107 +301,24 @@ async function main() {
     });
   }
 
-  // Website content migration — moves the previously hardcoded site.ts arrays
-  // (executive committee, stats bar, news, history timeline, sponsors,
-  // federations) into the database so admins can manage them. Values preserved
-  // exactly as displayed on the public site; nothing invented. Idempotent via
-  // deterministic lookups.
-  const committeeMembers = [
-    {
-      name: "Mr. Aashish Poonia",
-      designation: "Founder & General Secretary",
-      photo: "/images/asishpooniawalaimage.jpeg",
-      positions: [
-        { role: "Founder & General Secretary", organization: "Rajasthan Racquetball Association" },
-        { role: "Vice President", organization: "Indian Racquetball Association" },
-      ],
-      bio: "Leads RRA administration, membership operations, and national-level coordination with the Indian Racquetball Association.",
+  // Equipment catalog demo item — admins add the real inventory via
+  // /admin/equipment; this placeholder keeps the public shop non-empty on
+  // fresh installs. Idempotent on slug.
+  await prisma.equipmentItem.upsert({
+    where: { slug: "demo-equipment-placeholder" },
+    update: {},
+    create: {
+      name: "Demo Equipment Placeholder",
+      slug: "demo-equipment-placeholder",
+      category: "OTHER",
+      shortDescription: "Sample listing — replace with real inventory in the admin panel.",
+      description: "This placeholder is seeded so the public equipment page renders correctly on a fresh install. Delete or deactivate it once real products exist.",
+      price: 1000,
+      stockQuantity: 10,
+      isActive: true,
       sortOrder: 0,
     },
-  ];
-
-  for (const member of committeeMembers) {
-    const existing = await prisma.executiveMember.findFirst({ where: { name: member.name } });
-    if (existing) {
-      await prisma.executiveMember.update({ where: { id: existing.id }, data: member });
-    } else {
-      await prisma.executiveMember.create({ data: member });
-    }
-  }
-
-  const statItems = [
-    { label: "District Associations", value: "33+", sortOrder: 0 },
-    { label: "Registered Players", value: "500+", sortOrder: 1 },
-    { label: "Tournaments Held", value: "25+", sortOrder: 2 },
-    { label: "Certified Coaches", value: "50+", sortOrder: 3 },
-  ];
-
-  for (const stat of statItems) {
-    const existing = await prisma.achievement.findFirst({ where: { label: stat.label } });
-    if (existing) {
-      await prisma.achievement.update({ where: { id: existing.id }, data: stat });
-    } else {
-      await prisma.achievement.create({ data: stat });
-    }
-  }
-
-  const timelineMilestones = [
-    { year: "1979", title: "IRF Formed", description: "The International Racquetball Federation was established.", sortOrder: 0 },
-    { year: "1981", title: "World Games", description: "Racquetball became a charter member of the World Games.", sortOrder: 1 },
-    { year: "1985", title: "IOC Recognition", description: "IRF received recognition from the International Olympic Committee.", sortOrder: 2 },
-    { year: "2023", title: "IRA Formed", description: "The Indian Racquetball Association was established in India.", sortOrder: 3 },
-    { year: "2025", title: "RRA Established", description: "Rajasthan Racquetball Association formed and affiliated with IRA.", sortOrder: 4 },
-  ];
-
-  for (const milestone of timelineMilestones) {
-    const existing = await prisma.timelineItem.findFirst({ where: { year: milestone.year, title: milestone.title } });
-    if (existing) {
-      await prisma.timelineItem.update({ where: { id: existing.id }, data: milestone });
-    } else {
-      await prisma.timelineItem.create({ data: milestone });
-    }
-  }
-
-  const partnerGroups = [
-    { type: "sponsor", items: [
-      { name: "Brightmoon Learning Solutions", logo: "/images/sponsor-logo1.jpeg" },
-      { name: "Eagle Martial Arts Sports Association", logo: "/images/sponsor-logo-eagle.jpeg" },
-    ] },
-    { type: "federation", items: [
-      { name: "Indian Racquetball Association", logo: "/images/indianrracqasso-1.jpg" },
-      { name: "International Racquetball Federation", logo: "/images/irflogo2.jpeg" },
-      { name: "ARF", logo: "/images/logo-arf-bicolor-raqueta.png" },
-      { name: "International Federation", logo: "/images/international.webp" },
-      { name: "The World Games", logo: "/images/theworldgames.webp" },
-      { name: "International Olympic Committee", logo: "/images/olympiccouncil.jpeg" },
-    ] },
-    { type: "physio", items: [
-      {
-        name: "Ankit Bhardwaj",
-        logo: "/images/rra/portrait-ankit-bhardwaj.jpg",
-        role: "Head Physio, Rajasthan Racquetball Association",
-        location: "Jaipur",
-        phone: "+91 99289 62982",
-        services: [
-          "Sports injury assessment & rehabilitation",
-          "Pre-competition screening",
-          "High-performance sports science support",
-          "On-tournament physio coverage",
-        ],
-      },
-    ] },
-  ];
-
-  for (const group of partnerGroups) {
-    for (const [index, item] of group.items.entries()) {
-      const existing = await prisma.partner.findFirst({ where: { name: item.name, type: group.type } });
-      if (existing) {
-        await prisma.partner.update({ where: { id: existing.id }, data: { ...item, order: index } });
-      } else {
-        await prisma.partner.create({ data: { ...item, type: group.type, order: index } });
-      }
-    }
-  }
+  });
 
   // Settings
   const settings = [

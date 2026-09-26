@@ -103,7 +103,7 @@ export default async function AdminMediaPage() {
                 <Sparkles className="h-5 w-5" />
               </div>
             </div>
-            <Link href="/news" target="_blank" className="mt-2 text-[11px] text-primary hover:underline flex items-center gap-1 font-medium">
+            <Link href="/media/news" target="_blank" className="mt-2 text-[11px] text-primary hover:underline flex items-center gap-1 font-medium">
               View Public Newsfeed <ExternalLink className="h-3 w-3" />
             </Link>
           </CardContent>

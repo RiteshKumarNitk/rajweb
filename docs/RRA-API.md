@@ -75,8 +75,14 @@ Architecture of the handler pipeline: [RRA-ARCHITECTURE.md → Backend](RRA-ARCH
 | 34 | PATCH | `/api/admin/roles/{id}` | `roles:manage` | yes |
 | 35 | POST | `/api/admin/gallery` | `media:manage` | yes |
 | 36 | PATCH, DELETE | `/api/admin/gallery/{id}` | `media:manage` | yes |
-| 37 | POST | `/api/admin/content/committee` · `/achievements` · `/timeline` · `/news` · `/partners` | `content:manage` | yes |
-| 38 | PATCH, DELETE | `/api/admin/content/{committee\|achievements\|timeline\|news\|partners}/{id}` | `content:manage` | yes |
+| 37 | PATCH, DELETE | `/api/admin/contact/{id}` | `contact:manage` | yes |
+| 38 | POST | `/api/equipment/purchase` | Session | yes |
+| 39 | POST | `/api/equipment/orders/{id}/cancel` | Session (owner) | yes |
+| 40 | POST | `/api/admin/equipment` | `equipment:manage` | yes |
+| 41 | PATCH, DELETE | `/api/admin/equipment/{id}` | `equipment:manage` | yes |
+| 42 | PATCH | `/api/admin/equipment/orders/{id}` | `equipment:manage` | yes |
+| 43 | POST | `/api/admin/media/videos` | `videos:manage` | yes |
+| 44 | PATCH, DELETE | `/api/admin/media/videos/{id}` | `videos:manage` | yes |
 
 **There are no list/GET APIs for admin data** — admin pages read the database directly in Server Components. There are no Payment, Receipt, Notification, Fixture, Match, Ranking, Media-CMS-write, Settings-write, or Certificate-revoke APIs.
 
@@ -481,16 +487,24 @@ See 4.3 (`/api/admin/players/{id}/certificate`). No coach issuance and no revoca
 
 ---
 
-## 13b. Admin Website-Content APIs (CMS)
+## 13b. Contact, Equipment Shop & Media Videos APIs
 
-Collections: `committee` (ExecutiveMember), `achievements` (stats bar), `timeline` (history milestones), `news`, `partners` (`type` = `sponsor`\|`federation`; physio records exist for future use).
+### Contact inbox
+- `PATCH /api/admin/contact/{id}` — `contact:manage`, CSRF. Body `{ "status": "NEW"\|"READ"\|"REPLIED"\|"CLOSED" }`. Audit `CONTACT_STATUS_CHANGED`.
+- `DELETE /api/admin/contact/{id}` — `contact:manage`. Audit `CONTACT_MESSAGE_DELETED`.
+- Public `POST /api/contact` (existing) now also: sends a **New Contact Us Message - RRA** email to the configured Super Admin address (Setting `contact_email` → `SUPER_ADMIN_EMAIL` env → site default) with reply-to = the visitor, plus a best-effort visitor confirmation. Emails are sent **after** persistence; failures never lose the message and only set `emailSent=false`. Rate limit 10/min/IP unchanged.
 
-- **Create:** `POST /api/admin/content/{collection}` — `content:manage`, CSRF, Zod-validated body per collection (see `src/modules/content/content.service.ts`). Committee/partners validate image refs (`/images/…` or http(s) URL) and partner `website` as external http(s); news auto-slugs with dedupe.
-- **Update:** `PATCH …/{id}` — partial bodies; `isActive` toggles public visibility (audit `*_ACTIVATED` / `*_DEACTIVATED`), other changes audit `*_UPDATED`.
-- **Delete:** `DELETE …/{id}` — plain delete; none of these tables are referenced by other entities (safe), audit `*_DELETED`.
-- **Audit:** module `content`, entityType = model name, events `COMMITTEE_MEMBER_*`, `ACHIEVEMENT_*`, `TIMELINE_ITEM_*`, `NEWS_ITEM_*`, `PARTNER_*`.
-- **Cache:** every write calls `revalidateWebsiteContent()` → tag `public-content` + paths `/`, `/about/executive-committee`, `/about/history`, `/media/news`.
-- **Public reads:** only `isActive` (news additionally `isPublished`), ordered `sortOrder`/`order` asc then oldest-first; news newest-first. Every public page falls back to the previous static data when the table is empty or the DB is unreachable.
+### Equipment shop
+- `POST /api/equipment/purchase` — Session, CSRF, 20/min. Body `{ items: [{ equipmentId, quantity 1–10 }] }` (≤10 lines). Server re-reads each product, reserves stock with a conditional atomic decrement (fails with 409 if insufficient — stock can never go negative), snapshots name + unit price onto order items, and creates the order `PENDING_PAYMENT`/payment `PENDING` in one transaction. Audit `EQUIPMENT_ORDER_CREATED`.
+- `POST /api/equipment/orders/{id}/cancel` — Session owner (404 otherwise), pending orders only; restocks reserved items and sets `CANCELLED`/`FAILED` in one transaction. Audit `EQUIPMENT_ORDER_CANCELLED`.
+- `POST/PATCH/DELETE /api/admin/equipment…` — `equipment:manage`. DELETE on an item referenced by orders **archives it** (deactivates) instead of destroying it. Audits `EQUIPMENT_ITEM_CREATED/UPDATED/ACTIVATED/DEACTIVATED/ARCHIVED/DELETED` + `EQUIPMENT_PRICE_CHANGED`/`EQUIPMENT_STOCK_CHANGED` details.
+- `PATCH /api/admin/equipment/orders/{id}` — `equipment:manage`. Fulfilment status only; **cannot** mark an unpaid order as paid (400) — payment transitions go through server-side verification only. Audit `EQUIPMENT_ORDER_STATUS_CHANGED`.
+- **Payment status:** no provider is selected/implemented yet (Phase J). `verifyAndMarkPaid()` in `purchase.service.ts` is the single server-side chokepoint (idempotent conditional update) and currently fails closed. Orders remain `PENDING_PAYMENT` until RRA completes payment offline or the gateway lands.
+
+### Media videos (YouTube)
+- `POST /api/admin/media/videos` and `PATCH/DELETE …/{id}` — `videos:manage`, CSRF.
+- The server extracts the 11-char video ID from watch / youtu.be / shorts / embed / bare-ID forms; non-YouTube URLs are rejected (400) and duplicate IDs get 409. URL changes are audited (`MEDIA_VIDEO_URL_CHANGED`) alongside `MEDIA_VIDEO_CREATED/UPDATED/ACTIVATED/DEACTIVATED/DELETED`. Thumbnails are derived from the video ID (`i.ytimg.com`), never uploaded.
+- Public `/media/videos` reads active rows (`sortOrder` asc, cached tag `public-videos`), falling back to the static YouTube list when empty.
 
 ---
 

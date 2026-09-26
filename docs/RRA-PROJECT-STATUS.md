@@ -55,7 +55,9 @@ Functional scope actually present in code:
 - **RBAC:** data-driven roles and permissions, district scoping, per-user federation-wide flag, Super Admin role editor.
 - **Audit logging** of admin decisions, logins, and key user actions.
 
-**Not present:** online payments, receipts, tournament passes/QR entry, draws/fixtures/results (schema only), rankings, notifications backend, reporting, membership renewal workflow. See §9–§10.
+**Not present:** online payments (equipment or tournament — equipment orders stay `PENDING_PAYMENT` with fail-closed verification), receipts, tournament passes/QR entry, draws/fixtures/results (schema only), rankings, notifications backend, reporting, membership renewal workflow. See §9–§10.
+
+**New database-driven modules (2026-09-26, scoped to repeating business/content collections only):** the equipment shop (public catalog `/equipment`, authenticated purchase with atomic stock reservation and price snapshots, `/account/orders` + `/account/equipment`, admin catalog/orders), the contact inbox (`/admin/contact`; form submissions email the configured Super Admin address via Resend with visitor confirmation), and admin-managed YouTube videos (`/admin/media/videos` → public `/media/videos`). Committee, history, stats, news, partners and other one-off prose remain static in code by design.
 
 ---
 
@@ -349,15 +351,18 @@ Not implemented: registration approval/rejection by admins, withdrawal/cancellat
 | `/admin/equipment-orders` | `equipment:read` (added Pre-J) | Read-only list of equipment enquiries; district-scoped users see only enquiries naming their district |
 | `/admin/media` | `media:read` | **Read-only** lists of news/videos/galleries (summary overview) |
 | `/admin/media/gallery` | `media:read` | **Gallery management** — add/edit/delete items, set each item's optional Google Drive URL, activate/deactivate, change sort order (writes need `media:manage`) |
-| `/admin/content/committee` | `content:read` | **Executive committee management** — add/edit/delete members, photo, badge, positions, sort order (writes need `content:manage`) |
-| `/admin/content/timeline` | `content:read` | **History timeline management** — add/edit/delete milestones (year/title/description/sort order) |
-| `/admin/content/achievements` | `content:read` | **Stats bar management** — home-page counters (label/value/sort order) |
-| `/admin/content/news` | `content:read` | **News management** — the public newsfeed and home Latest News (previously static) |
-| `/admin/content/partners` | `content:read` | **Sponsors & federations management** — logos/order for the home-page partner sections |
+| `/admin/contact` (+`/[id]`) | `contact:read` | **Contact inbox** — full message, status transitions (NEW/READ/REPLIED/CLOSED), delete (writes need `contact:manage`); form submissions email the configured Super Admin address |
+| `/admin/equipment` | `equipment:read` | **Equipment catalog management** — CRUD, price/stock/image/category, activate/deactivate, archive-on-delete when purchased (writes need `equipment:manage`) |
+| `/admin/equipment/orders` | `equipment:read` | **Equipment orders** — customer, items, amounts, payment status; fulfilment-status updates (`equipment:manage`) cannot mark unpaid orders paid |
+| `/admin/media/videos` | `media:read` | **YouTube video management** — CRUD with server-side URL/ID validation, ordering, activate/deactivate (writes need `videos:manage`) |
 | `/admin/users` | `users:read` | List (≤ 200); activate/deactivate, assign role, assign/remove district, toggle federation-wide (`users:update`) |
 | `/admin/roles` | `roles:read` | Create custom roles and edit permissions of non-system roles (`roles:manage`) |
 | `/admin/audit-logs` | `audit:read` | Latest 200 entries |
 | `/admin/settings` | `settings:manage` | **Read-only** view of `Setting` rows |
+| `/admin/contact` (+`/[id]`) | `contact:read` | **Contact inbox** — list, full message, status transitions (NEW/READ/REPLIED/CLOSED), delete (writes need `contact:manage`) |
+| `/admin/equipment` | `equipment:read` | **Equipment catalog management** — CRUD, price/stock/image/category, activate/deactivate, archive-on-delete when purchased (writes need `equipment:manage`) |
+| `/admin/equipment/orders` | `equipment:read` | **Equipment orders** — customer, items, amounts, payment status; fulfilment-status updates (`equipment:manage`) cannot mark unpaid orders paid |
+| `/admin/media/videos` | `media:read` | **YouTube video management** — CRUD with server-side URL/ID validation, ordering, activate/deactivate (writes need `videos:manage`) |
 
 Contact messages and donations are stored but have **no admin page**.
 
@@ -456,7 +461,7 @@ Functional:
 5. Coach certificate issuance not wired to any API/UI; no certificate revocation flow.
 6. Draws, fixtures, match results, rankings: none (schema for Fixture/Match only).
 7. Notifications: UI shell only; no emails other than OTP.
-8. Media CMS, districts, settings are read-only in admin; contact messages and donations have no admin view. ~~Media CMS read-only~~ — **gallery, executive committee, history timeline, stats bar, news and partners are now database-driven and admin-managed** (news/videos lists in /admin/media remain read-only summaries; the Videos CMS itself is still static).
+8. Media CMS, districts, settings are read-only in admin; donations have no admin view. ~~Media CMS read-only~~ — **gallery, videos (YouTube), equipment catalog/orders and the contact inbox are now database-driven and admin-managed**; the news/videos summary lists in /admin/media remain read-only, and other site content (committee, history, stats, partners, about pages) intentionally stays in code.
 9. ~~Public forms silently discarded fields~~ — **fixed Pre-J** (fields removed). Player/Coach `photo` is still never written (no upload; Phase R).
 10. Public forms are disabled unless `NEXT_PUBLIC_ENABLE_LIVE_FORMS=true`.
 11. Sample championship certificates are hard-coded demo data.

@@ -1,4 +1,4 @@
-import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 
 /** Clears equipment catalog caches after admin changes. */
 export function revalidateEquipment() {

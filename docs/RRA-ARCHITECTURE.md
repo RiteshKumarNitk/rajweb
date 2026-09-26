@@ -179,7 +179,7 @@ Hard-coded safety nets:
 
 ### 6.2 Permissions
 
-`users:read|create|update|delete`, `roles:read|manage`, `equipment:read` (Pre-J), `players:read|create|update|approve`, `coaches:read|create|update|approve`, `memberships:read|approve`, `requests:view|approve`, `tournaments:read|manage`, `media:read|manage`, `certificates:read|issue`, `districts:read|manage`, `content:read|manage`, `audit:read`, `settings:manage`.
+`users:read|create|update|delete`, `roles:read|manage`, `equipment:read|manage`, `contact:read|manage`, `videos:manage`, `players:read|create|update|approve`, `coaches:read|create|update|approve`, `memberships:read|approve`, `requests:view|approve`, `tournaments:read|manage`, `media:read|manage`, `certificates:read|issue`, `districts:read|manage`, `content:read|manage`, `audit:read`, `settings:manage`.
 
 Several are defined but not enforced anywhere yet (`users:create|delete`, `players:create|update`, `coaches:create|update`, `media:manage`, `districts:manage`, `content:*`) because the corresponding features don't exist.
 
@@ -267,16 +267,15 @@ Note: `TournamentRegistration` has no index on `playerId` or `categoryId` other 
 
 | Model | Purpose | Written by |
 |---|---|---|
-| `News`, `Video` | Media CMS | `News` is now admin-managed via `/api/admin/content/news*` (`content:manage`): the public newsfeed + home Latest News read `isActive && isPublished` rows; `isActive` (new) is the CMS visibility flag, `isPublished` retained. `Video` remains seed-only (the videos page uses the static YouTube list) |
+| `News`, `Video` | Media CMS | Seed only; read by public/admin pages (the public videos page uses the `MediaVideo` YouTube listing below, falling back to the static list) |
 | `Gallery`, `GalleryImage` | Media CMS | `Gallery` is now admin-managed: public `/media/gallery` reads `isPublished` items (`sortOrder` asc) with `imageUrl` + optional `driveUrl` (Google Drive link opened from the item lightbox, validated server-side, never fetched server-side). Writes via `/api/admin/gallery*` (`media:manage`, CSRF, audit `GALLERY_*`); revalidates tag `public-gallery`. `GalleryImage` remains seed-only |
 | `Donation` | Donation pledges (no payment) | `POST /api/donations` |
-| `ContactMessage` | Contact form | `POST /api/contact` |
+| `ContactMessage` | Contact form + admin inbox (`/admin/contact`) | `POST /api/contact` (stores first, then best-effort Resend email to the Super Admin address from `contact_email` Setting / `SUPER_ADMIN_EMAIL`, plus visitor confirmation); status lifecycle NEW/READ/REPLIED/CLOSED managed via `/api/admin/contact/{id}` (`contact:manage`, audit) |
+| `EquipmentItem`, `EquipmentPurchaseOrder(+Item)` | Equipment shop | Public catalog `/equipment` (active items); authenticated purchase `POST /api/equipment/purchase` reserves stock atomically (never negative) and snapshots name + unit price; payment verification is server-side and fails closed (no provider yet, Phase J) — orders stay `PENDING_PAYMENT`. Admin catalog/orders via `/api/admin/equipment*` (`equipment:manage`); delete of a purchased item archives it |
 | `EquipmentOrder` | Equipment enquiries (index createdAt) | `POST /api/equipment/orders` |
+| `MediaVideo` | Public Media → Videos listing | Admin-managed YouTube links (`/api/admin/media/videos*`, `videos:manage`): server extracts the 11-char video ID (watch/youtu.be/shorts/embed forms; non-YouTube rejected); public page reads active rows `sortOrder` asc (tag `public-videos`) with the static list as fallback; thumbnails derive from the video ID |
 | `WebsiteContent` | CMS table | **Unused** (single-page content still lives in `site.ts` — see below) |
-| `ExecutiveMember` | Executive committee (public page + `/admin/content/committee`) | `positions Json?` (RRA/IRA posts), `badge?`, `sortOrder`, `isActive`; previously unused |
-| `Partner` | Sponsors, federations (home sections) | `type` (`sponsor`\|`federation`\|`physio`), `role/location/phone/services Json?` (physio), `order`, `isActive`; previously unused |
-| `Achievement` | Home stats-bar counters | `label`, `value`, `sortOrder`, `isActive` (new table) |
-| `TimelineItem` | History timeline milestones | `year`, `title`, `description`, `sortOrder`, `isActive` (new table) |
+| `ExecutiveMember`, `Partner` | CMS tables | **Unused** by public pages (content lives in `site.ts`) |
 | `AuditLog` (`audit_logs`) | Audit trail | See §11. Indexes: userId, module, createdAt |
 | `Setting` (`settings`) | Key/value config | Seed; read by membership pricing and `/admin/settings` |
 

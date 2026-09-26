@@ -113,5 +113,24 @@ async function enrichYoutubeItem(item: YoutubeMediaItem): Promise<YoutubeMediaIt
 }
 
 export async function getYoutubeMediaItems() {
+  // Database-managed videos first; the static youtubeMedia list is the
+  // fallback so the page never renders empty when the table has no rows yet.
+  try {
+    const { getPublicVideos } = await import("@/modules/media/public-videos");
+    const dbVideos = await getPublicVideos();
+    if (dbVideos.length > 0) {
+      return dbVideos.map((v) => ({
+        title: v.title,
+        description: v.description ?? "",
+        category: v.category ?? "Video",
+        url: v.youtubeUrl,
+        videoId: v.youtubeVideoId,
+        thumbnail: `https://i.ytimg.com/vi/${v.youtubeVideoId}/hqdefault.jpg`,
+        kind: "video" as const,
+      }));
+    }
+  } catch {
+    // fall through to static list
+  }
   return Promise.all(youtubeMedia.map(enrichYoutubeItem));
 }

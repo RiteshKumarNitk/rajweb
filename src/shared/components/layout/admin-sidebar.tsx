@@ -27,6 +27,8 @@ import {
   Sparkles,
   ExternalLink,
   Image as ImageIcon,
+  Play,
+  ClipboardList,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -84,6 +86,20 @@ const navSections: NavGroup[] = [
     ],
   },
   {
+    title: "Communications",
+    items: [
+      { name: "Contact Messages", href: "/admin/contact", icon: MessageSquare, permission: PERMISSIONS.CONTACT_READ },
+      { name: "Videos (YouTube)", href: "/admin/media/videos", icon: Play, permission: PERMISSIONS.MEDIA_READ },
+    ],
+  },
+  {
+    title: "Equipment Shop",
+    items: [
+      { name: "Catalog", href: "/admin/equipment", icon: ShoppingBag, permission: PERMISSIONS.EQUIPMENT_READ },
+      { name: "Orders", href: "/admin/equipment/orders", icon: ClipboardList, permission: PERMISSIONS.EQUIPMENT_READ },
+    ],
+  },
+  {
     title: "Events & Records",
     items: [
       { name: "Tournaments", href: "/admin/tournaments", icon: Trophy, permission: PERMISSIONS.TOURNAMENTS_READ },
@@ -96,16 +112,7 @@ const navSections: NavGroup[] = [
     items: [
       { name: "Media CMS", href: "/admin/media", icon: Newspaper, permission: PERMISSIONS.MEDIA_READ },
       { name: "Gallery", href: "/admin/media/gallery", icon: ImageIcon, permission: PERMISSIONS.MEDIA_READ },
-    ],
-  },
-  {
-    title: "Website Content",
-    items: [
-      { name: "Committee", href: "/admin/content/committee", icon: UserCheck, permission: PERMISSIONS.CONTENT_READ },
-      { name: "History Timeline", href: "/admin/content/timeline", icon: ScrollText, permission: PERMISSIONS.CONTENT_READ },
-      { name: "Statistics Bar", href: "/admin/content/achievements", icon: Trophy, permission: PERMISSIONS.CONTENT_READ },
-      { name: "News & Updates", href: "/admin/content/news", icon: FileText, permission: PERMISSIONS.CONTENT_READ },
-      { name: "Partners & Federations", href: "/admin/content/partners", icon: Shield, permission: PERMISSIONS.CONTENT_READ },
+      { name: "Videos (YouTube)", href: "/admin/media/videos", icon: Play, permission: PERMISSIONS.MEDIA_READ },
     ],
   },
   {
