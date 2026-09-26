@@ -1,19 +1,6 @@
-import { Resend } from "resend";
+import { getClient } from "./email-client";
 
-let client: Resend | null = null;
-
-function getClient(): Resend {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "Email is not configured: set RESEND_API_KEY (see Resend dashboard → API Keys) to enable OTP login."
-    );
-  }
-  if (!client) {
-    client = new Resend(apiKey);
-  }
-  return client;
-}
+export { getClient };
 
 /**
  * Sends a login OTP. Scoped to exactly this one use case — not a general

@@ -61,6 +61,13 @@ export const PERMISSIONS = {
   CONTENT_MANAGE: "content:manage",
   // Equipment enquiries (public equipment order form)
   EQUIPMENT_READ: "equipment:read",
+  // Contact message inbox (admin)
+  CONTACT_READ: "contact:read",
+  CONTACT_MANAGE: "contact:manage",
+  // Equipment shop management (catalog + purchase orders)
+  EQUIPMENT_MANAGE: "equipment:manage",
+  // Media videos (YouTube) management
+  VIDEOS_MANAGE: "videos:manage",
   // Audit
   AUDIT_READ: "audit:read",
   // Settings
@@ -97,6 +104,10 @@ export const ROLE_PERMISSIONS: Record<string, PermissionSlug[]> = {
     PERMISSIONS.CONTENT_READ,
     PERMISSIONS.CONTENT_MANAGE,
     PERMISSIONS.EQUIPMENT_READ,
+    PERMISSIONS.EQUIPMENT_MANAGE,
+    PERMISSIONS.CONTACT_READ,
+    PERMISSIONS.CONTACT_MANAGE,
+    PERMISSIONS.VIDEOS_MANAGE,
     PERMISSIONS.AUDIT_READ,
   ],
   [ROLES.DISTRICT_ADMIN]: [

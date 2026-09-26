@@ -40,6 +40,7 @@ model User {
   schoolMembership SchoolMembership?
   academyMembership AcademyMembership?
   requests         Request[]
+  equipmentOrders  EquipmentPurchaseOrder[]
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
 
@@ -670,17 +671,146 @@ model Donation {
 
 // ─── Contact ───────────────────────────────────────────────────
 
+enum ContactStatus {
+  NEW
+  READ
+  REPLIED
+  CLOSED
+}
+
 model ContactMessage {
-  id        String   @id @default(cuid())
+  id        String        @id @default(cuid())
   name      String
   email     String
   phone     String?
   subject   String?
   message   String
-  isRead    Boolean  @default(false)
-  createdAt DateTime @default(now())
+  // Inbox lifecycle for the admin contact inbox. isRead kept for backward
+  // compatibility with any historical readers; new rows derive it from status.
+  status    ContactStatus @default(NEW)
+  isRead    Boolean       @default(false)
+  // Whether the Super Admin notification email was dispatched (visitor
+  // confirmation is separate and best-effort).
+  emailSent Boolean       @default(false)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
 
+  @@index([status])
   @@map("contact_messages")
+}
+
+// ─── Equipment shop ───────────────────────────────────────────
+
+enum EquipmentCategory {
+  RACQUETS
+  BALLS
+  GRIPS
+  BAGS
+  ACCESSORIES
+  TRAINING
+  OTHER
+}
+
+// Stock is never permanently deducted at purchase time — it is reserved
+// atomically when an order is created (conditional decrement, guarded against
+// going negative) and only permanently consumed when the payment is verified
+// server-side. Cancelled/failed orders release their reservation.
+model EquipmentItem {
+  id            String            @id @default(cuid())
+  name          String
+  slug          String            @unique
+  description   String?
+  shortDescription String?
+  image         String?
+  category      EquipmentCategory @default(OTHER)
+  // Whole rupees — integer money, no floats.
+  price         Int
+  stockQuantity Int               @default(0)
+  isActive      Boolean           @default(true)
+  sortOrder     Int               @default(0)
+  purchaseItems EquipmentPurchaseOrderItem[]
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([isActive, sortOrder])
+  @@index([category])
+  @@map("equipment_items")
+}
+
+enum PurchaseStatus {
+  PENDING_PAYMENT
+  PAID
+  CANCELLED
+  COMPLETED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+// An authenticated member's equipment purchase. Amounts are whole-rupee
+// integers. Item rows snapshot name + unit price at purchase time; later
+// price changes never affect existing orders.
+model EquipmentPurchaseOrder {
+  id            String          @id @default(cuid())
+  orderNumber   String          @unique
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status        PurchaseStatus  @default(PENDING_PAYMENT)
+  paymentStatus PaymentStatus   @default(PENDING)
+  subtotal      Int
+  total         Int
+  items         EquipmentPurchaseOrderItem[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("equipment_purchase_orders")
+}
+
+model EquipmentPurchaseOrderItem {
+  id                  String                 @id @default(cuid())
+  orderId             String
+  order               EquipmentPurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  equipmentId         String
+  equipment           EquipmentItem          @relation(fields: [equipmentId], references: [id])
+  productNameSnapshot String
+  // Snapshot of EquipmentItem.price (whole rupees) at purchase time — never
+  // recomputed from the product's current price.
+  unitPriceSnapshot   Int
+  quantity            Int
+  lineTotal           Int
+
+  @@index([orderId])
+  @@index([equipmentId])
+  @@map("equipment_purchase_order_items")
+}
+
+// ─── Media videos (YouTube) ───────────────────────────────────
+
+// Public Media → Videos listing. The legacy `Video` model (seed-only, unused
+// by any route) is intentionally left untouched; this model is the managed,
+// YouTube-specific listing.
+model MediaVideo {
+  id              String   @id @default(cuid())
+  title           String
+  description     String?
+  // Normalized 11-character YouTube video ID extracted server-side.
+  youtubeVideoId  String   @unique
+  // Original URL as entered by the admin (watch/youtu.be/shorts forms).
+  youtubeUrl      String
+  category        String?
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
+  @@map("media_videos")
 }
 
 model EquipmentOrder {
