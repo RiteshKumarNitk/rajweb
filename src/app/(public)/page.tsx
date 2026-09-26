@@ -13,8 +13,6 @@ import {
 } from "@/modules/home/components/home-sections";
 import { HeroSlider } from "@/modules/home/components/hero-slider";
 import { StatsBar } from "@/modules/home/components/stats-bar";
-
-export const dynamic = "force-dynamic";
 import { AboutSection } from "@/modules/home/components/about-section";
 import { siteConfig } from "@/shared/config/site";
 

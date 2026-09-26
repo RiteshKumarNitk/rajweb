@@ -5,16 +5,12 @@ import { PageHeader, PageContent } from "@/shared/components/layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Button } from "@/shared/components/ui/button";
 import { rraHistory } from "@/shared/config/site";
-import { getPublicTimeline, type PublicTimelineItem } from "@/modules/content/public-content";
 
 export const metadata: Metadata = {
   title: "RRA History",
   description:
     "The history of the Rajasthan Racquetball Association — from its formation in 2025 to its affiliation with the Indian Racquetball Association.",
 };
-
-// Decorative icons cycling across the milestone cards (UI, not content).
-const milestoneIcons = [Calendar, Flag, Trophy, GlobeIcon, Trophy];
 
 const milestones = [
   {
@@ -59,20 +55,8 @@ function GlobeIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-export default async function HistoryPage() {
+export default function HistoryPage() {
   const paragraphs = rraHistory.content.trim().split("\n\n");
-
-  // Timeline milestones are database-managed; the static list is the fallback.
-  let timeline: PublicTimelineItem[] = [];
-  try {
-    timeline = await getPublicTimeline();
-  } catch {
-    timeline = [];
-  }
-  const milestoneData =
-    timeline.length > 0
-      ? timeline.map((m, i) => ({ year: m.year, title: m.title, description: m.description, icon: milestoneIcons[i % milestoneIcons.length] }))
-      : milestones;
 
   return (
     <>
@@ -92,7 +76,7 @@ export default async function HistoryPage() {
 
         <h2 className="mb-8 text-2xl font-extrabold text-primary">Key Milestones</h2>
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {milestoneData.map(({ year, title, description, icon: Icon }) => (
+          {milestones.map(({ year, title, description, icon: Icon }) => (
             <Card key={year}>
               <CardHeader>
                 <span className="text-sm font-bold text-accent">{year}</span>
