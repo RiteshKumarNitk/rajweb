@@ -841,6 +841,7 @@ model ExecutiveMember {
   bio       String?
   email     String?
   phone     String?
+  order     Int      @default(0)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -857,7 +858,6 @@ model Partner {
   order     Int      @default(0)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
   @@map("partners")
 }
