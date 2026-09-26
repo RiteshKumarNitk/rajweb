@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
-import { FileText, History } from "lucide-react";
+import { Landmark, FileText, History, MapPin, Calendar, Download, AlertCircle, ShieldCheck, GraduationCap } from "lucide-react";
 import prisma from "@/infrastructure/database/prisma";
 import { getCurrentUser } from "@/security/auth/session";
-import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
 import { StatusBadge } from "@/shared/components/ui/status-badge";
+import { Button } from "@/shared/components/ui/button";
 import { getStorage } from "@/infrastructure/storage/storage-adapter";
 import { formatDate } from "@/lib/utils";
 import { getMembershipPricing } from "@/modules/account/membership-pricing.server";
@@ -15,8 +17,8 @@ import { AcademyResubmitActions } from "./academy-resubmit-actions";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Academy Membership",
-  description: "Apply for academy membership or view your application status.",
+  title: "Academy Affiliation Workspace",
+  description: "Apply for academy membership or view your affiliation status with Rajasthan Racquetball Association.",
 };
 
 export default async function AccountAcademyMembershipPage() {
@@ -44,86 +46,222 @@ export default async function AccountAcademyMembershipPage() {
     const storage = getStorage();
     const history = await getApplicationHistory("memberships", membership.id, membership.createdAt);
     return (
-      <div>
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-primary">Academy Membership Workspace</h1>
-          <p className="text-slate-500">Your academy membership application and its status.</p>
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-primary sm:text-3xl">
+              Academy Affiliation Workspace
+            </h1>
+            <p className="text-sm text-slate-500">
+              Official institutional membership and accredited racquetball training academy records.
+            </p>
+          </div>
+          <Button variant="outline" size="sm" asChild className="self-start sm:self-auto">
+            <Link href="/account/memberships">All Memberships</Link>
+          </Button>
         </div>
 
+        {/* Academy Hero Banner */}
+        <Card className="overflow-hidden border-slate-200 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white shadow-md">
+          <CardContent className="p-6 sm:p-7">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-4">
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border-2 border-amber-400/60 bg-slate-800 text-2xl font-bold text-amber-400 shadow-md sm:h-18 sm:w-18">
+                  <Landmark className="h-8 w-8 text-amber-400" />
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-xl font-bold sm:text-2xl">{membership.academyName}</h2>
+                    <StatusBadge status={membership.status} />
+                  </div>
+                  <p className="flex items-center gap-1.5 text-xs text-slate-300">
+                    <MapPin className="h-3.5 w-3.5 text-amber-400" /> {membership.district.name} District · Accredited Training Academy
+                  </p>
+                  <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-slate-400">
+                    <span className="font-mono bg-slate-800 px-2 py-0.5 rounded text-amber-300 font-bold border border-slate-700">
+                      ID: {membership.membershipId}
+                    </span>
+                    {membership.coachCount !== null && (
+                      <span className="bg-white/10 px-2 py-0.5 rounded text-slate-200 flex items-center gap-1">
+                        <GraduationCap className="h-3 w-3" /> Certified Coaches: {membership.coachCount}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col items-start sm:items-end gap-1 text-xs text-slate-400">
+                <span>Submitted on {formatDate(membership.createdAt)}</span>
+                {membership.approvedAt && (
+                  <span className="text-emerald-400 font-medium">Approved on {formatDate(membership.approvedAt)}</span>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Rejection Notice */}
+        {membership.status === "REJECTED" && (
+          <Card className="border-red-200 bg-red-50">
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2 text-red-800">
+                <AlertCircle className="h-5 w-5 text-red-600" />
+                <CardTitle className="text-base text-red-900">Application Requires Revision</CardTitle>
+              </div>
+              <CardDescription className="text-red-700 text-xs">
+                {membership.rejectionReason || "Please update the required academy affiliation details."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <AcademyResubmitActions
+                reason={membership.rejectionReason}
+                prefill={{ directorName: user.name, email: user.email, phone: user.phone ?? "" }}
+                resubmit={{
+                  id: membership.id,
+                  academyName: membership.academyName,
+                  district: membership.district.name,
+                  address: membership.address,
+                  coachCount: membership.coachCount,
+                }}
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Details & Document Cards */}
         <div className="grid gap-6 lg:grid-cols-3">
           <Card className="lg:col-span-2">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0">
-              <CardTitle>{membership.academyName}</CardTitle>
-              <StatusBadge status={membership.status} />
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+                  <Landmark className="h-4 w-4" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">Academy Affiliation Details</CardTitle>
+                  <CardDescription className="text-xs">Official academy facility profile on file with RRA</CardDescription>
+                </div>
+              </div>
             </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              <p><span className="text-slate-500">Membership ID:</span> <span className="font-medium">{membership.membershipId}</span></p>
-              <p><span className="text-slate-500">District:</span> <span className="font-medium">{membership.district.name}</span></p>
-              <p><span className="text-slate-500">Director:</span> <span className="font-medium">{membership.directorName}</span></p>
-              {membership.coachCount !== null && (
-                <p><span className="text-slate-500">Coach Count:</span> <span className="font-medium">{membership.coachCount}</span></p>
-              )}
-              <p><span className="text-slate-500">Application Date:</span> <span className="font-medium">{formatDate(membership.createdAt)}</span></p>
-              {membership.approvedAt && (
-                <p><span className="text-slate-500">Approval Date:</span> <span className="font-medium">{formatDate(membership.approvedAt)}</span></p>
-              )}
-              {membership.expiresAt && (
-                <p><span className="text-slate-500">Valid Until:</span> <span className="font-medium">{formatDate(membership.expiresAt)}</span></p>
-              )}
-              {membership.status === "REJECTED" && (
-                <AcademyResubmitActions
-                  reason={membership.rejectionReason}
-                  prefill={{ directorName: user.name, email: user.email, phone: user.phone ?? "" }}
-                  resubmit={{
-                    id: membership.id,
-                    academyName: membership.academyName,
-                    district: membership.district.name,
-                    address: membership.address,
-                    coachCount: membership.coachCount,
-                  }}
-                />
-              )}
+            <CardContent>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div className="rounded-lg bg-slate-50 p-3 space-y-1 border border-slate-100">
+                  <p className="text-slate-400 font-medium uppercase tracking-wider text-[10px]">Academy Name</p>
+                  <p className="font-semibold text-slate-800 text-sm">{membership.academyName}</p>
+                </div>
+
+                <div className="rounded-lg bg-slate-50 p-3 space-y-1 border border-slate-100">
+                  <p className="text-slate-400 font-medium uppercase tracking-wider text-[10px]">Director / Head Coach</p>
+                  <p className="font-semibold text-slate-800 text-sm">{membership.directorName}</p>
+                </div>
+
+                <div className="rounded-lg bg-slate-50 p-3 space-y-1 border border-slate-100">
+                  <p className="text-slate-400 font-medium uppercase tracking-wider text-[10px]">District Unit</p>
+                  <p className="font-semibold text-slate-800 text-sm">{membership.district.name} District</p>
+                </div>
+
+                <div className="rounded-lg bg-slate-50 p-3 space-y-1 border border-slate-100">
+                  <p className="text-slate-400 font-medium uppercase tracking-wider text-[10px]">Staff Coaches</p>
+                  <p className="font-semibold text-slate-800 text-sm">{membership.coachCount ?? "Not specified"}</p>
+                </div>
+
+                <div className="sm:col-span-2 rounded-lg bg-slate-50 p-3 space-y-1 border border-slate-100">
+                  <p className="text-slate-400 font-medium uppercase tracking-wider text-[10px]">Facility Address</p>
+                  <p className="font-semibold text-slate-800">{membership.address}</p>
+                </div>
+
+                {membership.expiresAt && (
+                  <div className="sm:col-span-2 rounded-lg bg-emerald-50/50 p-3 space-y-1 border border-emerald-100">
+                    <p className="text-emerald-700 font-medium uppercase tracking-wider text-[10px]">Affiliation Validity</p>
+                    <p className="font-semibold text-emerald-900">Valid until {formatDate(membership.expiresAt)}</p>
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <FileText className="h-4 w-4 text-accent" /> Documents
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              {membership.certificatePath ? (
-                <a
-                  href={storage.getUrl(membership.certificatePath)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 text-xs text-secondary hover:underline"
-                >
-                  <FileText className="h-3.5 w-3.5" /> View Membership Certificate
-                </a>
-              ) : (
-                <p className="text-slate-500">No documents available yet.</p>
-              )}
-            </CardContent>
+          {/* Affiliation Certificate & Documents */}
+          <Card className="flex flex-col justify-between">
+            <div>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                    <FileText className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">Affiliation Credentials</CardTitle>
+                    <CardDescription className="text-xs">Official membership certificates</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {membership.certificatePath ? (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 space-y-3">
+                    <div className="flex items-center gap-2 text-emerald-800">
+                      <ShieldCheck className="h-5 w-5 text-emerald-600" />
+                      <div>
+                        <p className="font-bold text-xs">Official Certificate Issued</p>
+                        <p className="text-[11px] text-emerald-600">RRA Academy Affiliation</p>
+                      </div>
+                    </div>
+                    <Button size="sm" asChild className="w-full bg-emerald-600 text-white hover:bg-emerald-700 text-xs">
+                      <a href={storage.getUrl(membership.certificatePath)} target="_blank" rel="noopener noreferrer">
+                        <Download className="mr-1.5 h-3.5 w-3.5" /> Download Certificate
+                      </a>
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-slate-200 p-4 text-center text-xs text-slate-500 space-y-1">
+                    <p className="font-medium text-slate-700">Certificate Pending Review</p>
+                    <p className="text-[11px] text-slate-400">
+                      Digital certificate will be generated upon approval by the state association.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </div>
+
+            <div className="p-6 pt-0">
+              <Button variant="ghost" size="sm" asChild className="w-full text-xs text-slate-500">
+                <Link href="/verify" target="_blank">
+                  Verify Credentials in Registry →
+                </Link>
+              </Button>
+            </div>
           </Card>
         </div>
 
-        <Card className="mt-6">
+        {/* Application History */}
+        <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <History className="h-4 w-4 text-accent" /> Application History
-            </CardTitle>
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+                <History className="h-4 w-4" />
+              </div>
+              <div>
+                <CardTitle className="text-base">Application History</CardTitle>
+                <CardDescription className="text-xs">Timeline of events for this academy membership</CardDescription>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
-            <ul className="space-y-2 text-sm">
+            <ul className="space-y-3">
               {history.map((entry, i) => (
-                <li key={entry.id} className={`flex items-center justify-between ${i < history.length - 1 ? "border-b border-slate-100 pb-2" : ""}`}>
-                  <span className="text-slate-700">
-                    {entry.label}
-                    {entry.detail ? ` — ${entry.detail}` : ""}
-                  </span>
-                  <span className="text-xs text-slate-400">{formatDate(entry.date)}</span>
+                <li
+                  key={entry.id}
+                  className={`flex flex-col sm:flex-row sm:items-center justify-between gap-1 pb-3 ${
+                    i < history.length - 1 ? "border-b border-slate-100" : ""
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span className="h-2 w-2 rounded-full bg-primary" />
+                    <span className="text-xs font-medium text-slate-700">
+                      {entry.label}
+                      {entry.detail ? ` — ${entry.detail}` : ""}
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-slate-400 sm:self-auto">{formatDate(entry.date)}</span>
                 </li>
               ))}
             </ul>
@@ -136,11 +274,26 @@ export default async function AccountAcademyMembershipPage() {
   const pricing = await getMembershipPricing();
 
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-primary">Academy Membership</h1>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-primary sm:text-3xl">Academy Affiliation</h1>
+          <p className="text-sm text-slate-500">
+            Register your training academy and coaching center with Rajasthan Racquetball Association.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" asChild className="self-start sm:self-auto">
+          <Link href="/account/memberships">All Memberships</Link>
+        </Button>
       </div>
-      <Card className="mx-auto max-w-2xl">
+
+      <Card className="mx-auto max-w-2xl border-slate-200/80 shadow-md">
+        <CardHeader className="border-b border-slate-100 bg-slate-50/50 pb-4">
+          <CardTitle className="text-lg">Academy Affiliation Application</CardTitle>
+          <CardDescription className="text-xs">
+            Complete the details below to submit your training academy for official state accreditation.
+          </CardDescription>
+        </CardHeader>
         <CardContent className="pt-6">
           <AcademyRegistrationFlow
             prefill={{ directorName: user.name, email: user.email, phone: user.phone ?? "" }}
