@@ -1,17 +1,31 @@
-import { AdminSidebar } from "@/shared/components/layout/admin-sidebar";
 import { SessionProvider } from "@/shared/components/providers/session-provider";
+import { AdminShell } from "@/shared/components/layout/admin-shell";
+import { getCurrentUser } from "@/security/auth/session";
+import prisma from "@/infrastructure/database/prisma";
 
 export const dynamic = "force-dynamic";
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  const authUser = await getCurrentUser();
+  let districtName: string | null = null;
+
+  if (authUser?.districtId) {
+    try {
+      const district = await prisma.district.findUnique({
+        where: { id: authUser.districtId },
+        select: { name: true },
+      });
+      districtName = district?.name ?? null;
+    } catch {
+      districtName = null;
+    }
+  }
+
   return (
     <SessionProvider>
-      <div className="min-h-screen bg-background">
-        <AdminSidebar />
-        <main className="lg:pl-64">
-          <div className="p-6 pt-16 lg:pt-6">{children}</div>
-        </main>
-      </div>
+      <AdminShell districtName={districtName}>
+        {children}
+      </AdminShell>
     </SessionProvider>
   );
 }
