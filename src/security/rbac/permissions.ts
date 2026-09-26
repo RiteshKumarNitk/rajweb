@@ -59,6 +59,8 @@ export const PERMISSIONS = {
   // Content
   CONTENT_READ: "content:read",
   CONTENT_MANAGE: "content:manage",
+  // Equipment enquiries (public equipment order form)
+  EQUIPMENT_READ: "equipment:read",
   // Audit
   AUDIT_READ: "audit:read",
   // Settings
@@ -91,8 +93,10 @@ export const ROLE_PERMISSIONS: Record<string, PermissionSlug[]> = {
     PERMISSIONS.CERTIFICATES_READ,
     PERMISSIONS.CERTIFICATES_ISSUE,
     PERMISSIONS.DISTRICTS_READ,
+    PERMISSIONS.DISTRICTS_MANAGE,
     PERMISSIONS.CONTENT_READ,
     PERMISSIONS.CONTENT_MANAGE,
+    PERMISSIONS.EQUIPMENT_READ,
     PERMISSIONS.AUDIT_READ,
   ],
   [ROLES.DISTRICT_ADMIN]: [

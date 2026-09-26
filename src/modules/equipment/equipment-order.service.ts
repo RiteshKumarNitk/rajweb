@@ -27,8 +27,13 @@ export async function createEquipmentOrder(input: CreateEquipmentOrderInput) {
   return order;
 }
 
-export async function listEquipmentOrders() {
+/**
+ * `districtName` scopes the list for district-scoped admins. EquipmentOrder
+ * stores the district as free text (public form), so the match is by name.
+ */
+export async function listEquipmentOrders(districtName?: string | null) {
   return prisma.equipmentOrder.findMany({
+    where: districtName === undefined ? undefined : { district: { equals: districtName ?? "", mode: "insensitive" } },
     orderBy: { createdAt: "desc" },
   });
 }

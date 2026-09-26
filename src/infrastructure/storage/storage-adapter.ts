@@ -8,11 +8,9 @@ export interface StorageAdapter {
 
 export class LocalStorageAdapter implements StorageAdapter {
   private basePath: string;
-  private publicUrl: string;
 
   constructor() {
     this.basePath = process.env.STORAGE_LOCAL_PATH || "./uploads";
-    this.publicUrl = process.env.STORAGE_PUBLIC_URL || "/uploads";
   }
 
   async upload(file: Buffer, filename: string, folder = ""): Promise<string> {
@@ -39,8 +37,10 @@ export class LocalStorageAdapter implements StorageAdapter {
     }
   }
 
+  // Files live outside public/ and are only served through the
+  // authorization-checked /api/files route — same URL shape as Netlify Blobs.
   getUrl(filePath: string): string {
-    return `${this.publicUrl}/${filePath}`;
+    return `/api/files/${filePath.split("/").map(encodeURIComponent).join("/")}`;
   }
 }
 

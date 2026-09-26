@@ -170,7 +170,7 @@ export default async function AccountTournamentsPage() {
                       <p className="text-sm font-bold text-primary">{reg.tournament.name}</p>
                       <p className="text-xs text-slate-500">Category: {reg.category?.name ?? "All Categories"}</p>
                       <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400 pt-0.5">
-                        <span>Fee: {reg.amount != null ? formatInr(reg.amount) : "N/A"}</span>
+                        <span>Fee: {reg.amount != null ? formatInr(reg.amount) : "Not on record — contact RRA"}</span>
                         <span>·</span>
                         <span>Registered on {formatDate(reg.registeredAt)}</span>
                         <span className="font-mono text-[11px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">

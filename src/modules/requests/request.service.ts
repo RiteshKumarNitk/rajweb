@@ -50,6 +50,15 @@ export async function createRequest(input: CreateRequestInput) {
     throw AppError.conflict(`You already have a pending ${REQUEST_TYPE_LABELS[input.type]} request.`);
   }
 
+  // Auto-apply types must carry the value they apply, otherwise approval
+  // would be recorded while silently changing nothing.
+  if (input.type === "CONTACT_UPDATE" && !input.requestedMobile && !input.requestedEmail) {
+    throw AppError.validation("Enter the new mobile number or email address");
+  }
+  if (input.type === "ADDRESS_UPDATE" && !input.requestedAddress?.trim()) {
+    throw AppError.validation("Enter the new address");
+  }
+
   let requestedDistrictId: string | undefined;
   if (input.type === "DISTRICT_CHANGE") {
     if (!input.requestedDistrictName) throw AppError.validation("Select the district you want to move to");

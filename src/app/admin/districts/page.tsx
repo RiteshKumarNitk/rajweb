@@ -1,7 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
 import { requireAdminScope } from "@/security/rbac/admin-scope";
-import { PERMISSIONS } from "@/security/rbac/permissions";
+import { PERMISSIONS, hasPermission } from "@/security/rbac/permissions";
 import { MapPin, Users, GraduationCap, Building2, Trophy, Phone, Mail, ShieldCheck } from "lucide-react";
+import { DistrictCardActions, type DistrictRow } from "./district-card-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -30,8 +31,13 @@ async function getDistricts(districtId?: string) {
 }
 
 export default async function AdminDistrictsPage() {
-  const { districtId } = await requireAdminScope(PERMISSIONS.DISTRICTS_READ);
+  const { user, districtId } = await requireAdminScope(PERMISSIONS.DISTRICTS_READ);
   const districts = await getDistricts(districtId);
+
+  // District-scoped admins may only edit their own district; management
+  // actions are enforced again server-side by the API (districts:manage +
+  // assertDistrictAccess).
+  const canManage = hasPermission(user, PERMISSIONS.DISTRICTS_MANAGE);
 
   const totalDistricts = districts.length;
   const activeDistricts = districts.filter((d) => d.isActive).length;
@@ -197,6 +203,24 @@ export default async function AdminDistrictsPage() {
                       <Phone className="h-3 w-3 text-slate-400" /> {d.phone}
                     </span>
                   )}
+                </div>
+              )}
+
+              {canManage && (
+                <div className="border-t border-slate-100 p-3">
+                  <DistrictCardActions
+                    district={{
+                      id: d.id,
+                      name: d.name,
+                      slug: d.slug,
+                      isActive: d.isActive,
+                      president: d.president,
+                      secretary: d.secretary,
+                      email: d.email,
+                      phone: d.phone,
+                      address: d.address,
+                    } satisfies DistrictRow}
+                  />
                 </div>
               )}
             </Card>

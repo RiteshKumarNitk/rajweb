@@ -185,7 +185,16 @@ export default async function AdminTournamentDetailPage({
                         <p className="font-mono text-xs text-slate-400">{registration.player.playerId}</p>
                       </td>
                       <td className="py-2 pr-4">{registration.category?.name ?? "—"}</td>
-                      <td className="py-2 pr-4">{registration.amount != null ? formatInr(registration.amount) : "—"}</td>
+                      <td className="py-2 pr-4">{registration.amount != null ? (
+                          formatInr(registration.amount)
+                        ) : (
+                          <span
+                            className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-700"
+                            title="Registered before fee snapshots existed — no amount on record; not payable online"
+                          >
+                            Legacy · no amount
+                          </span>
+                        )}</td>
                       <td className="py-2 pr-4">{registration.status}</td>
                       <td className="py-2">{formatTournamentSchedule(registration.registeredAt)}</td>
                     </tr>

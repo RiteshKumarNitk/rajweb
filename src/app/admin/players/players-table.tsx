@@ -53,9 +53,15 @@ export function PlayersTable({ players }: { players: PlayerRow[] }) {
   }, [players, searchQuery, statusFilter]);
 
   async function handleApproveReject(player: PlayerRow, action: "approve" | "reject") {
+    let body: string | undefined;
+    if (action === "reject") {
+      const reason = window.prompt(`Reason for rejecting ${player.name}'s application:`)?.trim();
+      if (!reason) return;
+      body = JSON.stringify({ reason });
+    }
     setLoading(`${player.id}-${action}`);
     try {
-      const res = await apiFetch(`/api/admin/players/${player.id}/${action}`, { method: "POST" });
+      const res = await apiFetch(`/api/admin/players/${player.id}/${action}`, { method: "POST", body });
       const { message } = await handleApiFetch(res);
       toast.success(message ?? "Action completed");
       router.refresh();

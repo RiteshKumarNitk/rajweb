@@ -21,8 +21,6 @@ const clubSchema = z.object({
   district: z.string().min(1, "Please select a district"),
   address: z.string().min(10, "Please provide a complete address"),
   courts: z.string().min(1, "Number of courts is required"),
-  establishedYear: z.string().min(4, "Year is required"),
-  additionalInfo: z.string().optional(),
 });
 
 type ClubFormData = z.infer<typeof clubSchema>;
@@ -103,15 +101,8 @@ export function ClubMembershipForm() {
         <Textarea id="address" placeholder="Full club address" {...register("address")} />
         {errors.address && <p className="text-sm text-secondary">{errors.address.message}</p>}
       </div>
-      <div className="space-y-2">
-        <Label htmlFor="establishedYear">Year Established</Label>
-        <Input id="establishedYear" placeholder="e.g. 2020" {...register("establishedYear")} />
-        {errors.establishedYear && <p className="text-sm text-secondary">{errors.establishedYear.message}</p>}
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="additionalInfo">Additional Information (Optional)</Label>
-        <Textarea id="additionalInfo" placeholder="Facilities, coaching staff, etc." {...register("additionalInfo")} />
-      </div>
+
+
       <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? "Submitting..." : "Submit Application"}
       </Button>

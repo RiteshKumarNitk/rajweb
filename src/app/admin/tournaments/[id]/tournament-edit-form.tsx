@@ -9,6 +9,7 @@ import { Input } from "@/shared/components/ui/input";
 import { Label } from "@/shared/components/ui/label";
 import { Textarea } from "@/shared/components/ui/textarea";
 import { apiFetch, handleApiFetch } from "@/lib/api-client";
+import { tournamentDateOrderError } from "@/modules/tournaments/tournament-dates";
 
 export type DistrictOption = { id: string; name: string };
 
@@ -96,6 +97,17 @@ export function TournamentEditForm({
   const banner = watch("banner");
 
   async function onSubmit(data: TournamentFormData) {
+    // Same ordering rule the server enforces; checked here for fast feedback.
+    const dateError = tournamentDateOrderError({
+      startDate: data.startDate,
+      endDate: data.endDate,
+      registrationStart: data.registrationStart || null,
+      registrationDeadline: data.registrationDeadline || null,
+    });
+    if (dateError) {
+      toast.error(dateError);
+      return;
+    }
     try {
       const res = await apiFetch(`/api/admin/tournaments/${tournament.id}`, {
         method: "PATCH",

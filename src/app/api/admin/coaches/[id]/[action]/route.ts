@@ -39,9 +39,15 @@ export const POST = withApiHandler(
       try {
         body = await request.json();
       } catch {
-        // no body — reason stays empty
+        // empty body — validated below
       }
       const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+      if (!reason) {
+        throw AppError.badRequest("A rejection reason is required");
+      }
+      if (reason.length > 1000) {
+        throw AppError.badRequest("Rejection reason must be 1000 characters or fewer");
+      }
 
       await rejectCoach(id, reason);
       await createAuditLog({
@@ -49,7 +55,7 @@ export const POST = withApiHandler(
         action: "REJECT",
         module: "coaches",
         entityId: id,
-        details: reason ? { reason } : undefined,
+        details: { reason },
       });
       return jsonSuccess({ coachId: id, status: "REJECTED" }, requestId, "Coach rejected");
     }

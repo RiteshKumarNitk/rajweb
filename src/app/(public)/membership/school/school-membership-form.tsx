@@ -20,10 +20,7 @@ const schoolSchema = z.object({
   phone: z.string().min(10, "Please enter a valid phone number"),
   district: z.string().min(1, "Please select a district"),
   address: z.string().min(10, "Please provide a complete address"),
-  boardAffiliation: z.string().min(2, "Board affiliation is required"),
   studentCount: z.string().min(1, "Estimated student count is required"),
-  sportsIncharge: z.string().min(2, "Sports incharge name is required"),
-  additionalInfo: z.string().optional(),
 });
 
 type SchoolFormData = z.infer<typeof schoolSchema>;
@@ -93,18 +90,10 @@ export function SchoolMembershipForm() {
           </select>
           {errors.district && <p className="text-sm text-secondary">{errors.district.message}</p>}
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="boardAffiliation">Board Affiliation</Label>
-          <Input id="boardAffiliation" placeholder="e.g. CBSE, RBSE" {...register("boardAffiliation")} />
-          {errors.boardAffiliation && <p className="text-sm text-secondary">{errors.boardAffiliation.message}</p>}
-        </div>
+
       </div>
       <div className="grid gap-6 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="sportsIncharge">Sports Incharge</Label>
-          <Input id="sportsIncharge" placeholder="Sports teacher/coordinator" {...register("sportsIncharge")} />
-          {errors.sportsIncharge && <p className="text-sm text-secondary">{errors.sportsIncharge.message}</p>}
-        </div>
+
         <div className="space-y-2">
           <Label htmlFor="studentCount">Estimated Students Interested</Label>
           <Input id="studentCount" type="number" min="1" placeholder="50" {...register("studentCount")} />
@@ -116,10 +105,7 @@ export function SchoolMembershipForm() {
         <Textarea id="address" placeholder="Full school address" {...register("address")} />
         {errors.address && <p className="text-sm text-secondary">{errors.address.message}</p>}
       </div>
-      <div className="space-y-2">
-        <Label htmlFor="additionalInfo">Additional Information (Optional)</Label>
-        <Textarea id="additionalInfo" placeholder="Existing sports facilities, programs, etc." {...register("additionalInfo")} />
-      </div>
+
       <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? "Submitting..." : "Submit Application"}
       </Button>

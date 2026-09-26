@@ -1,5 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
 import { listEquipmentOrders } from "@/modules/equipment/equipment-order.service";
+import prisma from "@/infrastructure/database/prisma";
+import { requireAdminScope } from "@/security/rbac/admin-scope";
+import { PERMISSIONS } from "@/security/rbac/permissions";
 import { formatDate } from "@/lib/utils";
 import { DataTable, ColumnDef } from "@/shared/components/ui/data-table";
 import { ShoppingBag, Phone, MapPin, Package, Calendar, User } from "lucide-react";
@@ -9,10 +12,16 @@ export const dynamic = "force-dynamic";
 type EquipmentOrder = Awaited<ReturnType<typeof listEquipmentOrders>>[number];
 
 export default async function EquipmentOrdersPage() {
+  const { districtId } = await requireAdminScope(PERMISSIONS.EQUIPMENT_READ);
   let orders: EquipmentOrder[] = [];
 
   try {
-    orders = await listEquipmentOrders();
+    // District-scoped admins only see enquiries naming their district; a
+    // scoped user with no district gets a sentinel id that resolves to null.
+    const districtName = districtId
+      ? ((await prisma.district.findUnique({ where: { id: districtId }, select: { name: true } }))?.name ?? null)
+      : undefined;
+    orders = await listEquipmentOrders(districtName);
   } catch {
     orders = [];
   }

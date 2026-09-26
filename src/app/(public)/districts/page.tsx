@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { MapPin } from "lucide-react";
+import { MapPin, Mail, Phone } from "lucide-react";
 import { PageHeader, PageContent } from "@/shared/components/layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Button } from "@/shared/components/ui/button";
 import { LogoImage } from "@/shared/components/ui/media-image";
 import { rajasthanDistricts, districtLogos } from "@/shared/config/site";
+import { getActiveDistricts, type PublicDistrict } from "@/modules/districts/public-districts";
+
+export const revalidate = 60;
 
 export const metadata: Metadata = {
   title: "District Associations",
@@ -13,8 +16,18 @@ export const metadata: Metadata = {
     "Explore district racquetball associations across all 33 districts of Rajasthan affiliated with the Rajasthan Racquetball Association.",
 };
 
-export default function DistrictsPage() {
+export default async function DistrictsPage() {
+  let dbDistricts: PublicDistrict[] = [];
+  try {
+    dbDistricts = await getActiveDistricts();
+  } catch {
+    // Database unavailable — fall back to the static district list below.
+    dbDistricts = [];
+  }
+
   const featuredDistricts = Object.keys(districtLogos);
+  const dbNames = new Set(dbDistricts.map((d) => d.name.toLowerCase()));
+  const byName = new Map(dbDistricts.map((d) => [d.name.toLowerCase(), d]));
 
   return (
     <>
@@ -34,59 +47,104 @@ export default function DistrictsPage() {
           <section className="mb-14">
             <h2 className="mb-6 text-xl font-bold text-primary">Affiliated District Chapters</h2>
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-              {featuredDistricts.map((district) => (
-                <Card key={district} className="overflow-hidden text-center">
-                  <CardContent className="flex flex-col items-center gap-4 p-6">
-                    <div className="flex h-28 w-28 items-center justify-center">
-                      <LogoImage
-                        src={districtLogos[district]}
-                        alt={`${district} Racquetball Association`}
-                        maxHeight={112}
-                        maxWidth={112}
-                      />
-                    </div>
-                    <div>
-                      <p className="font-bold text-primary">{district}</p>
-                      <p className="text-sm text-slate-500">District Racquetball Association</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+              {featuredDistricts.map((district) => {
+                const record = byName.get(district.toLowerCase());
+                return (
+                  <Card key={district} className="overflow-hidden text-center">
+                    <CardContent className="flex flex-col items-center gap-4 p-6">
+                      <div className="flex h-28 w-28 items-center justify-center">
+                        <LogoImage
+                          src={districtLogos[district]}
+                          alt={`${district} Racquetball Association`}
+                          maxHeight={112}
+                          maxWidth={112}
+                        />
+                      </div>
+                      <div>
+                        <p className="font-bold text-primary">{district}</p>
+                        <p className="text-sm text-slate-500">District Racquetball Association</p>
+                        {record?.president && (
+                          <p className="mt-1 text-xs text-slate-500">President: {record.president}</p>
+                        )}
+                        {record?.email && (
+                          <a
+                            href={`mailto:${record.email}`}
+                            className="mt-1 inline-flex items-center gap-1 text-xs text-secondary hover:underline"
+                          >
+                            <Mail className="h-3 w-3" /> {record.email}
+                          </a>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           </section>
         )}
 
         <h2 className="mb-6 text-xl font-bold text-primary">All Rajasthan Districts</h2>
         <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-          {rajasthanDistricts.map((district) => (
-            <Card key={district} className="group hover:border-secondary/30">
-              <CardHeader className="pb-2">
-                <div className="flex items-center gap-3">
-                  {districtLogos[district] ? (
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center">
-                      <LogoImage
-                        src={districtLogos[district]}
-                        alt={district}
-                        maxHeight={40}
-                        maxWidth={40}
-                      />
+          {rajasthanDistricts.map((district) => {
+            const record = byName.get(district.toLowerCase());
+            const hasLogo = Boolean(districtLogos[district]);
+
+            return (
+              <Card key={district} className="group hover:border-secondary/30">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-3">
+                    {hasLogo ? (
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+                        <LogoImage
+                          src={districtLogos[district]}
+                          alt={district}
+                          maxHeight={40}
+                          maxWidth={40}
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/5 group-hover:bg-secondary/10">
+                        <MapPin className="h-5 w-5 text-primary group-hover:text-secondary" />
+                      </div>
+                    )}
+                    <CardTitle className="text-base">{district}</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {record ? (
+                    <div className="space-y-1 text-sm text-slate-500">
+                      <p className="font-medium text-slate-700">
+                        {hasLogo ? "Affiliated chapter" : "District Association — Rajasthan"}
+                      </p>
+                      {record.secretary && <p>Secretary: {record.secretary}</p>}
+                      {record.phone && (
+                        <p className="flex items-center gap-1">
+                          <Phone className="h-3 w-3" /> {record.phone}
+                        </p>
+                      )}
+                      {record.email && (
+                        <a
+                          href={`mailto:${record.email}`}
+                          className="inline-flex items-center gap-1 text-secondary hover:underline"
+                        >
+                          <Mail className="h-3 w-3" /> {record.email}
+                        </a>
+                      )}
                     </div>
                   ) : (
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/5 group-hover:bg-secondary/10">
-                      <MapPin className="h-5 w-5 text-primary group-hover:text-secondary" />
-                    </div>
+                    <p className="text-sm text-slate-500">District Association — Rajasthan</p>
                   )}
-                  <CardTitle className="text-base">{district}</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-slate-500">
-                  {districtLogos[district] ? "Affiliated chapter" : "District Association — Rajasthan"}
-                </p>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
+
+        {dbNames.size > 0 && (
+          <p className="mt-6 text-sm text-slate-400">
+            Showing {dbNames.size} active district associations with published contact details.
+          </p>
+        )}
 
         <div className="mt-12 rounded-xl bg-primary p-8 text-center text-white md:p-12">
           <h2 className="text-2xl font-extrabold">Start a District Chapter</h2>

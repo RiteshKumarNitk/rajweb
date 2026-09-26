@@ -16,7 +16,6 @@ const donationSchema = z.object({
   phone: z.string().min(10, "Please enter a valid phone number"),
   amount: z.string().min(1, "Please enter an amount"),
   purpose: z.string().min(1, "Please select a purpose"),
-  panNumber: z.string().optional(),
   message: z.string().optional(),
 });
 
@@ -75,7 +74,6 @@ export function DonationForm() {
                 { label: "Equipment Support", value: "Equipment Support" },
               ],
             },
-            { name: "panNumber", label: "PAN Number (Optional, for 80G receipt)", placeholder: "ABCDE1234F" },
             { name: "message", label: "Message (Optional)", type: "textarea", placeholder: "Any specific instructions or dedication...", className: "sm:col-span-2" },
           ]}
         />

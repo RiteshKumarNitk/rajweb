@@ -130,3 +130,19 @@ export async function registerForTournament(
     throw error;
   }
 }
+
+/**
+ * The only amount a registration may ever be charged: the snapshot written at
+ * registration time. Legacy rows created before the snapshot existed can have
+ * a null amount — those are refused (never re-priced from the category's
+ * current fee, never taken from the client) and must be resolved by an admin.
+ */
+export function getPayableRegistrationAmount(registration: { id: string; amount: number | null }): number {
+  const { amount } = registration;
+  if (amount == null || !Number.isInteger(amount) || amount < 0) {
+    throw AppError.validation(
+      "This registration has no valid registration-time amount and cannot be paid online. Please contact RRA administration."
+    );
+  }
+  return amount;
+}

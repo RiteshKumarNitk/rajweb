@@ -21,8 +21,6 @@ const playerSchema = z.object({
   gender: z.string().min(1, "Please select gender"),
   district: z.string().min(1, "Please select a district"),
   category: z.string().min(1, "Please select a category"),
-  clubName: z.string().optional(),
-  aadharNumber: z.string().min(12, "Aadhar number must be 12 digits").max(12),
 });
 
 type PlayerFormData = z.infer<typeof playerSchema>;
@@ -139,17 +137,7 @@ export function PlayerRegistrationForm() {
           {errors.category && <p className="text-sm text-secondary">{errors.category.message}</p>}
         </div>
       </div>
-      <div className="grid gap-6 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="clubName">Club / Academy (Optional)</Label>
-          <Input id="clubName" placeholder="Affiliated club name" {...register("clubName")} />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="aadharNumber">Aadhar Number</Label>
-          <Input id="aadharNumber" placeholder="12-digit Aadhar number" maxLength={12} {...register("aadharNumber")} />
-          {errors.aadharNumber && <p className="text-sm text-secondary">{errors.aadharNumber.message}</p>}
-        </div>
-      </div>
+
       <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? "Registering..." : "Register as Player"}
       </Button>

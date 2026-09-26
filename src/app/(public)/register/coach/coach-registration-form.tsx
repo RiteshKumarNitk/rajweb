@@ -18,11 +18,8 @@ const coachSchema = z.object({
   email: z.string().email("Please enter a valid email"),
   phone: z.string().min(10, "Please enter a valid phone number"),
   district: z.string().min(1, "Please select a district"),
-  certificationLevel: z.string().min(1, "Please select certification level"),
-  experienceYears: z.string().min(1, "Experience is required"),
-  affiliatedClub: z.string().optional(),
+  certificationLevel: z.enum(["LEVEL_1", "LEVEL_2", "LEVEL_3", "INTERNATIONAL"], "Please select certification level"),
   qualifications: z.string().min(10, "Please describe your qualifications"),
-  aadharNumber: z.string().min(12, "Aadhar number must be 12 digits").max(12),
 });
 
 type CoachFormData = z.infer<typeof coachSchema>;
@@ -40,18 +37,12 @@ export function CoachRegistrationForm() {
   async function onSubmit(data: CoachFormData) {
     if (blockSubmitForStaticRelease("Coach registration")) return;
     try {
-      const levelMap: Record<string, string> = {
-        "level-1": "LEVEL_1",
-        "level-2": "LEVEL_2",
-        "level-3": "LEVEL_3",
-        international: "INTERNATIONAL",
-      };
       const response = await apiPost("/api/coaches/register", {
           name: data.fullName,
           email: data.email,
           mobile: data.phone,
           qualification: data.qualifications,
-          certificationLevel: levelMap[data.certificationLevel] || "LEVEL_1",
+          certificationLevel: data.certificationLevel,
           district: data.district,
         });
       const { data: payload, message } = await handleApiFetch<{ coachId: string }>(response);
@@ -109,31 +100,16 @@ export function CoachRegistrationForm() {
             defaultValue=""
           >
             <option value="" disabled>Select level</option>
-            <option value="Level 1">Level 1 — Beginner Coach</option>
-            <option value="Level 2">Level 2 — Intermediate Coach</option>
-            <option value="Level 3">Level 3 — Advanced Coach</option>
-            <option value="International">International Certification</option>
-            <option value="None">Applying for Certification</option>
+            <option value="LEVEL_1">Level 1 — Beginner Coach</option>
+            <option value="LEVEL_2">Level 2 — Intermediate Coach</option>
+            <option value="LEVEL_3">Level 3 — Advanced Coach</option>
+            <option value="INTERNATIONAL">International Certification</option>
           </select>
           {errors.certificationLevel && <p className="text-sm text-secondary">{errors.certificationLevel.message}</p>}
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="experienceYears">Years of Experience</Label>
-          <Input id="experienceYears" type="number" min="0" placeholder="5" {...register("experienceYears")} />
-          {errors.experienceYears && <p className="text-sm text-secondary">{errors.experienceYears.message}</p>}
-        </div>
+
       </div>
-      <div className="grid gap-6 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="affiliatedClub">Affiliated Club / Academy (Optional)</Label>
-          <Input id="affiliatedClub" placeholder="Club or academy name" {...register("affiliatedClub")} />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="aadharNumber">Aadhar Number</Label>
-          <Input id="aadharNumber" placeholder="12-digit Aadhar number" maxLength={12} {...register("aadharNumber")} />
-          {errors.aadharNumber && <p className="text-sm text-secondary">{errors.aadharNumber.message}</p>}
-        </div>
-      </div>
+
       <div className="space-y-2">
         <Label htmlFor="qualifications">Qualifications & Experience</Label>
         <Textarea
