@@ -14,6 +14,17 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ["lucide-react"],
   },
+  async redirects() {
+    // Legacy: /news has never been a route; the news page lives at /media/news.
+    // Keep old bookmarks/links working instead of 404ing.
+    return [
+      {
+        source: "/news",
+        destination: "/media/news",
+        permanent: true,
+      },
+    ];
+  },
   async headers() {
     return [
       {

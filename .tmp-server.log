@@ -1,0 +1,31 @@
+▲ Next.js 16.2.9
+- Local:         http://localhost:3210
+- Network:       http://172.18.192.1:3210
+✓ Ready in 1470ms
+⚠ Attempted to load @next/swc-win32-x64-msvc, but an error occurred: \\?\C:\Users\ADMIN\Documents\github ritesh\innovatex\rajweb\node_modules\@next\swc-win32-x64-msvc\next-swc.win32-x64-msvc.node is not a valid Win32 application.
+\\?\C:\Users\ADMIN\Documents\github ritesh\innovatex\rajweb\node_modules\@next\swc-win32-x64-msvc\next-swc.win32-x64-msvc.node
+(node:14948) Warning: SECURITY WARNING: The SSL modes 'prefer', 'require', and 'verify-ca' are treated as aliases for 'verify-full'.
+In the next major version (pg-connection-string v3.0.0 and pg v9.0.0), these modes will adopt standard libpq semantics, which have weaker security guarantees.
+
+To prepare for this change:
+- If you want the current behavior, explicitly use 'sslmode=verify-full'
+- If you want libpq compatibility now, use 'uselibpqcompat=true&sslmode=require'
+
+See https://www.postgresql.org/docs/current/libpq-ssl.html for libpq SSL mode definitions.
+(Use `node --trace-warnings ...` to show where the warning was created)
+prisma:error 
+Invalid `prisma.mediaVideo.findMany()` invocation:
+
+
+The table `public.media_videos` does not exist in the current database.
+prisma:error 
+Invalid `prisma.gallery.findMany()` invocation:
+
+
+The column `galleries.imageUrl` does not exist in the current database.
+prisma:error 
+Invalid `prisma.equipmentItem.findMany()` invocation:
+
+
+The table `public.equipment_items` does not exist in the current database.
+{"level":40,"time":1790446648280,"app":"rra-platform","env":"production","requestId":"0fc742c6-aafa-4ae7-844b-29a3b9ed1c1d","module":"contact","code":"FORBIDDEN","message":"Invalid or missing CSRF token","path":"/api/contact"}
