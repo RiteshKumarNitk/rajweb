@@ -4,6 +4,7 @@ import { PageHeader, PageContent } from "@/shared/components/layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { MediaImage } from "@/shared/components/ui/media-image";
 import { siteConfig, executiveCommittee } from "@/shared/config/site";
+import { getPublicCommittee, type PublicCommitteeMember } from "@/modules/content/public-content";
 
 export const metadata: Metadata = {
   title: "Executive Committee",
@@ -11,7 +12,42 @@ export const metadata: Metadata = {
     "Meet the executive committee of the Rajasthan Racquetball Association — the leadership team guiding racquetball development across Rajasthan.",
 };
 
-export default function ExecutiveCommitteePage() {
+export default async function ExecutiveCommitteePage() {
+  // Database-driven committee with the original static config as fallback —
+  // same members, same card UI.
+  let members: PublicCommitteeMember[] = [];
+  try {
+    members = await getPublicCommittee();
+  } catch {
+    members = [];
+  }
+
+  const committee: {
+    name: string;
+    role: string;
+    photo: string;
+    description: string;
+    positions?: { role: string; organization: string }[];
+    badge?: string;
+  }[] =
+    members.length > 0
+      ? members.map((m) => ({
+          name: m.name,
+          role: m.designation,
+          photo: m.photo ?? siteConfig.url + "/images/cropped-rra-logo.webp",
+          description: m.bio ?? "",
+          positions: m.positions ?? undefined,
+          badge: m.badge ?? undefined,
+        }))
+      : executiveCommittee.map((m) => ({
+          name: m.name,
+          role: m.role,
+          photo: m.photo,
+          description: m.description,
+          positions: "positions" in m ? m.positions : undefined,
+          badge: "badge" in m ? m.badge : undefined,
+        }));
+
   return (
     <>
       <PageHeader
@@ -37,7 +73,7 @@ export default function ExecutiveCommitteePage() {
         </p>
 
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
-          {executiveCommittee.map((member) => (
+          {committee.map((member) => (
             <Card key={`${member.role}-${member.name}`} className="overflow-hidden">
               <MediaImage
                 src={member.photo}

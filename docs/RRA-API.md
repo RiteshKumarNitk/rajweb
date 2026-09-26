@@ -73,6 +73,10 @@ Architecture of the handler pipeline: [RRA-ARCHITECTURE.md → Backend](RRA-ARCH
 | 32 | POST | `/api/admin/users/{id}/{action}` | `users:update` | yes |
 | 33 | POST | `/api/admin/roles` | `roles:manage` | yes |
 | 34 | PATCH | `/api/admin/roles/{id}` | `roles:manage` | yes |
+| 35 | POST | `/api/admin/gallery` | `media:manage` | yes |
+| 36 | PATCH, DELETE | `/api/admin/gallery/{id}` | `media:manage` | yes |
+| 37 | POST | `/api/admin/content/committee` · `/achievements` · `/timeline` · `/news` · `/partners` | `content:manage` | yes |
+| 38 | PATCH, DELETE | `/api/admin/content/{committee\|achievements\|timeline\|news\|partners}/{id}` | `content:manage` | yes |
 
 **There are no list/GET APIs for admin data** — admin pages read the database directly in Server Components. There are no Payment, Receipt, Notification, Fixture, Match, Ranking, Media-CMS-write, Settings-write, or Certificate-revoke APIs.
 
@@ -457,6 +461,36 @@ See 4.3 (`/api/admin/players/{id}/certificate`). No coach issuance and no revoca
 - `PATCH /api/admin/roles/{id}` — body `{ "permissionIds": [...] }` replaces the set atomically.
 - **Errors:** 403 "Built-in system roles cannot be edited"; 404.
 - **Success:** `{ id, permissions: [slugs] }`. **Audit:** UPDATE `roles` with previous/new slugs.
+
+---
+
+## 13a. Admin Gallery APIs
+
+### 13a.1 Create gallery item
+- `POST /api/admin/gallery` — `media:manage`, CSRF.
+- **Body:** `{ "title": 2–200, "category": 1–100 (Tournament/Events/Action/Training/Team/Facilities/Leadership on the form), "imageUrl": 1–500, "description"?: ≤2000, "driveUrl"?: Google Drive URL | null, "sortOrder"?: int ≥0 (default 0), "isPublished"?: bool (default false) }`.
+- **driveUrl validation:** server-side `isValidDriveUrl()` — https/http on `drive.google.com` (or `docs.google.com` with `/d/`); stored as-is, never fetched server-side. null/"" removes the link.
+- **Success:** `{ id, title, slug, isPublished }` (slug auto-deduped). **Audit:** CREATE `GALLERY_ITEM_CREATED`. Revalidates `public-gallery` + `/media/gallery`.
+
+### 13a.2 Update / delete gallery item
+- `PATCH /api/admin/gallery/{id}` — same fields, all optional; `driveUrl: null` removes the link; `isPublished` toggles public visibility (publishedAt kept from first publish).
+- **Audit:** UPDATE `GALLERY_ITEM_ACTIVATED` / `GALLERY_ITEM_DEACTIVATED` / `GALLERY_ITEM_UPDATED` (+ `GALLERY_DRIVE_URL_CHANGED` detail when the link changed), with previous/new values.
+- `DELETE /api/admin/gallery/{id}` — hard delete (cascades `GalleryImage` rows). **Audit:** DELETE `GALLERY_ITEM_DELETED`.
+- **Errors:** 400 validation / "No changes provided"; 401/403 (session/permission/CSRF); 404 unknown id.
+- Public page always shows only `isPublished = true` items, ordered `sortOrder` asc then `createdAt` desc; the lightbox shows the Drive button only when a link exists.
+
+---
+
+## 13b. Admin Website-Content APIs (CMS)
+
+Collections: `committee` (ExecutiveMember), `achievements` (stats bar), `timeline` (history milestones), `news`, `partners` (`type` = `sponsor`\|`federation`; physio records exist for future use).
+
+- **Create:** `POST /api/admin/content/{collection}` — `content:manage`, CSRF, Zod-validated body per collection (see `src/modules/content/content.service.ts`). Committee/partners validate image refs (`/images/…` or http(s) URL) and partner `website` as external http(s); news auto-slugs with dedupe.
+- **Update:** `PATCH …/{id}` — partial bodies; `isActive` toggles public visibility (audit `*_ACTIVATED` / `*_DEACTIVATED`), other changes audit `*_UPDATED`.
+- **Delete:** `DELETE …/{id}` — plain delete; none of these tables are referenced by other entities (safe), audit `*_DELETED`.
+- **Audit:** module `content`, entityType = model name, events `COMMITTEE_MEMBER_*`, `ACHIEVEMENT_*`, `TIMELINE_ITEM_*`, `NEWS_ITEM_*`, `PARTNER_*`.
+- **Cache:** every write calls `revalidateWebsiteContent()` → tag `public-content` + paths `/`, `/about/executive-committee`, `/about/history`, `/media/news`.
+- **Public reads:** only `isActive` (news additionally `isPublished`), ordered `sortOrder`/`order` asc then oldest-first; news newest-first. Every public page falls back to the previous static data when the table is empty or the DB is unreachable.
 
 ---
 

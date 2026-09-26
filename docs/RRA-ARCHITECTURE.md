@@ -267,11 +267,16 @@ Note: `TournamentRegistration` has no index on `playerId` or `categoryId` other 
 
 | Model | Purpose | Written by |
 |---|---|---|
-| `News`, `Video`, `Gallery`, `GalleryImage` | Media CMS | Seed only (no admin write API); read by public/admin pages |
+| `News`, `Video` | Media CMS | `News` is now admin-managed via `/api/admin/content/news*` (`content:manage`): the public newsfeed + home Latest News read `isActive && isPublished` rows; `isActive` (new) is the CMS visibility flag, `isPublished` retained. `Video` remains seed-only (the videos page uses the static YouTube list) |
+| `Gallery`, `GalleryImage` | Media CMS | `Gallery` is now admin-managed: public `/media/gallery` reads `isPublished` items (`sortOrder` asc) with `imageUrl` + optional `driveUrl` (Google Drive link opened from the item lightbox, validated server-side, never fetched server-side). Writes via `/api/admin/gallery*` (`media:manage`, CSRF, audit `GALLERY_*`); revalidates tag `public-gallery`. `GalleryImage` remains seed-only |
 | `Donation` | Donation pledges (no payment) | `POST /api/donations` |
 | `ContactMessage` | Contact form | `POST /api/contact` |
 | `EquipmentOrder` | Equipment enquiries (index createdAt) | `POST /api/equipment/orders` |
-| `WebsiteContent`, `ExecutiveMember`, `Partner` | CMS tables | **Unused** (content lives in `site.ts`) |
+| `WebsiteContent` | CMS table | **Unused** (single-page content still lives in `site.ts` — see below) |
+| `ExecutiveMember` | Executive committee (public page + `/admin/content/committee`) | `positions Json?` (RRA/IRA posts), `badge?`, `sortOrder`, `isActive`; previously unused |
+| `Partner` | Sponsors, federations (home sections) | `type` (`sponsor`\|`federation`\|`physio`), `role/location/phone/services Json?` (physio), `order`, `isActive`; previously unused |
+| `Achievement` | Home stats-bar counters | `label`, `value`, `sortOrder`, `isActive` (new table) |
+| `TimelineItem` | History timeline milestones | `year`, `title`, `description`, `sortOrder`, `isActive` (new table) |
 | `AuditLog` (`audit_logs`) | Audit trail | See §11. Indexes: userId, module, createdAt |
 | `Setting` (`settings`) | Key/value config | Seed; read by membership pricing and `/admin/settings` |
 

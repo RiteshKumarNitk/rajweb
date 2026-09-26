@@ -3,6 +3,8 @@ import Link from "next/link";
 import { ArrowRight, Calendar } from "lucide-react";
 import { PageHeader, PageContent } from "@/shared/components/layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
+import { getPublicNews, type PublicNewsItem } from "@/modules/content/public-content";
+import { formatDate } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: "News",
@@ -10,7 +12,8 @@ export const metadata: Metadata = {
     "Latest news, announcements, and updates from the Rajasthan Racquetball Association.",
 };
 
-const newsItems = [
+/** Original static fallback — used only when the database has no active news. */
+const staticNews = [
   {
     title: "RRA Affiliated with Indian Racquetball Association",
     date: "January 2025",
@@ -55,7 +58,24 @@ const newsItems = [
   },
 ];
 
-export default function NewsPage() {
+export default async function NewsPage() {
+  let dbNews: PublicNewsItem[] = [];
+  try {
+    dbNews = await getPublicNews();
+  } catch {
+    dbNews = [];
+  }
+
+  const items =
+    dbNews.length > 0
+      ? dbNews.map((item) => ({
+          title: item.title,
+          date: item.publishedAt ? formatDate(item.publishedAt) : "",
+          excerpt: item.excerpt ?? "",
+          category: item.category ?? "News",
+        }))
+      : staticNews;
+
   return (
     <>
       <PageHeader
@@ -65,7 +85,7 @@ export default function NewsPage() {
       />
       <PageContent>
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {newsItems.map((item) => (
+          {items.map((item) => (
             <Card key={item.title} className="flex flex-col">
               <CardHeader>
                 <div className="flex items-center justify-between">

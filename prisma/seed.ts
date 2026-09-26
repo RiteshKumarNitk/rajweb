@@ -152,6 +152,7 @@ async function main() {
       content: "The Rajasthan Racquetball Association (RRA) was formed in 2025 and received official affiliation from the Indian Racquetball Association (IRA) in the same year, marking a significant milestone for racquetball in Rajasthan.",
       category: "Announcement",
       tags: ["RRA", "Affiliation", "IRA"],
+      isActive: true,
       isPublished: true,
       publishedAt: new Date("2025-01-15"),
     },
@@ -162,6 +163,7 @@ async function main() {
       content: "The Rajasthan Racquetball Association is proud to announce the inaugural State Racquetball Championship 2025, to be held across multiple categories including Junior, Senior, Open, and Professional.",
       category: "Tournament",
       tags: ["Championship", "Tournament"],
+      isActive: true,
       isPublished: true,
       publishedAt: new Date("2025-02-01"),
     },
@@ -172,6 +174,7 @@ async function main() {
       content: "The RRA player registration portal is now live. All aspiring racquetball players across Rajasthan can register online and receive official RRA player certification upon approval.",
       category: "Registration",
       tags: ["Players", "Registration"],
+      isActive: true,
       isPublished: true,
       publishedAt: new Date("2025-02-15"),
     },
@@ -254,6 +257,150 @@ async function main() {
       update: {},
       create: video,
     });
+  }
+
+  // Gallery items — migrates the static siteImages.gallery list into the DB so
+  // admins can manage it (title/category/image/order preserved exactly; driveUrl
+  // left null — no Drive URLs are invented). Public page order = sortOrder asc,
+  // matching the static array order. Idempotent on slug.
+  const staticGalleryItems = [
+    { title: "State Championship Poster", src: "/images/rra/poster-state-championship-2026.jpg", category: "Tournament" },
+    { title: "National Championship Award", src: "/images/rra/award-national-championship.jpg", category: "Events" },
+    { title: "Live Match Action", src: "/images/rra/action-court-01.jpg", category: "Action" },
+    { title: "Tournament Rally", src: "/images/rra/action-court-02.jpg", category: "Action" },
+    { title: "Inter-State Competition", src: "/images/rra/action-court-03.jpg", category: "Action" },
+    { title: "Championship Point", src: "/images/rra/action-court-04.jpg", category: "Action" },
+    { title: "Training Camp on Court", src: "/images/rra/training-camp-court.jpg", category: "Training" },
+    { title: "Glass Court Action", src: "/images/rra/action-court-05.jpg", category: "Action" },
+    { title: "RRA Team Group Photo", src: "/images/rra/team-group-01.jpg", category: "Team" },
+    { title: "State Team with Officials", src: "/images/rra/team-group-02.jpg", category: "Team" },
+    { title: "Outdoor Court Play", src: "/images/rra/outdoor-court-action.jpg", category: "Facilities" },
+    { title: "Outdoor Racquetball Facility", src: "/images/rra/outdoor-court-facility.jpg", category: "Facilities" },
+    { title: "RRA Official Banner", src: "/images/RRA.jpeg", category: "Leadership" },
+    { title: "RRA Affiliations", src: "/images/RRA.jpeg", category: "Leadership" },
+  ];
+
+  for (const [index, item] of staticGalleryItems.entries()) {
+    const slug = `gallery-${item.title
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, "")
+      .replace(/[\s_-]+/g, "-")
+      .replace(/^-+|-+$/g, "")}`;
+    await prisma.gallery.upsert({
+      where: { slug },
+      update: {},
+      create: {
+        title: item.title,
+        slug,
+        category: item.category,
+        imageUrl: item.src,
+        sortOrder: index,
+        isPublished: true,
+        publishedAt: new Date(),
+      },
+    });
+  }
+
+  // Website content migration — moves the previously hardcoded site.ts arrays
+  // (executive committee, stats bar, news, history timeline, sponsors,
+  // federations) into the database so admins can manage them. Values preserved
+  // exactly as displayed on the public site; nothing invented. Idempotent via
+  // deterministic lookups.
+  const committeeMembers = [
+    {
+      name: "Mr. Aashish Poonia",
+      designation: "Founder & General Secretary",
+      photo: "/images/asishpooniawalaimage.jpeg",
+      positions: [
+        { role: "Founder & General Secretary", organization: "Rajasthan Racquetball Association" },
+        { role: "Vice President", organization: "Indian Racquetball Association" },
+      ],
+      bio: "Leads RRA administration, membership operations, and national-level coordination with the Indian Racquetball Association.",
+      sortOrder: 0,
+    },
+  ];
+
+  for (const member of committeeMembers) {
+    const existing = await prisma.executiveMember.findFirst({ where: { name: member.name } });
+    if (existing) {
+      await prisma.executiveMember.update({ where: { id: existing.id }, data: member });
+    } else {
+      await prisma.executiveMember.create({ data: member });
+    }
+  }
+
+  const statItems = [
+    { label: "District Associations", value: "33+", sortOrder: 0 },
+    { label: "Registered Players", value: "500+", sortOrder: 1 },
+    { label: "Tournaments Held", value: "25+", sortOrder: 2 },
+    { label: "Certified Coaches", value: "50+", sortOrder: 3 },
+  ];
+
+  for (const stat of statItems) {
+    const existing = await prisma.achievement.findFirst({ where: { label: stat.label } });
+    if (existing) {
+      await prisma.achievement.update({ where: { id: existing.id }, data: stat });
+    } else {
+      await prisma.achievement.create({ data: stat });
+    }
+  }
+
+  const timelineMilestones = [
+    { year: "1979", title: "IRF Formed", description: "The International Racquetball Federation was established.", sortOrder: 0 },
+    { year: "1981", title: "World Games", description: "Racquetball became a charter member of the World Games.", sortOrder: 1 },
+    { year: "1985", title: "IOC Recognition", description: "IRF received recognition from the International Olympic Committee.", sortOrder: 2 },
+    { year: "2023", title: "IRA Formed", description: "The Indian Racquetball Association was established in India.", sortOrder: 3 },
+    { year: "2025", title: "RRA Established", description: "Rajasthan Racquetball Association formed and affiliated with IRA.", sortOrder: 4 },
+  ];
+
+  for (const milestone of timelineMilestones) {
+    const existing = await prisma.timelineItem.findFirst({ where: { year: milestone.year, title: milestone.title } });
+    if (existing) {
+      await prisma.timelineItem.update({ where: { id: existing.id }, data: milestone });
+    } else {
+      await prisma.timelineItem.create({ data: milestone });
+    }
+  }
+
+  const partnerGroups = [
+    { type: "sponsor", items: [
+      { name: "Brightmoon Learning Solutions", logo: "/images/sponsor-logo1.jpeg" },
+      { name: "Eagle Martial Arts Sports Association", logo: "/images/sponsor-logo-eagle.jpeg" },
+    ] },
+    { type: "federation", items: [
+      { name: "Indian Racquetball Association", logo: "/images/indianrracqasso-1.jpg" },
+      { name: "International Racquetball Federation", logo: "/images/irflogo2.jpeg" },
+      { name: "ARF", logo: "/images/logo-arf-bicolor-raqueta.png" },
+      { name: "International Federation", logo: "/images/international.webp" },
+      { name: "The World Games", logo: "/images/theworldgames.webp" },
+      { name: "International Olympic Committee", logo: "/images/olympiccouncil.jpeg" },
+    ] },
+    { type: "physio", items: [
+      {
+        name: "Ankit Bhardwaj",
+        logo: "/images/rra/portrait-ankit-bhardwaj.jpg",
+        role: "Head Physio, Rajasthan Racquetball Association",
+        location: "Jaipur",
+        phone: "+91 99289 62982",
+        services: [
+          "Sports injury assessment & rehabilitation",
+          "Pre-competition screening",
+          "High-performance sports science support",
+          "On-tournament physio coverage",
+        ],
+      },
+    ] },
+  ];
+
+  for (const group of partnerGroups) {
+    for (const [index, item] of group.items.entries()) {
+      const existing = await prisma.partner.findFirst({ where: { name: item.name, type: group.type } });
+      if (existing) {
+        await prisma.partner.update({ where: { id: existing.id }, data: { ...item, order: index } });
+      } else {
+        await prisma.partner.create({ data: { ...item, type: group.type, order: index } });
+      }
+    }
   }
 
   // Settings

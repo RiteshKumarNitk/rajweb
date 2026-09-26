@@ -26,6 +26,7 @@ import {
   MessageSquare,
   Sparkles,
   ExternalLink,
+  Image as ImageIcon,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -94,6 +95,17 @@ const navSections: NavGroup[] = [
     title: "Media & Content",
     items: [
       { name: "Media CMS", href: "/admin/media", icon: Newspaper, permission: PERMISSIONS.MEDIA_READ },
+      { name: "Gallery", href: "/admin/media/gallery", icon: ImageIcon, permission: PERMISSIONS.MEDIA_READ },
+    ],
+  },
+  {
+    title: "Website Content",
+    items: [
+      { name: "Committee", href: "/admin/content/committee", icon: UserCheck, permission: PERMISSIONS.CONTENT_READ },
+      { name: "History Timeline", href: "/admin/content/timeline", icon: ScrollText, permission: PERMISSIONS.CONTENT_READ },
+      { name: "Statistics Bar", href: "/admin/content/achievements", icon: Trophy, permission: PERMISSIONS.CONTENT_READ },
+      { name: "News & Updates", href: "/admin/content/news", icon: FileText, permission: PERMISSIONS.CONTENT_READ },
+      { name: "Partners & Federations", href: "/admin/content/partners", icon: Shield, permission: PERMISSIONS.CONTENT_READ },
     ],
   },
   {

@@ -321,6 +321,55 @@ All five docs updated.
 
 ---
 
+## Gallery CMS & Google Drive links
+
+### Date
+2026-09-26.
+
+### Summary
+The public photo gallery is now database/content driven and admin-managed. Existing UI (header, cards, category tabs, lightbox) is unchanged; clicking a gallery item now also offers an optional per-item Google Drive link in the lightbox.
+
+### Features Added
+- Public `/media/gallery` reads the `Gallery` table (active `isPublished` items only, `sortOrder` asc then newest) instead of the static `siteImages.gallery` list; static list retained as fallback when the DB is unavailable/empty.
+- Gallery lightbox shows the item's description (when present) and a **View on Google Drive** button (`target="_blank"`, `rel="noopener noreferrer"`) when the item has a `driveUrl`; no button when it does not.
+- Admin gallery management at `/admin/media/gallery`: add/edit/delete items, set/remove the Drive URL, activate/deactivate, change sort order. Sidebar entry gated by `media:read`; all writes require `media:manage`.
+- New APIs: `POST /api/admin/gallery`, `PATCH|DELETE /api/admin/gallery/{id}` (`media:manage`, CSRF, Zod-validated).
+- Server-side Drive URL validation (`drive.google.com`, or `docs.google.com/…/d/…` sharing links); stored as-is, never fetched/proxied.
+
+### Database Changes
+`Gallery` model extended with `imageUrl String?`, `driveUrl String?`, `sortOrder Int @default(0)` (+ `@@index([sortOrder])`). Existing `title`/`category`/`isPublished`/`publishedAt`/`slug` reused; `GalleryImage` unchanged. Applied with `npm run db:push` (no migrations dir). Seed now upserts the 14 previously static gallery items (order and imagery preserved; Drive URLs left empty — none invented).
+
+### Security Changes
+All gallery mutations behind `requirePermission(MEDIA_MANAGE)` + CSRF; public reads filtered to `isPublished = true`; Drive URL validated server-side; no user HTML rendered; audit events `GALLERY_ITEM_CREATED/UPDATED/ACTIVATED/DEACTIVATED/DELETED` (+ `GALLERY_DRIVE_URL_CHANGED` detail) in module `media`.
+
+### Cache
+New `public-gallery` unstable_cache tag (60 s) + `/media/gallery` path revalidation on every admin write — mirrors the public tournaments pattern.
+
+---
+
+## Website Content CMS (committee, timeline, stats, news, partners)
+
+### Date
+2026-09-26.
+
+### Summary
+Static business/content data beyond Districts and Gallery became database-driven and admin-managed: executive committee, history timeline, home stats bar, news, and home sponsors/federations. Public pages keep their exact existing UI; each falls back to the former static data when the DB has no rows. Navigation, layouts, labels, forms, court specifications, about/history/racquetball prose, governance pages, hero slider, testimonials, SEO metadata and the tournament system remain in code (see Project Status §5.1 / the intentionally-static list).
+
+### Features Added
+- `/admin/content/*` pages (Website Content sidebar section): Executive Committee, History Timeline, Statistics Bar, News & Updates, Partners & Federations (sponsor/federation tabs). Shared manager provides list, search, status filter, add/edit modal, activate/deactivate, delete, sort order.
+- Public pages now read the DB: `/about/executive-committee` (ExecutiveMember), `/about/history` milestones (TimelineItem), home StatsBar (Achievement), `/media/news` + home Latest News (News), home Partners/Federations (Partner). Static arrays retained only as fallback.
+- New APIs: `POST /api/admin/content/{committee,achievements,timeline,news,partners}` and `PATCH|DELETE /api/admin/content/{collection}/{id}` — all `content:manage` + CSRF + audit.
+- Permission `content:manage` (previously defined but unenforced) is now enforced server-side; `content:read` gates the admin pages. Federation-admin gains both via the seed.
+- Cache: new `public-content` tag (60 s) + path revalidation for `/`, committee, history, news on every write.
+
+### Database Changes
+`ExecutiveMember`: added `positions Json?`, `badge?`, `sortOrder`, `isActive`, `@@index([isActive, sortOrder])` (model was previously unused). `Partner`: added `role/location/phone/services Json?`, `updatedAt`, `@@index([type, isActive, order])` (previously unused). `News`: added `isActive @default(true)` + `@@index([isActive, publishedAt])`. New tables: `Achievement`, `TimelineItem` (both `isActive` + `sortOrder`). Applied with `npm run db:push`; seed upserts the previously hardcoded values exactly (no invented content).
+
+### Security Changes
+All mutations behind `requirePermission(CONTENT_MANAGE)` + CSRF; public queries filter `isActive`/`isPublished`; image refs and external URLs validated server-side (no server-side fetching introduced); audit events `COMMITTEE_MEMBER_* / ACHIEVEMENT_* / TIMELINE_ITEM_* / NEWS_ITEM_* / PARTNER_*` in module `content`.
+
+---
+
 ## Upcoming (not started)
 
 Phases J–U are PLANNED — see [RRA-PROJECT-STATUS.md §10](RRA-PROJECT-STATUS.md#10-remaining-roadmap). Add an entry here using the template below when each lands:

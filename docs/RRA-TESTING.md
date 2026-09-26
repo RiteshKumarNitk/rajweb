@@ -118,7 +118,9 @@ Districts accepted: any of the 33 Rajasthan district names (case-insensitive), e
 | P4 | `/membership/club|school|academy`, `/register/player|coach` | Forms render; with live forms **off** submit shows "Website Under Development" toast and sends nothing |
 | P5 | `/tournaments` | Static event card (poster at bottom) + DB tournaments in public statuses; DRAFT/CANCELLED not shown |
 | P6 | `/tournaments/{slug}` | Details + active categories with current fees; DRAFT slug → 404 |
-| P7 | `/media/news|videos|gallery` | Load; gallery shows 5 images |
+| P7 | `/media/news|videos|gallery` | Load; gallery shows DB items (seeded 14, `sortOrder` asc) or static fallback; filters still work |
+| P7a | Gallery item with Drive URL → click card | Lightbox opens with image/category/title (+description if set) and **View on Google Drive** button; opens the item's URL in a new tab |
+| P7b | Gallery item without Drive URL → click card | Lightbox opens normally; **no** Drive button rendered (no empty/broken link) |
 | P8 | `/resources/equipment` | Images + equipment order form submits (not gated) |
 | P9 | `/resources/court-specifications`, `/resources/physio-partners` | Load |
 | P10 | `/governance/rti|anti-doping|privacy-policy`, `/privacy` | Load |
@@ -379,6 +381,14 @@ No baseline numbers have been recorded. Record measurements here when taken (dat
 | S15 | `/admin/equipment-orders`: logged out → `/login`; District Admin / Tournament Manager → `/admin?error=forbidden`; Super Admin → list | As stated |
 | S16 | `/api/files/certificates/<CERT>.pdf`: logged out → 401; another member → 404; owner → PDF; Jaipur admin for a Jodhpur player's cert → 404; Super Admin → PDF | As stated |
 | S17 | `/api/files/certificates/unknown.pdf` as Super Admin | 404 (not referenced by any record) |
+| S18 | Gallery: logged out / public-user POST `/api/admin/gallery` | 401 / 403 |
+| S19 | Gallery: `media:read`-only admin POST/PATCH/DELETE | 403 (`media:manage` required) |
+| S20 | Gallery: `driveUrl: "https://evil.example.com/x"` | 400 "Must be a valid Google Drive sharing URL…" |
+| S21 | Gallery: deactivate item → public `/media/gallery` | Item disappears immediately (cache revalidated); card UI/filters unchanged |
+| S22 | Content: logged out / public-user POST `/api/admin/content/committee` | 401 / 403 |
+| S23 | Content: `content:read`-only admin POST/PATCH/DELETE | 403 (`content:manage` required) |
+| S24 | Content: deactivate a committee member / timeline item / news item | Disappears from the public page after revalidation; still listed (Inactive) in admin |
+| S25 | Content: invalid image ref (`javascript:alert(1)`) or non-http(s) website URL | 400 validation error |
 
 ---
 

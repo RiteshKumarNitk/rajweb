@@ -347,7 +347,13 @@ Not implemented: registration approval/rejection by admins, withdrawal/cancellat
 | `/admin/tournaments`, `/[id]` | `tournaments:read` | Full management with `tournaments:manage` |
 | `/admin/certificates` | `certificates:read` | List (≤ 50 each) + issue player certificate |
 | `/admin/equipment-orders` | `equipment:read` (added Pre-J) | Read-only list of equipment enquiries; district-scoped users see only enquiries naming their district |
-| `/admin/media` | `media:read` | **Read-only** lists of news/videos/galleries; no CMS editing API |
+| `/admin/media` | `media:read` | **Read-only** lists of news/videos/galleries (summary overview) |
+| `/admin/media/gallery` | `media:read` | **Gallery management** — add/edit/delete items, set each item's optional Google Drive URL, activate/deactivate, change sort order (writes need `media:manage`) |
+| `/admin/content/committee` | `content:read` | **Executive committee management** — add/edit/delete members, photo, badge, positions, sort order (writes need `content:manage`) |
+| `/admin/content/timeline` | `content:read` | **History timeline management** — add/edit/delete milestones (year/title/description/sort order) |
+| `/admin/content/achievements` | `content:read` | **Stats bar management** — home-page counters (label/value/sort order) |
+| `/admin/content/news` | `content:read` | **News management** — the public newsfeed and home Latest News (previously static) |
+| `/admin/content/partners` | `content:read` | **Sponsors & federations management** — logos/order for the home-page partner sections |
 | `/admin/users` | `users:read` | List (≤ 200); activate/deactivate, assign role, assign/remove district, toggle federation-wide (`users:update`) |
 | `/admin/roles` | `roles:read` | Create custom roles and edit permissions of non-system roles (`roles:manage`) |
 | `/admin/audit-logs` | `audit:read` | Latest 200 entries |
@@ -450,7 +456,7 @@ Functional:
 5. Coach certificate issuance not wired to any API/UI; no certificate revocation flow.
 6. Draws, fixtures, match results, rankings: none (schema for Fixture/Match only).
 7. Notifications: UI shell only; no emails other than OTP.
-8. Media CMS, districts, settings are read-only in admin; contact messages and donations have no admin view.
+8. Media CMS, districts, settings are read-only in admin; contact messages and donations have no admin view. ~~Media CMS read-only~~ — **gallery, executive committee, history timeline, stats bar, news and partners are now database-driven and admin-managed** (news/videos lists in /admin/media remain read-only summaries; the Videos CMS itself is still static).
 9. ~~Public forms silently discarded fields~~ — **fixed Pre-J** (fields removed). Player/Coach `photo` is still never written (no upload; Phase R).
 10. Public forms are disabled unless `NEXT_PUBLIC_ENABLE_LIVE_FORMS=true`.
 11. Sample championship certificates are hard-coded demo data.

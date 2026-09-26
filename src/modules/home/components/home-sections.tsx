@@ -5,6 +5,7 @@ import { LogoImage } from "@/shared/components/ui/media-image";
 import { formatDate } from "@/lib/utils";
 import { siteConfig, siteImages } from "@/shared/config/site";
 import { getHomeNewsSync } from "@/modules/home/data/get-news";
+import { getPublicPartners } from "@/modules/content/public-content";
 
 export function LatestNews() {
   const news = getHomeNewsSync();
@@ -36,7 +37,23 @@ export function LatestNews() {
   );
 }
 
-export function PartnersSection() {
+export async function PartnersSection() {
+  // Sponsors are database-managed with the static config as fallback.
+  let sponsors: { name: string; logo: string }[] = siteImages.sponsors.map((p) => ({
+    name: p.name,
+    logo: p.logo,
+  }));
+  try {
+    const dbSponsors = await getPublicPartners("sponsor");
+    if (dbSponsors.length > 0) {
+      sponsors = dbSponsors
+        .filter((p) => p.logo)
+        .map((p) => ({ name: p.name, logo: p.logo as string }));
+    }
+  } catch {
+    // keep static fallback
+  }
+
   return (
     <section className="border-t border-slate-200 bg-white py-16">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -44,7 +61,7 @@ export function PartnersSection() {
           Let&apos;s Win Together — Proudly Sponsored By
         </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-8 md:gap-16">
-          {siteImages.sponsors.map((p) => (
+          {sponsors.map((p) => (
             <div key={p.name} className="flex h-20 w-36 items-center justify-center">
               <LogoImage src={p.logo} alt={p.name} maxHeight={80} maxWidth={144} />
             </div>
@@ -55,7 +72,23 @@ export function PartnersSection() {
   );
 }
 
-export function FederationsSection() {
+export async function FederationsSection() {
+  // Governing bodies are database-managed with the static config as fallback.
+  let federations: { name: string; logo: string }[] = siteImages.federations.map((f) => ({
+    name: f.name,
+    logo: f.logo,
+  }));
+  try {
+    const dbFederations = await getPublicPartners("federation");
+    if (dbFederations.length > 0) {
+      federations = dbFederations
+        .filter((p) => p.logo)
+        .map((p) => ({ name: p.name, logo: p.logo as string }));
+    }
+  } catch {
+    // keep static fallback
+  }
+
   return (
     <section className="bg-slate-50 py-16">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -66,7 +99,7 @@ export function FederationsSection() {
           </p>
         </div>
         <div className="mt-10 flex flex-wrap items-center justify-center gap-8 md:gap-12">
-          {siteImages.federations.map((org) => (
+          {federations.map((org) => (
             <div key={org.name} className="flex h-16 w-28 items-center justify-center" title={org.name}>
               <LogoImage src={org.logo} alt={org.name} maxHeight={64} maxWidth={112} />
             </div>

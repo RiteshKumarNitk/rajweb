@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { X, ChevronLeft, ChevronRight } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
 import { MediaImage } from "@/shared/components/ui/media-image";
 import { cn } from "@/lib/utils";
 
@@ -9,6 +9,8 @@ type GalleryItem = {
   title: string;
   src: string;
   category?: string;
+  description?: string;
+  driveUrl?: string;
 };
 
 export function GalleryGrid({ images }: { images: GalleryItem[] }) {
@@ -174,9 +176,23 @@ export function GalleryGrid({ images }: { images: GalleryItem[] }) {
                 </p>
               )}
               <p className="text-xl font-bold">{activeImage.title}</p>
+              {activeImage.description && (
+                <p className="mx-auto mt-2 max-w-xl text-sm text-slate-300">{activeImage.description}</p>
+              )}
               <p className="mt-2 text-xs font-medium text-slate-500">
                 {selectedIndex !== null ? selectedIndex + 1 : 0} of {filteredImages.length}
               </p>
+              {activeImage.driveUrl && (
+                <a
+                  href={activeImage.driveUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-4 inline-flex items-center gap-2 rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-primary shadow-lg transition-all hover:scale-105 hover:bg-accent hover:text-slate-900"
+                >
+                  View on Google Drive
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              )}
             </div>
           </div>
         </div>
