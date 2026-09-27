@@ -202,7 +202,7 @@ Several are defined but not enforced anywhere yet (`users:create|delete`, `playe
 | districts:read | ✔ | ✔ | ✔ | ✔ | | | |
 | media:read/manage, content:read/manage | ✔ | ✔ | | | | ✔ | |
 | audit:read | ✔ | ✔ | | | | | |
-| equipment:read | ✔ | ✔ | | | | | |
+| equipment:read / equipment:manage | ✔ | ✔ (manage: ✔) | ✔ | ✔ | | | |
 
 System roles cannot be edited via the API (`PATCH /api/admin/roles/{id}` → 403). Super Admin can create **custom roles** with any permission set and edit them later; changes apply within ≤ 60 s.
 
@@ -224,6 +224,9 @@ Authorization = **permission** (what) × **scope** (whose data). Scope is derive
 - **Scope changes** (`assign-state`, `assign-district`, `remove-*`, `toggle-federation-wide` on `/api/admin/users`) require GLOBAL scope, so a scoped custom role with `users:update` cannot widen anyone's scope. Assigning a district also sets that district's state; assigning a state clears a district from another state.
 - **Dashboard activity feed:** audit rows carry no state, so scoped admins see only their own actions; GLOBAL sees all.
 - `/admin/equipment-orders`: `EquipmentOrder.district` is free text, so scoped users see enquiries whose district name matches a district in their scope.
+- **Directly-owned records** (equipment items, equipment orders, certificate signatories) use `directOwnedWhere(scope)` on their own `stateId`/`districtId`; rows with both null are federation-level / RRA Central and visible to GLOBAL only.
+- **Player certificates** use `playerCertificateWhere(scope)`: a tournament certificate follows its tournament, a registration certificate follows the player's district.
+- **Assigning an owner** (equipment item, signatory) goes through `resolveOwnership()` (`security/rbac/ownership.server.ts`): DISTRICT users are forced to their district, STATE users to their state (optionally a district inside it), GLOBAL may pick any or central. Tournaments use the equivalent `resolveTournamentOwnership()`.
 
 New permissions reach existing databases only through `npm run db:seed` (idempotent upserts). Runtime checks read `RolePermission`, so a missing permission row means only Super Admin passes.
 
@@ -259,7 +262,7 @@ PostgreSQL via Prisma 7 (`prisma-client-js` generator, `@prisma/adapter-pg`). Al
 | Model | Purpose | Key fields / constraints | Lifecycle |
 |---|---|---|---|
 | `Player` (`players`) | Player registration | `playerId` unique (business ID); name, dateOfBirth, gender, email, mobile, photo?, `districtId`, `userId?` **unique** (SetNull on user delete), state (default Rajasthan), category?, `status: ApprovalStatus`, approvedAt/By, rejectionReason, expiresAt. Indexes: districtId, status | PENDING → APPROVED / REJECTED → (resubmit) PENDING. `EXPIRED` unused |
-| `PlayerCertificate` (`player_certificates`) | Issued certificate | `certificateNumber` unique, `qrCode` unique, playerId (cascade), issuedAt, expiresAt?, pdfPath?, isRevoked/revokedAt/revokedReason | Created by admin; revocation fields never set by code |
+| `PlayerCertificate` (`player_certificates`) | Registration certificate (`tournamentId` null) **or** tournament certificate | `certificateNumber` unique, `qrCode` unique, playerId (cascade), `tournamentId?` (Restrict) with **unique `(tournamentId, playerId)`**; issue-time snapshot: `title`, `eventName`, `eventStartDate/EndDate`, `venue`, `districtName`, `stateName`, `position`, `logoUrl`, `signatories` (JSON list of name/designation/organization/signatureImageUrl), `issuedById`; issuedAt, expiresAt?, pdfPath?, isRevoked/revokedAt/revokedReason | Created by admin; snapshot never recomputed; revocation fields never set by code |
 | `Coach` (`coaches`) | Coach registration | `coachId` unique; qualification, `certificationLevel`; otherwise as Player | Same as Player |
 | `CoachCertificate` (`coach_certificates`) | As PlayerCertificate | | Only seed creates rows |
 | `ClubMembership` / `SchoolMembership` / `AcademyMembership` | Institutional memberships | `membershipId` unique; `userId?` unique; `districtId`; `status: MembershipStatus`; approval fields; expiresAt; certificatePath. Indexes: districtId, status | PENDING → APPROVED / REJECTED → (resubmit) PENDING. `ACTIVE/EXPIRED/SUSPENDED` unused |
@@ -271,9 +274,11 @@ Enums: `Gender {MALE, FEMALE, OTHER}`, `ApprovalStatus {PENDING, APPROVED, REJEC
 
 | Model | Purpose | Key fields / constraints |
 |---|---|---|
-| `Tournament` (`tournaments`) | Event | `slug` unique; `category: TournamentCategory {JUNIOR, SENIOR, OPEN, PROFESSIONAL}`; `status: TournamentStatus {DRAFT, REGISTRATION_OPEN, REGISTRATION_CLOSED, IN_PROGRESS, COMPLETED, CANCELLED}`; `stateId` (owning state; set for every new tournament, backfilled by the seed) + `districtId?` (null = state-wide within that state; if set, must be in that state); venue, city; startDate, endDate, registrationStart?, registrationDeadline?; maxParticipants?; `banner` (poster URL); contact*; `requiresApprovedPlayer` (default true). Indexes: status, districtId |
+| `Tournament` (`tournaments`) | Event | `slug` unique; `category: TournamentCategory {JUNIOR, SENIOR, OPEN, PROFESSIONAL}`; `status: TournamentStatus {DRAFT, REGISTRATION_OPEN, REGISTRATION_CLOSED, IN_PROGRESS, COMPLETED, CANCELLED}`; `stateId` (owning state; set for every new tournament, backfilled by the seed) + `districtId?` (null = state-wide within that state; if set, must be in that state); venue, city; startDate, endDate, registrationStart?, registrationDeadline?; maxParticipants?; `banner` (poster URL); contact*; `requiresApprovedPlayer` (default true); `certificateTitle?`, `certificateLogoUrl?` (tournament-specific certificate settings). Indexes: status, districtId, stateId |
 | `TournamentRegistrationCategory` (`tournament_registration_categories`) | Purchasable entry option | tournamentId (cascade), name, `type: TournamentEventType {SINGLES, DOUBLES}`, **`fee Int` (whole rupees, current price)**, isActive. Index: tournamentId |
 | `TournamentRegistration` (`tournament_registrations`) | A player's entry | tournamentId (cascade), playerId (no cascade), categoryId?, **`amount Int?` (price snapshot; null only on legacy rows — refused by `getPayableRegistrationAmount()`)**, seed? (unused), `status: ApprovalStatus` (always PENDING today), registeredAt. **Unique (tournamentId, playerId)** |
+| `CertificateSignatory` (`certificate_signatories`) | Official who signs certificates | name, designation, organization?, signatureImageUrl?; owner `stateId?`/`districtId?` (both null = federation level); isActive, sortOrder |
+| `TournamentSignatory` (`tournament_signatories`) | A tournament's signers | PK (tournamentId, signatoryId), `sortOrder` = signing order; cascade on both sides (issued certificates keep their own snapshot) |
 | `Fixture` (`fixtures`) | **Schema only — unused** | round, roundName, matchNumber, player1Id/player2Id/winnerId (plain strings, no FK), scheduledAt |
 | `Match` (`matches`) | **Schema only — unused** | fixtureId unique, scores, winnerId, status string |
 
@@ -287,7 +292,7 @@ Note: `TournamentRegistration` has no index on `playerId` or `categoryId` other 
 | `Gallery`, `GalleryImage` | Media CMS | `Gallery` is now admin-managed: public `/media/gallery` reads `isPublished` items (`sortOrder` asc) with `imageUrl` + optional `driveUrl` (Google Drive link opened from the item lightbox, validated server-side, never fetched server-side). Writes via `/api/admin/gallery*` (`media:manage`, CSRF, audit `GALLERY_*`); revalidates tag `public-gallery`. `GalleryImage` remains seed-only |
 | `Donation` | Donation pledges (no payment) | `POST /api/donations` |
 | `ContactMessage` | Contact form + admin inbox (`/admin/contact`) | `POST /api/contact` (stores first, then best-effort Resend email to the Super Admin address from `contact_email` Setting / `SUPER_ADMIN_EMAIL`, plus visitor confirmation); status lifecycle NEW/READ/REPLIED/CLOSED managed via `/api/admin/contact/{id}` (`contact:manage`, audit) |
-| `EquipmentItem`, `EquipmentPurchaseOrder(+Item)` | Equipment shop | Public catalog `/equipment` (active items); authenticated purchase `POST /api/equipment/purchase` reserves stock atomically (never negative) and snapshots name + unit price; payment verification is server-side and fails closed (no provider yet, Phase J) — orders stay `PENDING_PAYMENT`. Admin catalog/orders via `/api/admin/equipment*` (`equipment:manage`); delete of a purchased item archives it |
+| `EquipmentItem`, `EquipmentPurchaseOrder(+Item)` | Equipment shop | **Ownership:** items carry `stateId?`/`districtId?` (district store / state store / both null = RRA Central Store); orders carry a **snapshot** `stateId`/`districtId` copied from their items (one store per order — mixed carts are refused). Public catalog `/equipment` (active items of active stores, labelled "Sold by …"); authenticated purchase `POST /api/equipment/purchase` reserves stock atomically (never negative) and snapshots name + unit price; payment verification is server-side and fails closed (no provider yet, Phase J) — orders stay `PENDING_PAYMENT`. Admin catalog/orders via `/api/admin/equipment*` (`equipment:manage`); delete of a purchased item archives it |
 | `EquipmentOrder` | Equipment enquiries (index createdAt) | `POST /api/equipment/orders` |
 | `MediaVideo` | Public Media → Videos listing | Admin-managed YouTube links (`/api/admin/media/videos*`, `videos:manage`): server extracts the 11-char video ID (watch/youtu.be/shorts/embed forms; non-YouTube rejected); public page reads active rows `sortOrder` asc (tag `public-videos`) with the static list as fallback; thumbnails derive from the video ID |
 | `WebsiteContent` | CMS table | **Unused** (single-page content still lives in `site.ts` — see below) |
@@ -421,6 +426,8 @@ No benchmark data is stored in the repository.
 | S3/Azure/MinIO adapters (previously claimed in the README; corrected 2026-09-26) | NOT IMPLEMENTED |
 
 **PDF generation:** `pdfkit` is listed in `serverExternalPackages` (`next.config.ts`). When it was bundled into `.next/server/chunks`, PDFKit could not find its built-in font metrics and **every** certificate was created without a PDF (the error was swallowed). It now runs from `node_modules`, uses the standard `Helvetica` font by name, and any PDF failure is logged (`certificates` module) while the certificate record is still created.
+
+**Certificate images** (tournament logo, signature images) are loaded by `services/certificates/certificate-images.ts` only from `/images/…` (inside `public/`) or https URLs (no IP literals/localhost, no redirects, 5 s timeout, 2 MB cap, PNG/JPEG only); anything else is skipped and the PDF renders without it.
 
 Both adapters return `/api/files/<path>` URLs, so every stored file goes through the authorisation check. Public verification (`/api/verify`) returns data only and never links to files.
 

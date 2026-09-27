@@ -459,6 +459,50 @@ The platform now models **Super Admin → State → District → members** witho
 
 ---
 
+## Operational ownership: certificates, signatories, tournaments, equipment
+
+### Date
+2026-09-27.
+
+### Summary
+Every operational record now has a clear State → District ownership path, enforced server-side (list queries + 404 on out-of-scope ids). Tournaments get their own certificates and signatories; equipment gets district stores. Detail: [RRA-PROJECT-STATUS.md §15](RRA-PROJECT-STATUS.md#15-operational-ownership--certificates-signatories-tournaments-equipment-2026-09-27).
+
+### Database Changes (additive)
+- New `CertificateSignatory` and `TournamentSignatory` models.
+- `PlayerCertificate`: `tournamentId?` (+ unique `(tournamentId, playerId)`) and issue-time snapshot columns (title, event, dates, venue, district/state names, position, logo, signatories JSON, issuedById).
+- `Tournament`: `certificateTitle?`, `certificateLogoUrl?`.
+- `EquipmentItem` and `EquipmentPurchaseOrder`: `stateId?`, `districtId?`.
+- Backfill: none needed — existing items/orders stay RRA Central (their true ownership), existing certificates stay registration certificates. Seed adds the founding state's officials as state-level signatories and equipment permissions for state/district admins.
+
+### Security / Authorization
+- New helpers `directOwnedWhere`, `playerCertificateWhere` (org-scope) and `resolveOwnership` (ownership.server).
+- Scoped: equipment items (create/edit/delete), equipment orders (admin list + status), signatories, tournament certificate issuance, certificate list, file access for tournament certificates, dashboard equipment counts.
+- Certificate images: SSRF-guarded loader (https named hosts or /images only).
+
+### API Changes
+New: `/api/admin/signatories` (POST), `/api/admin/signatories/{id}` (PATCH/DELETE), `/api/admin/tournaments/{id}/certificate-settings` (PUT), `/api/admin/tournaments/{id}/certificates` (POST). Changed: equipment create/update accept owner fields; purchase refuses mixed-store carts; public verify returns snapshot data (`signatoryList`, `title`, `stateName`, `eventDates`) and no longer returns `pdfPath`.
+
+### UI Changes
+Tournament detail: Certificates panel (title, logo, ordered signatories, generate for selected registrations with optional achievement). New `/admin/certificates/signatories`. `/admin/certificates`: scoped list with State/district/tournament/player/status/date filters and "Signed by" column. `/admin/equipment`: store column + selector, filters (State, store, category, status, stock). `/admin/equipment/orders`: scoped with store/status filters. Public shop: "Sold by" + store filter. My Equipment / My Orders / My Certificates / Documents: store and event context. Tournament list: district/status/name/date filters. Certificate renderer: prints the certificate's own signers; hides fields with no data.
+
+### Bug Fixes
+- Public verification invented event details for real certificates → now snapshot-only.
+- Renderer hard-coded signer names → data-driven.
+- Zod 4 `.partial()` defaults: price-only equipment edits reset stock to 0; gallery edits unpublished items; video edits re-activated them → fixed.
+- Admin equipment orders were visible across scopes → scoped.
+- Registration-certificate checks would have been blocked by tournament certificates → narrowed.
+
+### Testing
+`prisma validate`, `tsc`, `next build --webpack` pass; lint 0 errors in changed files. Upgrade rehearsal from the previously committed schema with legacy rows. **136/136** ownership checks + **22/22** regression checks ([RRA-TESTING.md §18](RRA-TESTING.md#18-operational-ownership-matrix)).
+
+### Documentation correction
+The previous entry referenced RRA-PROJECT-STATUS.md §14 and RRA-TESTING.md §17, but those sections had not been written (an editing-script error). Both were restored in this update with their original content.
+
+### Deploy
+`npx prisma db push --accept-data-loss` (only warning: the new unique index on the new `tournamentId` column) then `npm run db:seed`. Deploy the schema together with this code — the new pages/APIs read the new columns.
+
+---
+
 ## Upcoming (not started)
 
 Phases J–U are PLANNED — see [RRA-PROJECT-STATUS.md §10](RRA-PROJECT-STATUS.md#10-remaining-roadmap). Add an entry here using the template below when each lands:

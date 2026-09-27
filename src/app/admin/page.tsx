@@ -26,7 +26,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
 import { Button } from "@/shared/components/ui/button";
 import { requireAdminScope } from "@/security/rbac/admin-scope";
-import { districtOwnedWhere, districtWhere as districtModelWhere, requestWhere, tournamentWhere, type OrgScope } from "@/security/rbac/org-scope";
+import { directOwnedWhere, districtOwnedWhere, playerCertificateWhere, districtWhere as districtModelWhere, requestWhere, tournamentWhere, type OrgScope } from "@/security/rbac/org-scope";
 import { getStateView } from "@/modules/states/state-view.server";
 import { StateFilter } from "@/shared/components/admin/state-filter";
 import { formatDate } from "@/lib/utils";
@@ -64,6 +64,8 @@ async function getStats(scope: OrgScope, actorId: string | null) {
       recentAuditLogs,
       districtCount,
       registrationCount,
+      equipmentCount,
+      equipmentOrderCount,
     ] = await Promise.all([
       prisma.player.count({ where: districtWhere }),
       prisma.coach.count({ where: districtWhere }),
@@ -72,7 +74,7 @@ async function getStats(scope: OrgScope, actorId: string | null) {
       prisma.schoolMembership.count({ where: districtWhere }),
       prisma.academyMembership.count({ where: districtWhere }),
       prisma.news.count({ where: { isPublished: true } }),
-      prisma.playerCertificate.count({ where: { isRevoked: false, ...(global ? {} : { player: districtWhere }) } }),
+      prisma.playerCertificate.count({ where: { isRevoked: false, ...playerCertificateWhere(scope) } }),
       prisma.coachCertificate.count({ where: { isRevoked: false, ...(global ? {} : { coach: districtWhere }) } }),
       prisma.player.count({ where: pendingWhere }),
       prisma.coach.count({ where: pendingWhere }),
@@ -99,6 +101,8 @@ async function getStats(scope: OrgScope, actorId: string | null) {
       }),
       prisma.district.count({ where: districtModelWhere(scope) }),
       prisma.tournamentRegistration.count({ where: global ? {} : { tournament: tournamentWhere(scope) } }),
+      prisma.equipmentItem.count({ where: directOwnedWhere(scope) }),
+      prisma.equipmentPurchaseOrder.count({ where: directOwnedWhere(scope) }),
     ]);
 
     return {
@@ -119,6 +123,8 @@ async function getStats(scope: OrgScope, actorId: string | null) {
       recentAuditLogs,
       districtCount,
       registrationCount,
+      equipmentCount,
+      equipmentOrderCount,
     };
   } catch {
     return {
@@ -139,6 +145,8 @@ async function getStats(scope: OrgScope, actorId: string | null) {
       recentAuditLogs: [],
       districtCount: 0,
       registrationCount: 0,
+      equipmentCount: 0,
+      equipmentOrderCount: 0,
     };
   }
 }
@@ -338,7 +346,8 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
               </span>
               <span>·</span>
               <span className="text-slate-300 font-medium">
-                Scope: {scopeLabel} · {stats.districtCount} districts · {stats.registrationCount} tournament registrations
+                Scope: {scopeLabel} · {stats.districtCount} districts · {stats.registrationCount} tournament registrations ·{" "}
+                {stats.equipmentCount} equipment items · {stats.equipmentOrderCount} equipment orders
               </span>
               {states.length > 0 && (
                 <span className="rounded-md bg-white px-2 py-1">

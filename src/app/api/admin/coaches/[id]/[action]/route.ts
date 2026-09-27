@@ -22,6 +22,8 @@ export const POST = withApiHandler(
     }
 
     assertInScope(user, districtTarget(coach), "Coach not found");
+    // Organisational context recorded on every audit entry below.
+    const scopeCtx = { stateId: coach.district?.stateId ?? null, districtId: coach.districtId };
 
     if (action === "approve") {
       await approveCoach(id, user.id);
@@ -30,6 +32,7 @@ export const POST = withApiHandler(
         action: "APPROVE",
         module: "coaches",
         entityId: id,
+        details: scopeCtx,
       });
       return jsonSuccess({ coachId: id, status: "APPROVED" }, requestId, "Coach approved");
     }
@@ -55,7 +58,7 @@ export const POST = withApiHandler(
         action: "REJECT",
         module: "coaches",
         entityId: id,
-        details: { reason },
+        details: { reason, ...scopeCtx },
       });
       return jsonSuccess({ coachId: id, status: "REJECTED" }, requestId, "Coach rejected");
     }

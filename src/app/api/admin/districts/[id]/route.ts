@@ -119,6 +119,9 @@ export const DELETE = withApiHandler(
             academyMemberships: true,
             tournaments: true,
             requestedByRequests: true,
+            equipmentItems: true,
+            equipmentOrders: true,
+            signatories: true,
           },
         },
       },
@@ -127,7 +130,7 @@ export const DELETE = withApiHandler(
     const inUse = Object.values(district._count).some((n) => n > 0);
     if (inUse) {
       throw AppError.conflict(
-        "This district has linked users, players, coaches, memberships, tournaments, or requests and cannot be deleted. Deactivate it instead."
+        "This district has linked users, players, coaches, memberships, tournaments, requests, equipment, orders or signatories and cannot be deleted. Deactivate it instead."
       );
     }
 

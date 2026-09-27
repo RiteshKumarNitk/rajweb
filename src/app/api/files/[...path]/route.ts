@@ -21,7 +21,10 @@ async function canAccessFile(user: SessionUser, filePath: string): Promise<boole
   const [playerCert, coachCert] = await Promise.all([
     prisma.playerCertificate.findFirst({
       where: { pdfPath: filePath },
-      select: { player: { select: { userId: true, districtId: true, district: { select: { stateId: true } } } } },
+      select: {
+        player: { select: { userId: true, districtId: true, district: { select: { stateId: true } } } },
+        tournament: { select: { stateId: true, districtId: true } },
+      },
     }),
     prisma.coachCertificate.findFirst({
       where: { pdfPath: filePath },
@@ -32,7 +35,10 @@ async function canAccessFile(user: SessionUser, filePath: string): Promise<boole
   const certOwner = playerCert?.player ?? coachCert?.coach;
   if (certOwner) {
     if (certOwner.userId && certOwner.userId === user.id) return true;
-    return hasPermission(user, PERMISSIONS.CERTIFICATES_READ) && inScope(certOwner);
+    if (!hasPermission(user, PERMISSIONS.CERTIFICATES_READ)) return false;
+    // Tournament certificates belong to the tournament's state/district.
+    if (playerCert?.tournament) return isInScope(scope, playerCert.tournament);
+    return inScope(certOwner);
   }
 
   const membershipSelect = {

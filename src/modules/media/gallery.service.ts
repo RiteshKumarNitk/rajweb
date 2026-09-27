@@ -30,17 +30,27 @@ const driveUrlSchema = z
     message: "Must be a valid Google Drive sharing URL (https://drive.google.com/...)",
   });
 
-export const createGallerySchema = z.object({
+// Update schemas are built from default-FREE fields: in Zod 4, `.partial()`
+// still applies `.default()` values, so a PATCH changing one field would
+// silently reset the others (e.g. stock → 0, published → false).
+const galleryFields = {
   title: z.string().trim().min(2).max(200),
   category: z.string().trim().min(1).max(100),
   description: z.string().trim().max(2000).nullable().optional(),
   imageUrl: z.string().trim().min(1).max(500),
   driveUrl: driveUrlSchema.nullish(),
-  sortOrder: z.number().int().min(0).max(100000).default(0),
-  isPublished: z.boolean().default(false),
+  sortOrder: z.number().int().min(0).max(100000),
+  isPublished: z.boolean(),
+};
+
+export const createGallerySchema = z.object({
+  ...galleryFields,
+  sortOrder: galleryFields.sortOrder.default(0),
+  isPublished: galleryFields.isPublished.default(false),
 });
 
-export const updateGallerySchema = createGallerySchema
+export const updateGallerySchema = z
+  .object(galleryFields)
   .partial()
   .extend({
     driveUrl: driveUrlSchema.nullish(), // null removes the link

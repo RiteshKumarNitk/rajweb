@@ -2,7 +2,8 @@ import Link from "next/link";
 import { formatTournamentSchedule, formatTournamentStatus } from "@/modules/tournaments/tournament-dates";
 import { requireAdminScope } from "@/security/rbac/admin-scope";
 import { PERMISSIONS, hasPermission } from "@/security/rbac/permissions";
-import { tournamentWhere, type OrgScope } from "@/security/rbac/org-scope";
+import { districtWhere, tournamentWhere, type OrgScope } from "@/security/rbac/org-scope";
+import type { Prisma, TournamentStatus } from "@prisma/client";
 import { getStateView } from "@/modules/states/state-view.server";
 import { getTournamentOwnerGroups } from "@/modules/tournaments/tournament-owner-groups.server";
 import { StateFilter } from "@/shared/components/admin/state-filter";
@@ -14,11 +15,47 @@ import { Button } from "@/shared/components/ui/button";
 
 export const dynamic = "force-dynamic";
 
-async function getTournaments(scope: OrgScope) {
+const TOURNAMENT_STATUSES: TournamentStatus[] = [
+  "DRAFT",
+  "REGISTRATION_OPEN",
+  "REGISTRATION_CLOSED",
+  "IN_PROGRESS",
+  "COMPLETED",
+  "CANCELLED",
+];
+
+interface Filters {
+  state?: string;
+  /** District id, or "statewide" for tournaments without a district. */
+  district?: string;
+  status?: string;
+  q?: string;
+  from?: string;
+  to?: string;
+}
+
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Display filters, always ANDed with the scope clause (they can only narrow). */
+function filterWhere(filters: Filters): Prisma.TournamentWhereInput[] {
+  const from = filters.from && DATE_ONLY.test(filters.from) ? new Date(`${filters.from}T00:00:00.000Z`) : undefined;
+  const to = filters.to && DATE_ONLY.test(filters.to) ? new Date(`${filters.to}T00:00:00.000Z`) : undefined;
+  if (to) to.setUTCDate(to.getUTCDate() + 1);
+  return [
+    filters.district === "statewide" ? { districtId: null } : filters.district ? { districtId: filters.district } : {},
+    TOURNAMENT_STATUSES.includes(filters.status as TournamentStatus) ? { status: filters.status as TournamentStatus } : {},
+    filters.q?.trim() ? { name: { contains: filters.q.trim(), mode: "insensitive" } } : {},
+    // Tournaments overlapping the chosen window.
+    from ? { endDate: { gte: from } } : {},
+    to ? { startDate: { lt: to } } : {},
+  ];
+}
+
+async function getTournaments(scope: OrgScope, filters: Filters) {
   try {
     const { default: prisma } = await import("@/infrastructure/database/prisma");
     return prisma.tournament.findMany({
-      where: tournamentWhere(scope),
+      where: { AND: [tournamentWhere(scope), ...filterWhere(filters)] },
       include: { district: true, state: { select: { name: true } }, _count: { select: { registrations: true } } },
       orderBy: { startDate: "desc" },
     });
@@ -30,15 +67,26 @@ async function getTournaments(scope: OrgScope) {
 
 type TournamentData = Awaited<ReturnType<typeof getTournaments>>[number];
 
-export default async function AdminTournamentsPage({ searchParams }: { searchParams: Promise<{ state?: string }> }) {
+export default async function AdminTournamentsPage({ searchParams }: { searchParams: Promise<Filters> }) {
   const { user, scope } = await requireAdminScope(PERMISSIONS.TOURNAMENTS_READ);
-  const { viewScope, states, selectedStateId, scopeLabel } = await getStateView(scope, (await searchParams).state);
+  const filters = await searchParams;
+  const { viewScope, states, selectedStateId, scopeLabel } = await getStateView(scope, filters.state);
   const canManage = hasPermission(user, PERMISSIONS.TOURNAMENTS_MANAGE);
-  const [tournaments, ownerGroups] = await Promise.all([
-    getTournaments(viewScope),
+  const [tournaments, ownerGroups, filterDistricts] = await Promise.all([
+    getTournaments(viewScope, filters),
     // Assignable owners come from the real scope, never the display filter.
     canManage ? getTournamentOwnerGroups(scope).catch(() => []) : Promise.resolve([]),
+    import("@/infrastructure/database/prisma")
+      .then(({ default: prisma }) =>
+        prisma.district.findMany({
+          where: districtWhere(viewScope),
+          orderBy: [{ state: { sortOrder: "asc" } }, { sortOrder: "asc" }, { name: "asc" }],
+          select: { id: true, name: true, state: { select: { name: true } } },
+        })
+      )
+      .catch(() => []),
   ]);
+  const selectClass = "h-9 rounded-md border border-slate-200 bg-white px-2 text-sm";
   const lockedDistrictId = scope.level === "DISTRICT" ? scope.districtId : undefined;
 
   const totalTournaments = tournaments.length;
@@ -140,6 +188,52 @@ export default async function AdminTournamentsPage({ searchParams }: { searchPar
           {canManage && <AddTournamentButton ownerGroups={ownerGroups} lockedDistrictId={lockedDistrictId} />}
         </div>
       </div>
+
+      <form method="get" className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4">
+        {selectedStateId && <input type="hidden" name="state" value={selectedStateId} />}
+        <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+          District
+          <select name="district" defaultValue={filters.district ?? ""} className={selectClass}>
+            <option value="">All in scope</option>
+            {scope.level !== "DISTRICT" && <option value="statewide">State-wide (no district)</option>}
+            {filterDistricts.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+                {d.state ? ` (${d.state.name})` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+          Status
+          <select name="status" defaultValue={filters.status ?? ""} className={selectClass}>
+            <option value="">Any</option>
+            {TOURNAMENT_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {formatTournamentStatus(s)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+          Name
+          <input name="q" defaultValue={filters.q ?? ""} placeholder="Tournament name" className={selectClass} />
+        </label>
+        <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+          From
+          <input type="date" name="from" defaultValue={filters.from ?? ""} className={selectClass} />
+        </label>
+        <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+          To
+          <input type="date" name="to" defaultValue={filters.to ?? ""} className={selectClass} />
+        </label>
+        <Button type="submit" size="sm">
+          Apply
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <Link href={selectedStateId ? `/admin/tournaments?state=${selectedStateId}` : "/admin/tournaments"}>Reset</Link>
+        </Button>
+      </form>
 
       {/* Metrics Row */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

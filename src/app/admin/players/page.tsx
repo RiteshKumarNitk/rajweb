@@ -19,7 +19,8 @@ async function getPlayers(scope: OrgScope): Promise<PlayerRow[]> {
       include: {
         district: true,
         certificates: {
-          where: { isRevoked: false },
+          // Registration certificate only (tournament certificates are separate).
+          where: { isRevoked: false, tournamentId: null },
           orderBy: { issuedAt: "desc" },
           take: 1,
         },

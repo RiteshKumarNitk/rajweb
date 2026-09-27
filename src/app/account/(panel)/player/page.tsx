@@ -50,7 +50,7 @@ export default async function AccountPlayerPage() {
       where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
       include: {
         district: true,
-        certificates: { where: { isRevoked: false }, orderBy: { issuedAt: "desc" }, take: 1 },
+        certificates: { where: { isRevoked: false, tournamentId: null }, orderBy: { issuedAt: "desc" }, take: 1 },
         tournamentRegistrations: { include: { tournament: true, category: true }, orderBy: { registeredAt: "desc" } },
       },
     }),

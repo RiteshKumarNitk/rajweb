@@ -105,6 +105,7 @@ All values confirmed from `package.json`, config files, and imports.
 | H | Tournament management | IMPLEMENTED | Create/edit, statuses, dates in IST, registration window, capacity, poster URL, eligibility flag, fee-bearing categories. |
 | I | Tournament registration | IMPLEMENTED | Locked transaction, duplicate/capacity checks, immutable `amount` price snapshot, audit. Registrations stay `PENDING` — no admin approve/reject API for registrations. |
 | Pre-J | Gap fix & readiness | IMPLEMENTED | Equipment-orders RBAC, authorised file access, server-enforced rejection reasons, public-form field clean-up, coach level mapping fix, request value validation, legacy-amount guard. See §13. |
+| — | Operational ownership | IMPLEMENTED | Requests, tournaments, registrations, certificates, signatories, equipment items and orders all scoped Super Admin → State → District; per-tournament signatories and certificates; district equipment stores. See §15. |
 | — | Multi-state hierarchy | IMPLEMENTED | Super Admin → State → District → members. `State` model, State Admin role, server-side State/District scope on every admin list, detail and action, Super Admin state filter, `/admin/states`, district add/edit/reorder, State + District selection on registration forms. See §14. |
 | I.5 | Performance | IMPLEMENTED | Public tournament caching + tag revalidation, JWT auth refresh throttled to 60 s, loading skeletons, `select`-narrowed queries, list caps. No measured benchmarks recorded. |
 | — | UI refresh (post-I) | IMPLEMENTED | Account and admin UI redesign, in-portal verify, official certificate renderer, sample championship certificates (commits 2026-09-25/26). |
@@ -115,7 +116,7 @@ All values confirmed from `package.json`, config files, and imports.
 | N | Draws / fixtures | NOT STARTED (schema only) | `Fixture` model exists; unused by any code. |
 | O | Match results | NOT STARTED (schema only) | `Match` model exists; unused by any code. |
 | P | Rankings | NOT STARTED | NEEDS DECISION on formula. |
-| Q | Certificates (expansion) | PARTIALLY IMPLEMENTED | Player registration certificate issuance + verification exist. Coach certificate service function exists but **no API/UI calls it**. No revocation UI/API. No tournament/achievement certificates in DB (only hard-coded sample championship certificates). |
+| Q | Certificates (expansion) | PARTIALLY IMPLEMENTED | Registration certificates **and tournament certificates** (per-tournament title/logo/signatories, COMPLETED-only, scope-checked) are implemented with public verification — see §15. Still missing: coach certificate route, revocation, membership certificates, merit rules. Sample championship certificates remain static demo data. |
 | R | Documents | PARTIALLY IMPLEMENTED | `/account/documents` lists issued certificate PDFs only. No document upload. |
 | S | Notifications | NOT STARTED | Bell icon is a UI shell; no model/backend. |
 | T | Reporting | NOT STARTED | Only dashboard counters. |
@@ -459,7 +460,7 @@ Functional:
 2. Tournament registrations stay `PENDING`; no admin approve/reject/cancel, no player withdrawal, no doubles partner capture.
 3. One registration per player per tournament (cannot enter multiple categories).
 4. Membership renewal, activation, expiry, suspension not implemented; membership prices are display-only and editable only in the DB.
-5. Coach certificate issuance not wired to any API/UI; no certificate revocation flow.
+5. Coach certificate issuance not wired to any API/UI; no certificate revocation flow. (Tournament certificates are now implemented — §15.)
 6. Draws, fixtures, match results, rankings: none (schema for Fixture/Match only).
 7. Notifications: UI shell only; no emails other than OTP.
 8. Media CMS and settings are read-only in admin (districts are now fully managed: add / edit / delete-when-unused / activate / reorder); donations have no admin view. ~~Media CMS read-only~~ — **gallery, videos (YouTube), equipment catalog/orders and the contact inbox are now database-driven and admin-managed**; the news/videos summary lists in /admin/media remain read-only, and other site content (committee, history, stats, partners, about pages) intentionally stays in code.
@@ -582,3 +583,120 @@ Before starting any phase: read this file, check §11 for required decisions, th
 ### Phase-J readiness
 
 **Technically ready.** Registration produces an immutable, server-derived `amount`; a guard exists for legacy nulls; registration, admin and file endpoints are authorised. Phase J is blocked only by the **business decisions in §11** (payment provider, refund policy, whether PENDING/unpaid registrations hold capacity, payment deadline, multiple categories, doubles partner rules). Before deploying, run `npm run db:seed` on each existing database so the `equipment:read` permission row exists.
+
+---
+
+## 14. Multi-State Hierarchy & Regression Fixes (2026-09-27)
+
+### Hierarchy
+
+```text
+Super Admin (GLOBAL — every state; optional display-only state filter)
+    ↓
+State        (State Admin: User.stateId — only that state)
+    ↓
+District     (District Admin: User.districtId — only that district, inside its state)
+    ↓
+Players / Coaches / Club · School · Academy memberships
+```
+
+- **Ownership is relational, not duplicated:** `District.stateId` is direct; Players, Coaches and memberships belong to a district and therefore to that district's state; certificates, requests and tournament registrations inherit through their player/coach. `Tournament.stateId` is direct (state-wide events have no district).
+- **Nothing is hard-coded to one state.** States live in the `State` table and are managed at `/admin/states`; district names are unique per state, not globally. The only state name in code is the seed's founding-state *data* row.
+- **Existing data preserved.** `db push` is additive (new table, nullable columns, per-state unique indexes replacing global ones). The seed backfills idempotently: the founding state's 33 seed-list districts → that state; district tournaments → their district's state; state-wide tournaments → the only state (only while exactly one exists). Anything else stays unassigned for the Super Admin to correct — nothing is guessed or moved between states.
+
+### Registration ownership
+- Player, Coach and membership registrations (public, portal and resubmit) resolve their district **within the submitted state** on the server (`resolveRegistrationDistrict`). An ambiguous district name without a state is refused, as is a district outside the given state.
+- Forms show a **State** picker only when more than one active state exists; with one state the UX is unchanged and the state is sent automatically. Options come from the database (active states → active districts, admin order).
+- A member can request a **district change only within their current state**; cross-state moves are not self-service.
+
+### Bugs fixed
+
+| Bug | Root cause | Fix |
+|---|---|---|
+| District **Edit** showed wrong/blank data | Modal state was seeded once from list props (stale after edits; no fresh server data) | Modal now fetches `GET /api/admin/districts/{id}` on open and renders through a portal; Add / name / state / display order added |
+| **Videos**: Super Admin told "view-only… requires videos:manage" | Page used `user.permissions.includes("videos:manage")`, bypassing `hasPermission`'s Super Admin rule; the permission row was also missing in the database | Uses `hasPermission(user, PERMISSIONS.VIDEOS_MANAGE)` (API already did) |
+| **Equipment API 500** | The configured database was never given the current schema: `equipment_items`, `equipment_purchase_orders`, `media_videos` tables, contact status and gallery `imageUrl` columns, and the new permission rows are missing (verified read-only). Prisma P2021 surfaced as an opaque 500 | Schema drift now returns **503 DATABASE_ERROR naming the missing table** and is logged; the admin equipment page shows the error instead of an empty list. **Operational fix required:** `npm run db:push` + `npm run db:seed` on that database |
+| **Certificates: Verify & Preview** did nothing | Account verify panel pre-filled `?certificateNumber` but never ran the lookup | Auto-verifies deep links on load |
+| Scanned certificate QR codes read "invalid" | QR value was sent as `certificateNumber` but only looked up as `qrCode` | Serial lookup falls back to QR code |
+| Certificate **PDFs never generated** in production builds | PDFKit bundled into `.next/server/chunks` could not find its font metrics (ENOENT), then `doc.font(<.afm path>)` failed in fontkit; errors swallowed | `serverExternalPackages: ["pdfkit"]`, standard `Helvetica` by name, failures logged |
+| `/news` 404 + Server Components error | Fixed in the previous commit (redirect `/news → /media/news`; static pages no longer query missing tables) | Re-verified: `/news` → 308 |
+| Scope leaks found while adding states | Dashboard certificate counts and activity feed were global; users list/actions unscoped; admin equipment page offered edit controls to read-only users | All scoped / permission-checked |
+
+### Dynamic content scope (unchanged rule)
+Only **Districts, Gallery, Videos, Equipment and Contact submissions** are database-managed. All other site content stays static in code.
+
+### Verification (2026-09-27)
+- `tsc --noEmit` ✔, `prisma validate` ✔, `next build --webpack` ✔, lint: 0 errors in changed files (5 pre-existing errors elsewhere).
+- Upgrade rehearsal on a disposable Postgres: previous schema + legacy data → `db push --accept-data-loss` (only warnings: the new per-state unique indexes, which existing globally-unique names cannot violate) → seed backfill → data intact; seed re-run is a no-op.
+- **92/92 HTTP checks passed** on that database with two states, a State A admin, a State B admin and a State B district admin — see [RRA-TESTING.md §17](RRA-TESTING.md#17-multi-state-isolation-matrix).
+- Not browser-tested: client-side behaviour of the district Edit modal, the State picker and verify auto-run (covered by the API checks they call).
+
+---
+
+## 15. Operational Ownership — Certificates, Signatories, Tournaments, Equipment (2026-09-27)
+
+Every operational record now has one ownership path to a state and (where it applies) a district. Ownership is derived through relations where that is stable, and snapshotted only where history must not move.
+
+### Ownership audit (verified in code and by live tests)
+
+| Entity | How it is owned | State scope | District scope | Super Admin | State Admin | District Admin |
+|---|---|---|---|---|---|---|
+| Player | `districtId` → District.stateId | Yes (via district) | Yes | All | Own state | Own district |
+| Coach | `districtId` → District.stateId | Yes (via district) | Yes | All | Own state | Own district |
+| Club / School / Academy membership | `districtId` → District.stateId | Yes (via district) | Yes | All | Own state | Own district |
+| Player / coach request | via the linked Player or Coach (never from client ids) | Yes | Yes | All | Own state | Own district |
+| Tournament | direct `stateId` + optional `districtId` (null = state-wide) | Yes | Yes | All | Own state (all its districts) | Own district |
+| Tournament registration | via its tournament | Yes | Yes | All | Own state | Own district |
+| Tournament certificate | via its tournament (`tournamentId`, stable even if the player moves) | Yes | Yes | All | Own state | Own district's tournaments |
+| Registration certificate | via the player's district | Yes | Yes | All | Own state | Own district |
+| Certificate signatory | direct `stateId` / `districtId` (both null = federation level) | Yes | Yes | All | Own state + its districts | Own district |
+| Equipment item | direct `stateId` / `districtId` (both null = RRA Central Store) | Yes | Yes | All (incl. central) | Own state stores | Own district store |
+| Equipment order | **snapshot** `stateId` / `districtId` copied from the items at order time | Yes | Yes | All (incl. central) | Own state | Own district |
+| Equipment enquiry (old free-text form) | district **name** match | By name | By name | All | Own state | Own district |
+
+All list pages query with the scope where-builders; every record action (approve, reject, edit, delete, issue, cancel, file download) uses `assertInScope`, which answers **404** for another district's or state's record.
+
+### Certificates & signatories
+- **Who can issue:** `certificates:issue` **and** the record in scope — District Admin for their district's players/tournaments, State Admin anywhere in their state, Super Admin anywhere (enforced server-side).
+- **Signatories are data, not constants.** `CertificateSignatory` rows (name, designation, organization, optional signature image) owned by a district, a state, or the federation. Managed at `/admin/certificates/signatories`. The seed registers the founding state's two officials (previously hard-coded) as state-level signatories.
+- **Per-tournament signers:** each tournament picks up to 4 signatories in signing order (`TournamentSignatory`). Only federation-level, its own state's, or its own district's signatories are accepted — never another district's.
+- **Tournament certificates** (`/admin/tournaments/[id]` → Certificates): tournament-specific title and logo; generated only when the tournament is **COMPLETED**, only for players holding a (non-rejected) registration for that tournament, one per player per tournament (DB unique). Optional per-player "achievement" text (e.g. "Winner — Senior Singles") is entered by the admin.
+- **History is frozen:** each certificate stores its title, event name/dates, venue, district/state names, achievement, logo and the signers' name/designation/organization at issue time. Re-designating a signatory later does not change issued certificates (verified).
+- **Numbering:** globally unique `CERT-…` numbers and `QR-…` codes (DB unique) — no collision between tournaments; verification unchanged.
+- **Registration certificates** (one per player) are unaffected by tournament certificates and now snapshot the player's state officials.
+
+### Equipment
+- Items belong to a district store, a state store, or the RRA Central Store. District Admins manage their district's stock; State Admins every store in their state; Super Admin everything including the central store. (`equipment:read/manage` granted to the state-admin and district-admin roles.)
+- Public `/equipment` shows which store sells each item ("Sold by …") with a store filter; items of inactive states/districts are hidden.
+- **One order = one store.** An order's state/district is copied from its items server-side; a cart mixing stores is refused (400, stock untouched). Name and unit-price snapshots are unchanged; later price edits never alter orders (verified).
+- Payment reuses the existing server-side chokepoint (`verifyAndMarkPaid`); no provider yet (Phase J). Amounts come only from order snapshots.
+- "My Equipment" / "My Orders" remain strictly the signed-in user's own rows and now show the selling store.
+
+### Defects found and fixed during this audit
+| Defect | Impact | Fix |
+|---|---|---|
+| Public verification returned **invented event details** for real player/coach certificates (fixed championship name, "Jaipur Racquetball Association" organiser, a stadium venue, "Official Registered Guardian") | Anyone verifying a real certificate saw a championship it was not issued for | Results now come from the certificate's own snapshot; missing fields are hidden; storage paths no longer exposed |
+| Certificate renderer printed two **hard-coded signer names** regardless of data | Every certificate showed the same signers | Renders the certificate's own signer list |
+| Zod 4 `.partial()` kept `.default()` values in **update** schemas (equipment, gallery, videos) | Changing an item's price reset its stock to 0 and category to OTHER; editing a gallery item unpublished it; editing a video re-activated it | Update schemas built from default-free fields (verified live) |
+| `/admin/equipment/orders` listed **every** order to anyone with `equipment:read` | Cross-district order visibility once district admins manage equipment | Scoped + filters; order status changes scope-checked |
+| Registration-certificate "one per player" checks counted any certificate | A tournament certificate would have blocked the registration certificate | Checks narrowed to `tournamentId: null` |
+
+### Business decisions still required
+| Topic | Current behaviour |
+|---|---|
+| Tournament certificate eligibility (participation vs merit; who counts as a participant) | Any player with a PENDING/APPROVED registration for a COMPLETED tournament; achievement text is free-form — NEEDS BUSINESS DECISION |
+| Registration approval before certificates | Registrations are never approved/rejected yet (Phase M), so PENDING counts — NEEDS CONFIRMATION |
+| Buying from another district's store | Allowed; the order belongs to the selling store — NEEDS BUSINESS DECISION |
+| Registering for another state's tournament | Allowed; certificate belongs to the tournament's scope — NEEDS BUSINESS DECISION |
+| Certificate number format (e.g. per-tournament sequence `#001`) | Global `CERT-…` numbers — NEEDS CONFIRMATION |
+| Certificate revocation, coach certificates, membership certificates | Not implemented (unchanged) |
+| Signature images | Optional; must be PNG/JPEG under `/images/…` or an https URL that does not redirect (Google Drive links usually redirect and are skipped) |
+
+### Verification (2026-09-27)
+- `prisma validate` ✔, `tsc --noEmit` ✔, `next build --webpack` ✔, lint: 0 errors in changed/new files (5 pre-existing errors in untouched files).
+- Upgrade rehearsal on a disposable database: schema as committed before this change + legacy-shaped rows (central item, order with price snapshot, pre-snapshot registration certificate) → `db push --accept-data-loss` (only warning: the new `(tournamentId, playerId)` unique index on a brand-new column) → seed → all legacy rows unchanged; legacy certificate still verifies.
+- **136/136** ownership-isolation checks and **22/22** regression smoke checks passed — see [RRA-TESTING.md §18](RRA-TESTING.md#18-operational-ownership-matrix).
+- Not browser-tested: the certificate panel and signatory UI (the APIs they call are covered).
+
+### Deploy
+Code reads the new columns, so apply the schema **with** this release: `npx prisma db push --accept-data-loss` (review that the only warning is the `player_certificates (tournamentId, playerId)` unique index), then `npm run db:seed` (creates the founding state's signatories and grants equipment permissions to state/district admins). Until then tournament registration, the tournament/equipment admin pages and certificate issuance return 503 `DATABASE_ERROR`; login is unaffected.

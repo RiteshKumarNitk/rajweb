@@ -424,6 +424,7 @@ Run after **every** phase before merging. Tick all.
 [ ] Security: S1, S2, S4, S6, S15, S16
 [ ] Rejection reason required: PL7a, C1b, M5a
 [ ] Multi-state isolation: §17 groups A–F (at least one State A admin, one State B admin, one district admin)
+[ ] Operational ownership: §18 (tournament certificates end-to-end, signatory scope, equipment + order scope, partial-update regression)
 [ ] Certificate issue produces a PDF (pdfPath not null) and it opens via /api/files for permitted users only
 [ ] /admin/audit-logs shows entries for the actions above
 [ ] All five docs in docs/ updated for the phase
@@ -478,3 +479,80 @@ Added 2026-09-26. Run them on a **local or staging** database (they write data).
 | J14 | Registration | Price snapshot test (§11) + TR14/TR15 concurrency | Unchanged behaviour | Not yet run |
 | J15 | Legacy amount | TR20 | As stated | Not yet run |
 | J16 | APIs | Mutations without CSRF → 403; with CSRF but logged out → 401 | As stated | Verified 2026-09-26 (players reject, requests, registrations) |
+
+---
+
+## 17. Multi-State Isolation Matrix
+
+Added 2026-09-27. Run on a **disposable** database — it creates states, districts and users.
+
+### Setup
+1. Apply the schema and seed (`npm run db:push` — see the deploy note below — then `npm run db:seed`). The founding state and its 33 districts are backfilled/seeded.
+2. As Super Admin, create **State B** at `/admin/states` and add districts (e.g. *Alpha*, *Gamma*, and a *Jaipur* to test duplicate names across states).
+3. Give three staff accounts scope at `/admin/users → Manage`: role **State Admin** + State A; role **State Admin** + State B; role **District Admin** + State B + *Alpha*. (Accounts come from Google/OTP sign-in — there is no user-creation screen.)
+
+**Deploy note:** on a database created before this change, `prisma db push` stops with two warnings about adding unique constraints on `districts (stateId, name)` and `(stateId, slug)`. They cannot fail on existing data (names/slugs were already globally unique), so run `npx prisma db push --accept-data-loss` **after reviewing that these are the only warnings**, then `npm run db:seed`.
+
+### Checks (92 automated HTTP checks — all passed 2026-09-27)
+
+| Group | # | Case | Expected |
+|---|---|---|---|
+| A. Registration ownership | A1 | Register player with `district: "Jaipur", state: "<A slug>"` | 200; player's district belongs to State A |
+| | A2 | Same with a State B district + State B slug | 200; owned by State B |
+| | A3 | `district: "Jaipur"` with **no** state while two states have a Jaipur | 400 "Select your state…" |
+| | A4 | District from State B with State A slug | 400 "Invalid district selected" |
+| | A5 | Coach registration in State B | 200 |
+| B. List pages | B1 | State A admin: `/admin/players`, `/coaches`, `/districts`, `/tournaments`, `/states` | Only State A records |
+| | B2 | State B admin: same pages | Only State B records |
+| | B3 | District admin (B/Alpha): `/admin/players` | Only Alpha records — not Gamma (same state), not State A |
+| | B4 | Super Admin: same pages | All states |
+| | B5 | Super Admin `?state=<B id>` | Only State B (display filter) |
+| | B6 | State A admin `?state=<B id>` | Still only State A (param ignored) |
+| | B7 | State A admin opens `/admin/applications/player/<B id>` | Not-found view, no State B data |
+| C. IDOR on actions | C1 | State A admin approve/reject a State B player or coach | **404** |
+| | C2 | District admin (Alpha) approve a Gamma player / a State A player | 404 |
+| | C3 | Each admin approves own-scope record; Super Admin approves any | 200 |
+| | C4 | State A admin `GET/PATCH /api/admin/districts/<B district>` | 404 / 403 (no districts:manage) |
+| | C5 | State A admin `POST /api/admin/users/<B admin>/deactivate` | 403 (no users:update) — and 404 for a scoped admin that has it |
+| D. Tournaments | D1 | State A admin creates without district | 200, `stateId` = State A |
+| | D2 | State A admin creates with a State B `districtId` | 400 |
+| | D3 | State B admin edits a State A tournament | 404 |
+| | D4 | District admin creates | Forced to own district |
+| | D5 | Super Admin creates state-wide with two active states and no `stateId` | 400 "Select the state…"; with `stateId` → 200 |
+| E. States & districts | E1 | State admin `POST /api/admin/states` | 403 |
+| | E2 | Super Admin create state; duplicate name | 200; 409 |
+| | E3 | Add district to a state; duplicate name in same state | 200; 409 (same name in *another* state is allowed) |
+| | E4 | **District Edit**: open Edit → form shows that district's current values; save; reopen | Values load from `GET /api/admin/districts/{id}`; saved values shown |
+| | E5 | Delete a state that still has districts; delete an unused district; delete the empty state | 409; 200; 200 |
+| F. Requests, certificates, files | F1 | Member requests DISTRICT_CHANGE to a district in own state / another state | 200 / 400 |
+| | F2 | Issue a certificate | 200, `pdfUrl` = `/api/files/certificates/<CERT>.pdf`, file is a valid PDF |
+| | F3 | `/api/verify?certificateNumber=<QR value>` and `?qrCode=<QR value>` | `valid: true` both |
+| | F4 | PDF as owner / same-state admin / other-state admin / anonymous | 200 / 200 / 404 / 401 |
+| G. Regressions | G1 | Super Admin `/admin/media/videos` with the `videos:manage` row removed from super-admin | Manage controls shown; adding a YouTube video works; it appears on `/media/videos` |
+| | G2 | Rename `equipment_items` then `POST /api/admin/equipment` | 503 `DATABASE_ERROR` "Database schema is out of date (missing table EquipmentItem)…" |
+| | G3 | `/news` | 308 → `/media/news` |
+| | G4 | `/`, `/districts`, `/media/gallery`, `/media/videos`, `/media/news`, `/equipment`, `/tournaments`, `/verify`, `/register/player`, `/register/coach` | 200; `/districts` lists DB districts grouped by state |
+| | G5 | `/account/verify?certificateNumber=<n>` | Page renders with the number; the result appears without clicking Verify (client-side — check in a browser) |
+
+**Browser-only checks (not automated):** district Edit modal loads/saves (E4 UI), State picker appears only with ≥ 2 active states and filters districts, verify auto-run (G5), Super Admin state filter dropdown.
+
+---
+
+## 18. Operational Ownership Matrix
+
+Added 2026-09-27. Run on a **disposable** database. Setup: founding state A with districts A1 (Jaipur) and A2 (Kota); state B with district B1; a State Admin for A and for B; District Admins for A1 and A2; members registering players in A1 (two), A2 and B1, and a coach in A2.
+
+**Result 2026-09-27: 136/136 passed** (plus 22/22 regression smoke checks: public pages, `/news`, district edit, gallery/video partial updates, QR verification of a registration certificate).
+
+| Group | Checks (expected) |
+|---|---|
+| Players | A2/B admins approving an A1 player → 404; own-scope approvals 200; list pages show only own district (A1), both districts (State A), everything (Super) |
+| Requests | Request inherits the player's/coach's district even if the client sends `stateId`/`districtId`; A1 admin sees A1 requests only; A2 admin sees the A2 coach request only; State A sees both; State B neither; cross-scope approve/reject → 404 |
+| Tournaments | District admin's tournament forced to own district; A2/State B edit or add category to A1 tournament → 404; list scoping per role; Super filters by district, status, name |
+| Signatories | District admin's signatory forced to own district; State A cannot create in State B (400); A2 cannot edit A1's (404); A1 tournament rejects A2's and State B's signatories (400) |
+| Tournament certificates | Generate before COMPLETED → 400; A2/State B generating for A1 tournament → 404; unregistered player skipped; duplicate skipped; certificate stores tournament, title, event, district, state; PDF generated; public verify shows the tournament, achievement and that tournament's signers in order, with no storage path and no invented venue; a second tournament's certificate shows only its own signer; re-designating a signatory leaves issued certificates unchanged; registration certificate still issuable; cert list scoping + Super filters (tournament, district, player, type); PDF: owner and in-scope admin 200, other district/state/member 404, anonymous 401; legacy certificate still verifies |
+| Equipment | Items forced to the admin's district; State A cannot stock State B (400); Super creates central stock; cross-scope PATCH/DELETE → 404 (incl. district admin on central stock); price-only PATCH keeps stock/category/active; inventory pages scoped; Super filters (central, category); public catalog shows the store |
+| Orders | Order owned by the item's district with price snapshot; mixed-store cart → 400 with stock rolled back; client-sent prices ignored; later price edits do not change the order; admin order pages scoped (legacy central order visible to Super only); cross-scope status change → 404; another member cannot cancel (404) or see the order; in-scope cancel restocks; order audit carries the district |
+| Dashboard | District admin sees "District: Jaipur"; Super sees "All States" |
+
+**Browser-only (not automated):** tournament certificate panel (signatory checkboxes/order, generate button), signatories manager, equipment "Store" selector.

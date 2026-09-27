@@ -25,7 +25,18 @@ export interface CertificateVerificationResult {
   playerId?: string;
   coachId?: string;
   qrCode?: string;
-  pdfPath?: string | null;
+  /** Certificate title, e.g. "Certificate of Participation". */
+  title?: string;
+  /** Owning state name — shown on the emblem. */
+  stateName?: string;
+  /** Event date range for tournament certificates. */
+  eventDates?: string;
+  /**
+   * Signers exactly as snapshotted on the certificate, in signing order.
+   * When present it replaces the legacy two-signer pair below.
+   */
+  signatoryList?: CertificateSignatory[];
+  /** Legacy pair — used for sample records and certificates issued before signatory snapshots. */
   signatories: {
     president: CertificateSignatory;
     generalSecretary: CertificateSignatory;

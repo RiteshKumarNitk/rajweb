@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/shared/components/ui/button";
 import { formatDate } from "@/lib/utils";
-import type { CertificateVerificationResult } from "@/modules/verify/verify.types";
+import type { CertificateSignatory, CertificateVerificationResult } from "@/modules/verify/verify.types";
 
 export function OfficialStateCertificate({
   cert,
@@ -26,6 +26,14 @@ export function OfficialStateCertificate({
 }) {
   const printRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
+
+  // Signers exactly as recorded on the certificate; the legacy pair is only
+  // used for sample records and certificates issued before snapshots existed.
+  const signers = cert.signatoryList?.length
+    ? cert.signatoryList.slice(0, 4)
+    : [cert.signatories.president, cert.signatories.generalSecretary];
+  const middle = Math.ceil(signers.length / 2);
+  const isRegistration = cert.type === "player" || cert.type === "coach";
 
   function handlePrint() {
     window.print();
@@ -114,7 +122,7 @@ export function OfficialStateCertificate({
               <Award className="h-8 w-8 text-amber-300 drop-shadow" />
             </div>
             <span className="mt-1 text-[10px] font-extrabold uppercase tracking-wide text-pink-700">
-              Rajasthan Racquetball
+              {cert.stateName ? `${cert.stateName} Racquetball` : "Rajasthan Racquetball"}
             </span>
           </div>
 
@@ -139,20 +147,22 @@ export function OfficialStateCertificate({
             organized by:{" "}
             <span className="text-pink-700 font-extrabold">{cert.organizedBy}</span>
           </p>
-          <div className="flex flex-wrap items-center justify-center gap-x-2 text-[11px] text-slate-600 font-medium">
-            <span>Recognized by: Rajasthan Racquetball Association</span>
-            <span>·</span>
-            <span>Indian Racquetball Association</span>
-            <span>·</span>
-            <span>International Racquetball Federation</span>
-          </div>
+          {cert.recognizedBy.length > 0 && (
+            <div className="flex flex-wrap items-center justify-center gap-x-2 text-[11px] text-slate-600 font-medium">
+              <span>Recognized by: {cert.recognizedBy.join(" · ")}</span>
+            </div>
+          )}
           <div className="flex flex-wrap items-center justify-center gap-4 text-xs font-semibold text-slate-700 pt-1">
+            {cert.venue && (
+              <>
+                <span>
+                  Venue: <span className="text-slate-900 font-bold">{cert.venue}</span>
+                </span>
+                <span>·</span>
+              </>
+            )}
             <span>
-              Venue: <span className="text-slate-900 font-bold">{cert.venue || "Sawai Mansingh Stadium, Jaipur"}</span>
-            </span>
-            <span>·</span>
-            <span>
-              Date: <span className="text-slate-900 font-bold">{formatDate(cert.issuedAt)}</span>
+              Date: <span className="text-slate-900 font-bold">{cert.eventDates ?? formatDate(cert.issuedAt)}</span>
             </span>
           </div>
         </div>
@@ -185,7 +195,7 @@ export function OfficialStateCertificate({
               CERTIFICATE
             </h1>
             <p className="text-[10px] font-bold uppercase tracking-widest text-amber-600">
-              Official Merit & Participation
+              {cert.title ?? "Official Merit & Participation"}
             </p>
           </div>
         </div>
@@ -200,18 +210,22 @@ export function OfficialStateCertificate({
           </div>
 
           <div className="flex flex-col sm:flex-row sm:items-baseline justify-center gap-2 border-b border-dotted border-slate-400 pb-2">
-            <span className="text-sm font-sans font-medium text-slate-500">Son / Daughter of</span>
-            <span className="font-sans text-base sm:text-lg font-bold text-slate-800">
-              {cert.fatherName || "Official Registered Guardian"}
+            {cert.fatherName && (
+              <>
+                <span className="text-sm font-sans font-medium text-slate-500">Son / Daughter of</span>
+                <span className="font-sans text-base sm:text-lg font-bold text-slate-800">{cert.fatherName}</span>
+              </>
+            )}
+            <span className="text-sm font-sans font-medium text-slate-500">
+              {isRegistration ? "is registered from District" : "has participated from District"}
             </span>
-            <span className="text-sm font-sans font-medium text-slate-500">has participated from District</span>
             <span className="font-sans text-base sm:text-lg font-bold text-pink-700">
               {cert.district}
             </span>
           </div>
 
           <div className="grid grid-cols-2 gap-4 rounded-xl bg-pink-50/50 p-3.5 text-left font-sans text-xs border border-pink-100">
-            <div>
+            <div className={cert.category ? "" : "hidden"}>
               <span className="block text-[11px] font-bold uppercase text-slate-500">
                 Age / Skill Category
               </span>
@@ -229,8 +243,8 @@ export function OfficialStateCertificate({
             </div>
           </div>
 
-          {/* Position Banner */}
-          <div className="my-4 flex flex-col items-center justify-center">
+          {/* Position Banner — only when an achievement was recorded */}
+          <div className={`my-4 flex-col items-center justify-center ${cert.position ? "flex" : "hidden"}`}>
             <div className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-pink-600 via-rose-600 to-pink-600 px-6 py-2 text-white shadow-md border-2 border-white">
               <Sparkles className="h-4 w-4 text-amber-300" />
               <span className="text-xs font-black uppercase tracking-wider">
@@ -240,27 +254,18 @@ export function OfficialStateCertificate({
           </div>
         </div>
 
-        {/* Footer Official Signatures */}
+        {/* Footer Official Signatures — the certificate's own signers */}
         <div className="relative z-10 mt-8 border-t-2 border-slate-800 pt-6">
-          <div className="grid grid-cols-3 items-end gap-4 text-center font-sans">
-            {/* President Signature */}
-            <div className="space-y-1">
-              <div className="mx-auto h-10 w-28 flex items-center justify-center font-serif italic text-base text-pink-800 font-bold border-b border-slate-400">
-                Aamir Khan
-              </div>
-              <p className="text-xs font-black text-slate-900 uppercase">
-                {cert.signatories.president.name}
-              </p>
-              <p className="text-[11px] font-bold text-pink-700">
-                {cert.signatories.president.title}
-              </p>
-              <p className="text-[9px] text-slate-500">
-                {cert.signatories.president.organization}
-              </p>
-            </div>
+          <div
+            className="grid items-end gap-4 text-center font-sans"
+            style={{ gridTemplateColumns: `repeat(${signers.length + 1}, minmax(0, 1fr))` }}
+          >
+            {signers.map((signer, index) => (
+              <SignatureBlock key={`${signer.name}-${index}`} signer={signer} order={index < middle ? index : index + 1} />
+            ))}
 
             {/* Central Racquetball Symbol */}
-            <div className="flex flex-col items-center justify-center">
+            <div className="flex flex-col items-center justify-center" style={{ order: middle }}>
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-900 text-white shadow-sm border-2 border-amber-400">
                 <Award className="h-6 w-6 text-amber-400" />
               </div>
@@ -271,25 +276,25 @@ export function OfficialStateCertificate({
                 Digitally Authenticated
               </span>
             </div>
-
-            {/* General Secretary Signature */}
-            <div className="space-y-1">
-              <div className="mx-auto h-10 w-28 flex items-center justify-center font-serif italic text-base text-pink-800 font-bold border-b border-slate-400">
-                Aashish Poonia
-              </div>
-              <p className="text-xs font-black text-slate-900 uppercase">
-                {cert.signatories.generalSecretary.name}
-              </p>
-              <p className="text-[11px] font-bold text-pink-700">
-                {cert.signatories.generalSecretary.title}
-              </p>
-              <p className="text-[9px] text-slate-500">
-                {cert.signatories.generalSecretary.organization}
-              </p>
-            </div>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+
+function SignatureBlock({ signer, order }: { signer: CertificateSignatory; order: number }) {
+  // Cursive line shows the signer's name without an honorific.
+  const signed = signer.name.replace(/^(mr|mrs|ms|dr|shri|smt)\.?\s+/i, "");
+  return (
+    <div className="space-y-1" style={{ order }}>
+      <div className="mx-auto h-10 w-28 flex items-center justify-center font-serif italic text-base text-pink-800 font-bold border-b border-slate-400">
+        {signed}
+      </div>
+      <p className="text-xs font-black text-slate-900 uppercase">{signer.name}</p>
+      {signer.title && <p className="text-[11px] font-bold text-pink-700">{signer.title}</p>}
+      {signer.organization && <p className="text-[9px] text-slate-500">{signer.organization}</p>}
     </div>
   );
 }

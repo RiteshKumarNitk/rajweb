@@ -35,7 +35,7 @@ export default async function AccountDocumentsPage() {
   const documents = [
     ...(player?.certificates ?? []).map((c) => ({
       id: c.id,
-      title: `Official Player Certificate — ${c.certificateNumber}`,
+      title: `${c.eventName ? `${c.eventName} — ${c.title ?? "Certificate"}` : "Official Player Certificate"} — ${c.certificateNumber}`,
       date: c.issuedAt,
       url: storage.getUrl(c.pdfPath!),
     })),

@@ -5,6 +5,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import { ROLES, PERMISSIONS, ROLE_PERMISSIONS } from "../src/security/rbac/permissions";
 import { rajasthanDistricts } from "../src/shared/config/site";
+import { OFFICIAL_SIGNATORIES } from "../src/modules/verify/verify.types";
 
 // Seed DATA for the association's founding state. Application logic never
 // refers to a specific state — further states are added via /admin/states.
@@ -84,6 +85,31 @@ async function main() {
   });
   if (backfilledDistricts.count > 0) {
     console.log(`Backfilled ${backfilledDistricts.count} districts -> ${foundingState.name}`);
+  }
+
+  // Certificate signatories (idempotent): the founding state's officials who
+  // were previously hard-coded for certificate display become state-level
+  // signatories, so new certificates are signed from data. Only created while
+  // the founding state has no state-level signatory at all.
+  const existingStateSigners = await prisma.certificateSignatory.count({
+    where: { stateId: foundingState.id, districtId: null },
+  });
+  if (existingStateSigners === 0) {
+    const officials = [OFFICIAL_SIGNATORIES.president, OFFICIAL_SIGNATORIES.generalSecretary];
+    for (const [index, official] of officials.entries()) {
+      await prisma.certificateSignatory.create({
+        data: {
+          name: official.name,
+          designation: official.title,
+          organization: official.organization,
+          stateId: foundingState.id,
+          districtId: null,
+          sortOrder: index,
+          isActive: true,
+        },
+      });
+    }
+    console.log(`Created ${officials.length} state-level certificate signatories for ${foundingState.name}`);
   }
 
   for (const [index, name] of rajasthanDistricts.entries()) {

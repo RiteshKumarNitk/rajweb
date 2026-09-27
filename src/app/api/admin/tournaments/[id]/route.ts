@@ -83,8 +83,8 @@ export const PATCH = withApiHandler(
       entityId: id,
       details:
         body.status && body.status !== previousStatus
-          ? { event: "TOURNAMENT_STATUS_CHANGED", from: previousStatus, to: body.status }
-          : { event: "TOURNAMENT_UPDATED" },
+          ? { event: "TOURNAMENT_STATUS_CHANGED", from: previousStatus, to: body.status, stateId: tournament.stateId, districtId: tournament.districtId }
+          : { event: "TOURNAMENT_UPDATED", stateId: tournament.stateId, districtId: tournament.districtId },
     });
 
     revalidatePublicTournaments();

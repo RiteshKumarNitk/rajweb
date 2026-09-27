@@ -8,6 +8,12 @@ import { formatInrHelper } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
+/** The store (inventory) that sold/fulfils an order — from the order's own snapshot. */
+function storeName(order: { state: { name: string } | null; district: { name: string } | null }): string {
+  if (order.district) return order.state ? `${order.district.name}, ${order.state.name}` : order.district.name;
+  return order.state ? `${order.state.name} (state store)` : "RRA Central Store";
+}
+
 export default async function AccountEquipmentPage() {
   const user = await requireAuth();
 
@@ -21,6 +27,8 @@ export default async function AccountEquipmentPage() {
       createdAt: true,
       paymentStatus: true,
       status: true,
+      state: { select: { name: true } },
+      district: { select: { name: true } },
       items: {
         select: {
           id: true,
@@ -43,6 +51,7 @@ export default async function AccountEquipmentPage() {
       orderNumber: order.orderNumber,
       paymentStatus: order.paymentStatus,
       slug: item.equipment.slug,
+      store: storeName(order),
     }))
   );
 
@@ -90,6 +99,10 @@ export default async function AccountEquipmentPage() {
                 <div className="flex justify-between">
                   <dt>Order</dt>
                   <dd className="font-mono">{row.orderNumber}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt>Store</dt>
+                  <dd>{row.store}</dd>
                 </div>
               </dl>
             </div>

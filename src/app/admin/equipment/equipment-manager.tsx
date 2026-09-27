@@ -12,6 +12,7 @@ import { StatusBadge } from "@/shared/components/ui/status-badge";
 import { apiFetch, handleApiFetch } from "@/lib/api-client";
 import { formatDate } from "@/lib/utils";
 import { formatInrHelper } from "@/lib/format";
+import { OwnerOptions, ownerValue, parseOwnerValue, type OwnerGroup } from "@/shared/components/admin/tournament-owner-options";
 
 export interface EquipmentRow {
   id: string;
@@ -26,6 +27,19 @@ export interface EquipmentRow {
   shortDescription: string | null;
   description: string | null;
   updatedAt: string;
+  stateId: string | null;
+  districtId: string | null;
+  /** Store that owns this stock, e.g. "Jaipur, Rajasthan" or "RRA Central Store". */
+  storeName: string;
+}
+
+/** Who may be assigned as an item's store — from the admin's real scope. */
+export interface OwnershipOptions {
+  ownerGroups: OwnerGroup[];
+  /** GLOBAL only: allow the RRA central store (no state/district). */
+  allowCentral: boolean;
+  /** DISTRICT scope: fixed to this district. */
+  lockedDistrictId?: string;
 }
 
 const CATEGORIES = [
@@ -45,9 +59,11 @@ function categoryLabel(value: string): string {
 function EquipmentFormModal({
   item,
   onClose,
+  ownership,
 }: {
   item: EquipmentRow | null;
   onClose: () => void;
+  ownership: OwnershipOptions;
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -60,6 +76,17 @@ function EquipmentFormModal({
   const [description, setDescription] = useState(item?.description ?? "");
   const [sortOrder, setSortOrder] = useState(String(item?.sortOrder ?? 0));
   const [isActive, setIsActive] = useState(item?.isActive ?? true);
+  const [owner, setOwner] = useState(
+    ownership.lockedDistrictId
+      ? ownerValue({ stateId: null, districtId: ownership.lockedDistrictId })
+      : item
+        ? ownerValue(item)
+        : ownership.allowCentral
+          ? ""
+          : ownership.ownerGroups.length === 1
+            ? ownerValue({ stateId: ownership.ownerGroups[0].stateId, districtId: null })
+            : ""
+  );
 
   async function handleSave() {
     if (!name.trim()) {
@@ -89,6 +116,13 @@ function EquipmentFormModal({
         description: description.trim() || null,
         sortOrder: Number(sortOrder) || 0,
         isActive,
+        // Store ownership is re-validated against the admin's scope server-side.
+        ...(ownership.lockedDistrictId
+          ? {}
+          : (() => {
+              const parsed = parseOwnerValue(owner);
+              return parsed ? { stateId: parsed.stateId ?? null, districtId: parsed.districtId } : { stateId: null, districtId: null };
+            })()),
       };
       const res = item
         ? await apiFetch(`/api/admin/equipment/${item.id}`, { method: "PATCH", body: JSON.stringify(payload) })
@@ -132,6 +166,24 @@ function EquipmentFormModal({
                 {CATEGORIES.map((c) => (
                   <option key={c.value} value={c.value}>{c.label}</option>
                 ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="e-owner">Store (inventory)</Label>
+              <select
+                id="e-owner"
+                value={owner}
+                onChange={(e) => setOwner(e.target.value)}
+                disabled={Boolean(ownership.lockedDistrictId)}
+                className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm disabled:bg-slate-100"
+              >
+                {ownership.allowCentral && <option value="">RRA Central Store</option>}
+                {!ownership.allowCentral && !ownership.lockedDistrictId && owner === "" && (
+                  <option value="" disabled>
+                    Select store
+                  </option>
+                )}
+                <OwnerOptions groups={ownership.ownerGroups} allowStateWide={!ownership.lockedDistrictId} />
               </select>
             </div>
             <div className="space-y-1.5">
@@ -190,9 +242,11 @@ function EquipmentFormModal({
 export function EquipmentManager({
   items,
   canManage,
+  ownership,
 }: {
   items: EquipmentRow[];
   canManage: boolean;
+  ownership: OwnershipOptions;
 }) {
   const router = useRouter();
   const [formOpen, setFormOpen] = useState(false);
@@ -299,6 +353,7 @@ export function EquipmentManager({
             <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <th className="px-4 py-3 font-semibold">Image</th>
               <th className="px-4 py-3 font-semibold">Name</th>
+              <th className="px-4 py-3 font-semibold">Store</th>
               <th className="px-4 py-3 font-semibold">Category</th>
               <th className="px-4 py-3 font-semibold">Price</th>
               <th className="px-4 py-3 font-semibold">Stock</th>
@@ -311,7 +366,7 @@ export function EquipmentManager({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-400">
+                <td colSpan={10} className="px-4 py-10 text-center text-sm text-slate-400">
                   {items.length === 0 ? "No equipment yet. Add the first product." : "No records match the filters."}
                 </td>
               </tr>
@@ -329,6 +384,7 @@ export function EquipmentManager({
                   <td className="max-w-[200px] px-4 py-3 font-medium text-slate-800">
                     <span className="line-clamp-2">{item.name}</span>
                   </td>
+                  <td className="px-4 py-3 text-xs text-slate-600">{item.storeName}</td>
                   <td className="px-4 py-3 text-slate-600">{categoryLabel(item.category)}</td>
                   <td className="px-4 py-3 font-semibold text-slate-800">{formatInrHelper(item.price)}</td>
                   <td className="px-4 py-3">
@@ -370,7 +426,7 @@ export function EquipmentManager({
         </table>
       </div>
 
-      {formOpen && <EquipmentFormModal item={editing} onClose={() => setFormOpen(false)} />}
+      {formOpen && <EquipmentFormModal item={editing} ownership={ownership} onClose={() => setFormOpen(false)} />}
     </div>
   );
 }

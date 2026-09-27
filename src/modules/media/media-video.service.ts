@@ -55,16 +55,27 @@ const youtubeInputSchema = z
     message: "Must be a valid YouTube URL (youtube.com/watch, youtu.be, or youtube.com/shorts)",
   });
 
-export const mediaVideoSchema = z.object({
+// Update schemas are built from default-FREE fields: in Zod 4, `.partial()`
+// still applies `.default()` values, so a PATCH changing one field would
+// silently reset the others (e.g. stock → 0, published → false).
+const mediaVideoFields = {
   title: z.string().trim().min(2).max(200),
   description: z.string().trim().max(2000).nullable().optional(),
   youtubeUrl: youtubeInputSchema,
   category: z.string().trim().max(60).nullable().optional(),
-  sortOrder: z.number().int().min(0).max(100000).default(0),
-  isActive: z.boolean().default(true),
+  sortOrder: z.number().int().min(0).max(100000),
+  isActive: z.boolean(),
+};
+
+export const mediaVideoSchema = z.object({
+  ...mediaVideoFields,
+  sortOrder: mediaVideoFields.sortOrder.default(0),
+  isActive: mediaVideoFields.isActive.default(true),
 });
 
-export const mediaVideoUpdateSchema = mediaVideoSchema.partial()
+export const mediaVideoUpdateSchema = z
+  .object(mediaVideoFields)
+  .partial()
   .refine((d) => Object.values(d).some((v) => v !== undefined), { message: "No changes provided" });
 
 export type MediaVideoInput = z.infer<typeof mediaVideoSchema>;

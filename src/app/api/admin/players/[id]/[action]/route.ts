@@ -25,6 +25,8 @@ export const POST = withApiHandler(
 
     // Out-of-scope records look identical to missing ones (no IDOR oracle).
     assertInScope(user, districtTarget(player), "Player not found");
+    // Organisational context recorded on every audit entry below.
+    const scopeCtx = { stateId: player.district?.stateId ?? null, districtId: player.districtId };
 
     if (action === "approve") {
       await approvePlayer(id, user.id);
@@ -33,6 +35,7 @@ export const POST = withApiHandler(
         action: "APPROVE",
         module: "players",
         entityId: id,
+        details: scopeCtx,
       });
       return jsonSuccess({ playerId: id, status: "APPROVED" }, requestId, "Player approved");
     }
@@ -58,7 +61,7 @@ export const POST = withApiHandler(
         action: "REJECT",
         module: "players",
         entityId: id,
-        details: { reason },
+        details: { reason, ...scopeCtx },
       });
       return jsonSuccess({ playerId: id, status: "REJECTED" }, requestId, "Player rejected");
     }
@@ -86,7 +89,7 @@ export const POST = withApiHandler(
         action: "CREATE",
         module: "certificates",
         entityId: cert.id,
-        details: { certificateNumber: cert.certificateNumber },
+        details: { event: "REGISTRATION_CERTIFICATE_ISSUED", certificateNumber: cert.certificateNumber, playerId: id, ...scopeCtx },
       });
 
       return jsonSuccess(

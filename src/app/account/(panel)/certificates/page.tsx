@@ -91,8 +91,11 @@ export default async function AccountCertificatesPage() {
                       <Award className="h-4 w-4" />
                     </div>
                     <div>
-                      <CardTitle className="text-base">Player Certificate</CardTitle>
-                      <CardDescription className="text-xs">Rajasthan Racquetball Association</CardDescription>
+                      {/* From the certificate snapshot: tournament certificates name their event. */}
+                      <CardTitle className="text-base">{cert.eventName ?? cert.title ?? "Player Certificate"}</CardTitle>
+                      <CardDescription className="text-xs">
+                        {cert.eventName ? cert.title ?? "Tournament certificate" : [cert.districtName, cert.stateName].filter(Boolean).join(", ") || "Registration certificate"}
+                      </CardDescription>
                     </div>
                   </div>
                   <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 border border-emerald-200">

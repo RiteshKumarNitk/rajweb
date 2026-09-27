@@ -22,6 +22,12 @@ const PAYMENT_LABELS: Record<string, string> = {
   REFUNDED: "Refunded",
 };
 
+/** The store (inventory) that sold/fulfils an order — from the order's own snapshot. */
+function storeName(order: { state: { name: string } | null; district: { name: string } | null }): string {
+  if (order.district) return order.state ? `${order.district.name}, ${order.state.name}` : order.district.name;
+  return order.state ? `${order.state.name} (state store)` : "RRA Central Store";
+}
+
 export default async function AccountOrdersPage() {
   const user = await requireAuth();
 
@@ -29,7 +35,11 @@ export default async function AccountOrdersPage() {
   const orders = await prisma.equipmentPurchaseOrder.findMany({
     where: { userId: user.id },
     orderBy: { createdAt: "desc" },
-    include: { items: { include: { equipment: { select: { slug: true } } } } },
+    include: {
+      items: { include: { equipment: { select: { slug: true } } } },
+      state: { select: { name: true } },
+      district: { select: { name: true } },
+    },
   });
 
   return (
@@ -56,7 +66,9 @@ export default async function AccountOrdersPage() {
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-3">
                 <div>
                   <p className="font-bold text-primary">{order.orderNumber}</p>
-                  <p className="text-xs text-slate-500">Placed {formatDate(order.createdAt)}</p>
+                  <p className="text-xs text-slate-500">
+                    Placed {formatDate(order.createdAt)} · {storeName(order)}
+                  </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusBadge

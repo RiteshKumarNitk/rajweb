@@ -88,6 +88,10 @@ Architecture of the handler pipeline: [RRA-ARCHITECTURE.md → Backend](RRA-ARCH
 | 46 | GET, PATCH, DELETE | `/api/admin/districts/{id}` | GET `districts:read`; PATCH/DELETE `districts:manage`; scoped | PATCH/DELETE |
 | 47 | POST | `/api/admin/states` | `states:manage` + GLOBAL scope | yes |
 | 48 | PATCH, DELETE | `/api/admin/states/{id}` | `states:manage` + GLOBAL scope | yes |
+| 49 | POST | `/api/admin/signatories` | `certificates:issue`; owner from scope | yes |
+| 50 | PATCH, DELETE | `/api/admin/signatories/{id}` | `certificates:issue`; scoped | yes |
+| 51 | PUT | `/api/admin/tournaments/{id}/certificate-settings` | `tournaments:manage`; scoped | yes |
+| 52 | POST | `/api/admin/tournaments/{id}/certificates` | `certificates:issue`; scoped | yes |
 
 **There are no list/GET APIs for admin data** — admin pages read the database directly in Server Components. There are no Payment, Receipt, Notification, Fixture, Match, Ranking, Media-CMS-write, Settings-write, or Certificate-revoke APIs.
 
@@ -435,6 +439,8 @@ See 4.3 (`/api/admin/players/{id}/certificate`). No coach issuance and no revoca
 - **Validation:** at least one of `certificateNumber`, `qrCode`, `name` (400 otherwise).
 - **QR values:** a certificate's QR value (`QR-…`) typed or scanned into the serial box (`certificateNumber`) also resolves (fixed 2026-09-27 — previously every scanned certificate read as invalid).
 - **Lookup order:** static sample championship certificates (number match, ignoring `/` and `-`, substring allowed) → `PlayerCertificate`/`CoachCertificate` by number (case-insensitive, non-revoked) → Player/Coach by business ID (`PLR-…`/`CCH-…`) **only if that member has a non-revoked certificate** → by QR code → by candidate name: sample certificates (name + optional district), then **Players only** with a non-revoked certificate (name/district `contains`). `fatherName` is accepted but not used in any database match.
+- **Result content (changed 2026-09-27):** built **only from the certificate's own snapshot** — `title`, `championshipName` (tournament name, or "Player Registration"), `organizedBy` ("District, State"), `district`, `stateName`, `venue` and `eventDates` (tournament certificates), `position` (achievement, may be empty), `signatoryList` (the certificate's signers in order). Certificates issued before snapshots existed fall back to the legacy `signatories` pair. Previously real certificates were returned with invented championship/venue/guardian details. `pdfPath` is no longer returned.
+- Tournament certificates return `type: "championship"`; registration certificates `"player"`.
 - **Success 200 (always 200):** a result object with `valid: true|false`, `type` (`player`, `coach`, or `championship`), name, district, certificate number, issue date, signatories, and a message. Anything not found — including a registered member with no certificate — returns `valid: false` with "No certificate found matching the provided details. Please verify the serial number or candidate details."
 - **DB:** read only. **Audit:** none.
 - **Security note:** name-based lookup reveals whether a named person holds a certificate — intended public behaviour; NEEDS CONFIRMATION for privacy policy.
@@ -499,6 +505,29 @@ See 4.3 (`/api/admin/players/{id}/certificate`). No coach issuance and no revoca
 - **Errors:** 409 duplicate name within the state; DELETE 409 while users/players/coaches/memberships/tournaments/requests reference it ("Deactivate it instead").
 - **Audit:** `DISTRICT_CREATED` / `DISTRICT_UPDATED {fields, previousValues, newValues}` / `DISTRICT_DELETED` (module `districts`).
 
+## 13d. Certificate Signatories & Tournament Certificates
+
+### Signatories — `POST /api/admin/signatories`, `PATCH|DELETE /api/admin/signatories/{id}`
+- **Auth:** `certificates:issue`; record in scope (404 otherwise). CSRF.
+- **Body:** `{ name 2–100, designation 2–100, organization? ≤150, signatureImageUrl? (/images/… or https), stateId?, districtId?, isActive?, sortOrder? }`. Owner resolved from scope (district admins → own district; state admins → own state or a district in it; GLOBAL may leave both empty = federation level).
+- **DELETE:** a signatory assigned to any tournament is **deactivated** instead (issued certificates keep their snapshot).
+- **Audit:** `SIGNATORY_CREATED/UPDATED/DEACTIVATED/DELETED` (module `certificates`).
+
+### Tournament certificate settings — `PUT /api/admin/tournaments/{id}/certificate-settings`
+- **Auth:** `tournaments:manage` + tournament in scope. CSRF.
+- **Body:** `{ certificateTitle? 3–120 | "" , certificateLogoUrl? (/images/… or https) | "", signatoryIds?: string[] (≤4, ordered = signing order, replaces the list) }`.
+- Every signatory must be active and **usable by this tournament** (federation level, the tournament's state, or its district) — otherwise 400.
+- **Audit:** `TOURNAMENT_CERTIFICATE_SETTINGS_UPDATED` with previous/new signatory ids and state/district.
+
+### Issue tournament certificates — `POST /api/admin/tournaments/{id}/certificates`
+- **Auth:** `certificates:issue` + tournament in scope (district admins: own district's tournaments; state admins: own state; Super Admin: any). CSRF, 20/min.
+- **Body:** `{ entries: [{ playerId, position? ≤120 }] }` (1–200).
+- **Rules:** tournament `COMPLETED` (else 400); ≥1 active signatory assigned (else 400); each player must hold a PENDING/APPROVED registration for this tournament (else skipped "Not registered for this tournament"); one certificate per player per tournament (else skipped "Already issued: CERT-…").
+- **Success:** `{ issued: [{ id, playerId, playerName, certificateNumber, pdfPath, pdfUrl }], skipped: [{ playerId, reason }] }`.
+- **Effects:** certificate rows with the tournament snapshot and signer snapshot; PDF via storage. **Audit:** one `TOURNAMENT_CERTIFICATE_ISSUED` per certificate (tournament, player, state, district).
+
+The registration-certificate route (`POST /api/admin/players/{id}/certificate`) is unchanged except that it now ignores tournament certificates when enforcing "one active registration certificate", snapshots the player's state officials, and audits `REGISTRATION_CERTIFICATE_ISSUED` with state/district.
+
 ## 13a. Admin Gallery APIs
 
 ### 13a.1 Create gallery item
@@ -524,10 +553,10 @@ See 4.3 (`/api/admin/players/{id}/certificate`). No coach issuance and no revoca
 - Public `POST /api/contact` (existing) now also: sends a **New Contact Us Message - RRA** email to the configured Super Admin address (Setting `contact_email` → `SUPER_ADMIN_EMAIL` env → site default) with reply-to = the visitor, plus a best-effort visitor confirmation. Emails are sent **after** persistence; failures never lose the message and only set `emailSent=false`. Rate limit 10/min/IP unchanged.
 
 ### Equipment shop
-- `POST /api/equipment/purchase` — Session, CSRF, 20/min. Body `{ items: [{ equipmentId, quantity 1–10 }] }` (≤10 lines). Server re-reads each product, reserves stock with a conditional atomic decrement (fails with 409 if insufficient — stock can never go negative), snapshots name + unit price onto order items, and creates the order `PENDING_PAYMENT`/payment `PENDING` in one transaction. Audit `EQUIPMENT_ORDER_CREATED`.
+- `POST /api/equipment/purchase` — Session, CSRF, 20/min. Body `{ items: [{ equipmentId, quantity 1–10 }] }` (≤10 lines); any client price/total fields are ignored. **All lines must come from one store** (400 "Items from different district stores must be ordered separately…", nothing reserved); the order records that store's `stateId`/`districtId`. Server re-reads each product, reserves stock with a conditional atomic decrement (fails with 409 if insufficient — stock can never go negative), snapshots name + unit price onto order items, and creates the order `PENDING_PAYMENT`/payment `PENDING` in one transaction. Audit `EQUIPMENT_ORDER_CREATED`.
 - `POST /api/equipment/orders/{id}/cancel` — Session owner (404 otherwise), pending orders only; restocks reserved items and sets `CANCELLED`/`FAILED` in one transaction. Audit `EQUIPMENT_ORDER_CANCELLED`.
-- `POST/PATCH/DELETE /api/admin/equipment…` — `equipment:manage`. DELETE on an item referenced by orders **archives it** (deactivates) instead of destroying it. Audits `EQUIPMENT_ITEM_CREATED/UPDATED/ACTIVATED/DEACTIVATED/ARCHIVED/DELETED` + `EQUIPMENT_PRICE_CHANGED`/`EQUIPMENT_STOCK_CHANGED` details.
-- `PATCH /api/admin/equipment/orders/{id}` — `equipment:manage`. Fulfilment status only; **cannot** mark an unpaid order as paid (400) — payment transitions go through server-side verification only. Audit `EQUIPMENT_ORDER_STATUS_CHANGED`.
+- `POST/PATCH/DELETE /api/admin/equipment…` — `equipment:manage` **and scope**: body may carry `stateId`/`districtId` (district admins are forced to their district, state admins to their state, only GLOBAL may use the central store — omit both); items outside the caller's scope → 404. PATCH changes **only the fields sent** (fixed: previously a price-only PATCH reset stock/category/sort order/active). DELETE on an item referenced by orders **archives it** (deactivates) instead of destroying it. Audits `EQUIPMENT_ITEM_CREATED/UPDATED/ACTIVATED/DEACTIVATED/ARCHIVED/DELETED` + `EQUIPMENT_PRICE_CHANGED`/`EQUIPMENT_STOCK_CHANGED` details.
+- `PATCH /api/admin/equipment/orders/{id}` — `equipment:manage`; order must be in the caller's scope (404 otherwise). Fulfilment status only; **cannot** mark an unpaid order as paid (400) — payment transitions go through server-side verification only. Audit `EQUIPMENT_ORDER_STATUS_CHANGED`.
 - **Payment status:** no provider is selected/implemented yet (Phase J). `verifyAndMarkPaid()` in `purchase.service.ts` is the single server-side chokepoint (idempotent conditional update) and currently fails closed. Orders remain `PENDING_PAYMENT` until RRA completes payment offline or the gateway lands.
 
 ### Media videos (YouTube)

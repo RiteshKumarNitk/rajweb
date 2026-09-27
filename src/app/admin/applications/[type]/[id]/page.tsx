@@ -57,7 +57,7 @@ async function loadRecord(type: ApplicationType, id: string, districtWhere: Retu
         where: { id, ...districtWhere },
         include: {
           district: true,
-          certificates: { where: { isRevoked: false }, orderBy: { issuedAt: "desc" }, take: 1 },
+          certificates: { where: { isRevoked: false, tournamentId: null }, orderBy: { issuedAt: "desc" }, take: 1 },
         },
       });
     case "coach":

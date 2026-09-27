@@ -50,7 +50,12 @@ export const POST = withApiHandler(
         action: "APPROVE",
         module: "requests",
         entityId: id,
-        details: { event: "REQUEST_APPROVED", type: serviceRequest.type },
+        details: {
+          event: "REQUEST_APPROVED",
+          type: serviceRequest.type,
+          stateId: owner?.district?.stateId ?? null,
+          districtId: owner?.districtId ?? null,
+        },
       });
       return jsonSuccess({ requestId: id, status: "APPROVED" }, requestId, "Request approved");
     }
@@ -73,7 +78,13 @@ export const POST = withApiHandler(
         action: "REJECT",
         module: "requests",
         entityId: id,
-        details: { event: "REQUEST_REJECTED", type: serviceRequest.type, reason },
+        details: {
+          event: "REQUEST_REJECTED",
+          type: serviceRequest.type,
+          reason,
+          stateId: owner?.district?.stateId ?? null,
+          districtId: owner?.districtId ?? null,
+        },
       });
       return jsonSuccess({ requestId: id, status: "REJECTED" }, requestId, "Request rejected");
     }

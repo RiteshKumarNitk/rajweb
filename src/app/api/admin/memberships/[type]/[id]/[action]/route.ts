@@ -27,6 +27,8 @@ export const POST = withApiHandler(
     }
 
     assertInScope(user, districtTarget(membership), "Membership application not found");
+    // Organisational context recorded on every audit entry below.
+    const scopeCtx = { stateId: membership.district?.stateId ?? null, districtId: membership.districtId };
 
     if (action === "approve") {
       await approveMembership(type, id, user.id);
@@ -35,7 +37,7 @@ export const POST = withApiHandler(
         action: "APPROVE",
         module: "memberships",
         entityId: id,
-        details: { type },
+        details: { type, ...scopeCtx },
       });
       return jsonSuccess({ membershipId: id, status: "APPROVED" }, requestId, "Membership approved");
     }
@@ -61,7 +63,7 @@ export const POST = withApiHandler(
         action: "REJECT",
         module: "memberships",
         entityId: id,
-        details: { type, reason },
+        details: { type, reason, ...scopeCtx },
       });
       return jsonSuccess({ membershipId: id, status: "REJECTED" }, requestId, "Membership rejected");
     }

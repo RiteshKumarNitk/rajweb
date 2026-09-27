@@ -20,6 +20,15 @@ export interface CatalogItem {
   category: string;
   price: number;
   stockQuantity: number;
+  state: { name: string } | null;
+  district: { name: string } | null;
+}
+
+/** Which store sells (and fulfils) an item — orders belong to that store. */
+export function storeLabel(item: Pick<CatalogItem, "state" | "district">): string {
+  if (item.district) return item.state ? `${item.district.name}, ${item.state.name}` : item.district.name;
+  if (item.state) return `${item.state.name} (state store)`;
+  return "RRA Central Store";
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -157,6 +166,7 @@ function BuyPanel({
 
 export function EquipmentCatalog({ items }: { items: CatalogItem[] }) {
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
+  const [selectedStore, setSelectedStore] = useState<string>("All");
   const [buyItem, setBuyItem] = useState<CatalogItem | null>(null);
   const { status } = useSession();
   const authenticated = status === "authenticated";
@@ -167,8 +177,14 @@ export function EquipmentCatalog({ items }: { items: CatalogItem[] }) {
     return ["All", ...Array.from(cats)];
   }, [items]);
 
-  const filtered =
-    selectedCategory === "All" ? items : items.filter((i) => i.category === selectedCategory);
+  const stores = useMemo(() => ["All", ...Array.from(new Set(items.map(storeLabel)))], [items]);
+
+  // Display filters over the public catalog (not a security boundary).
+  const filtered = items.filter(
+    (i) =>
+      (selectedCategory === "All" || i.category === selectedCategory) &&
+      (selectedStore === "All" || storeLabel(i) === selectedStore)
+  );
 
   return (
     <div className="space-y-8">
@@ -188,6 +204,25 @@ export function EquipmentCatalog({ items }: { items: CatalogItem[] }) {
           </button>
         ))}
       </div>
+
+      {stores.length > 2 && (
+        <div className="flex justify-center">
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+            Store
+            <select
+              value={selectedStore}
+              onChange={(e) => setSelectedStore(e.target.value)}
+              className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm"
+            >
+              {stores.map((s) => (
+                <option key={s} value={s}>
+                  {s === "All" ? "All stores" : s}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
 
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {filtered.map((item) => {
@@ -224,6 +259,7 @@ export function EquipmentCatalog({ items }: { items: CatalogItem[] }) {
                   {CATEGORY_LABELS[item.category] ?? item.category}
                 </p>
                 <p className="text-sm font-semibold text-primary">{item.name}</p>
+                <p className="text-[11px] text-slate-400">Sold by {storeLabel(item)}</p>
                 {item.shortDescription && (
                   <p className="mt-1 line-clamp-2 text-xs text-slate-500">{item.shortDescription}</p>
                 )}

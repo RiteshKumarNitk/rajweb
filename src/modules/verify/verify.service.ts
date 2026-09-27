@@ -11,6 +11,7 @@ export {
   SAMPLE_CHAMPIONSHIP_CERTIFICATES,
 } from "./verify.types";
 import {
+  type CertificateSignatory,
   type CertificateVerificationResult,
   OFFICIAL_SIGNATORIES,
   SAMPLE_CHAMPIONSHIP_CERTIFICATES,
@@ -105,7 +106,7 @@ async function lookupByCertificateNumber(certificateNumber: string) {
       ],
       isRevoked: false,
     },
-    include: { player: { include: { district: true } } },
+    include: { player: { include: { district: { include: { state: true } } } } },
   });
 
   if (playerCert) {
@@ -135,7 +136,7 @@ async function lookupByCertificateNumber(certificateNumber: string) {
 async function lookupByQrCode(qrCode: string) {
   const playerCert = await prisma.playerCertificate.findUnique({
     where: { qrCode: qrCode.trim() },
-    include: { player: { include: { district: true } } },
+    include: { player: { include: { district: { include: { state: true } } } } },
   });
 
   if (playerCert && !playerCert.isRevoked) {
@@ -165,8 +166,13 @@ async function lookupByMemberId(memberId: string) {
       ],
     },
     include: {
-      district: true,
-      certificates: { where: { isRevoked: false }, orderBy: { issuedAt: "desc" }, take: 1 },
+      district: { include: { state: true } },
+      // Prefer the registration certificate (no tournament), then the newest.
+      certificates: {
+        where: { isRevoked: false },
+        orderBy: [{ tournamentId: { sort: "asc", nulls: "first" } }, { issuedAt: "desc" }],
+        take: 1,
+      },
     },
   });
 
@@ -224,8 +230,13 @@ async function lookupByCandidateDetails(details: { name: string; district?: stri
       ...(details.district ? { district: { name: { contains: details.district.trim(), mode: "insensitive" } } } : {}),
     },
     include: {
-      district: true,
-      certificates: { where: { isRevoked: false }, orderBy: { issuedAt: "desc" }, take: 1 },
+      district: { include: { state: true } },
+      // Prefer the registration certificate (no tournament), then the newest.
+      certificates: {
+        where: { isRevoked: false },
+        orderBy: [{ tournamentId: { sort: "asc", nulls: "first" } }, { issuedAt: "desc" }],
+        take: 1,
+      },
     },
   });
 
@@ -236,70 +247,113 @@ async function lookupByCandidateDetails(details: { name: string; district?: stri
   return null;
 }
 
+interface SnapshotSigner {
+  name?: unknown;
+  designation?: unknown;
+  organization?: unknown;
+}
+
+/** Signers exactly as printed on the certificate (snapshot), or null for legacy rows. */
+function signatoryListFrom(snapshot: unknown): CertificateSignatory[] | null {
+  if (!Array.isArray(snapshot) || snapshot.length === 0) return null;
+  const list = (snapshot as SnapshotSigner[])
+    .filter((s) => typeof s?.name === "string")
+    .map((s) => ({
+      name: s.name as string,
+      title: typeof s.designation === "string" ? s.designation : "",
+      organization: typeof s.organization === "string" ? s.organization : "",
+      status: "OFFICIAL_VERIFIED" as const,
+    }));
+  return list.length ? list : null;
+}
+
+const shortDate = (d: Date) => d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+
+/**
+ * Public verification view of a player certificate. Everything comes from the
+ * certificate row's issue-time snapshot (falling back to the player's current
+ * district for certificates issued before snapshots existed). Nothing private
+ * (storage paths, issuer ids, contact details) is included.
+ */
 function formatPlayerCert(cert: {
-  id?: string;
   certificateNumber: string;
   issuedAt: Date;
   expiresAt: Date | null;
-  pdfPath?: string | null;
-  player: { name: string; playerId: string; category?: string | null; district: { name: string } };
+  tournamentId?: string | null;
+  title?: string | null;
+  eventName?: string | null;
+  eventStartDate?: Date | null;
+  eventEndDate?: Date | null;
+  venue?: string | null;
+  districtName?: string | null;
+  stateName?: string | null;
+  position?: string | null;
+  signatories?: unknown;
+  player: {
+    name: string;
+    playerId: string;
+    category?: string | null;
+    district: { name: string; state?: { name: string } | null };
+  };
 }): CertificateVerificationResult {
+  const isTournament = Boolean(cert.tournamentId);
+  const district = cert.districtName ?? cert.player.district.name;
+  const stateName = cert.stateName ?? cert.player.district.state?.name ?? undefined;
+  const signatoryList = signatoryListFrom(cert.signatories);
+  const eventDates =
+    cert.eventStartDate && cert.eventEndDate
+      ? shortDate(cert.eventStartDate) === shortDate(cert.eventEndDate)
+        ? shortDate(cert.eventStartDate)
+        : `${shortDate(cert.eventStartDate)} – ${shortDate(cert.eventEndDate)}`
+      : undefined;
+
   return {
     valid: true,
     certificateNumber: cert.certificateNumber,
     name: cert.player.name,
-    fatherName: "Official Registered Guardian",
-    championshipName: "Sub-Junior/ Junior/ Senior Racquetball State Championship-2026-27",
-    organizedBy: "Jaipur Racquetball Association",
-    recognizedBy: [
-      "Rajasthan Racquetball Association",
-      "Indian Racquetball Association",
-      "International Racquetball Federation & Asian Racquetball Federation",
-    ],
-    district: cert.player.district.name,
-    category: cert.player.category || "Senior",
-    event: "Single & Double",
-    position: "PARTICIPATION AS PLAYER",
-    type: "player",
-    venue: "Sawai Mansingh Indoor Stadium, Jaipur",
+    title: cert.title ?? (isTournament ? "Certificate of Participation" : "Certificate of Registration"),
+    championshipName: isTournament ? cert.eventName ?? "Tournament" : cert.title ?? "Player Registration",
+    organizedBy: stateName ? `${district}, ${stateName}` : district,
+    recognizedBy: [],
+    district,
+    stateName,
+    category: cert.player.category ?? "",
+    event: isTournament ? cert.eventName ?? "" : "Player Registration",
+    position: cert.position ?? "",
+    type: isTournament ? "championship" : "player",
+    venue: cert.venue ?? undefined,
+    eventDates,
     issuedAt: cert.issuedAt,
     expiresAt: cert.expiresAt,
     playerId: cert.player.playerId,
-    pdfPath: cert.pdfPath,
+    ...(signatoryList ? { signatoryList } : {}),
+    // Legacy pair: shown only for certificates issued before signatory snapshots.
     signatories: OFFICIAL_SIGNATORIES,
   };
 }
 
 function formatCoachCert(cert: {
-  id?: string;
   certificateNumber: string;
   issuedAt: Date;
   expiresAt: Date | null;
-  pdfPath?: string | null;
   coach: { name: string; coachId: string; district: { name: string } };
 }): CertificateVerificationResult {
   return {
     valid: true,
     certificateNumber: cert.certificateNumber,
     name: cert.coach.name,
-    fatherName: "Official Registered Guardian",
-    championshipName: "Rajasthan Racquetball Coaching & Officiating Certification",
-    organizedBy: "Rajasthan Racquetball Association",
-    recognizedBy: [
-      "Rajasthan Racquetball Association",
-      "Indian Racquetball Association",
-      "International Racquetball Federation & Asian Racquetball Federation",
-    ],
+    title: "Certificate of Registration",
+    championshipName: "Coach Registration",
+    organizedBy: cert.coach.district.name,
+    recognizedBy: [],
     district: cert.coach.district.name,
-    category: "Certified State Coach",
-    event: "Coaching & Officiating",
-    position: "CERTIFIED COACH",
+    category: "",
+    event: "Coach Registration",
+    position: "",
     type: "coach",
-    venue: "Rajasthan State Sports Council, Jaipur",
     issuedAt: cert.issuedAt,
     expiresAt: cert.expiresAt,
     coachId: cert.coach.coachId,
-    pdfPath: cert.pdfPath,
     signatories: OFFICIAL_SIGNATORIES,
   };
 }

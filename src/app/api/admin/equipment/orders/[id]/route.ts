@@ -1,6 +1,8 @@
+import prisma from "@/infrastructure/database/prisma";
 import { withApiHandler, jsonSuccess, AppError } from "@/core/api/with-api-handler";
 import { requirePermission } from "@/security/auth/session";
 import { PERMISSIONS } from "@/security/rbac/permissions";
+import { assertInScope } from "@/security/rbac/org-scope";
 import { adminOrderUpdateSchema, adminUpdateOrderStatus } from "@/modules/equipment/purchase.service";
 
 export const PATCH = withApiHandler(
@@ -8,6 +10,14 @@ export const PATCH = withApiHandler(
     const user = await requirePermission(PERMISSIONS.EQUIPMENT_MANAGE);
     const id = params?.id as string | undefined;
     if (!id) throw AppError.badRequest("Order ID is required");
+
+    // Orders belong to the inventory that fulfils them (snapshot on the order).
+    const order = await prisma.equipmentPurchaseOrder.findUnique({
+      where: { id },
+      select: { stateId: true, districtId: true },
+    });
+    if (!order) throw AppError.notFound("Order not found");
+    assertInScope(user, order, "Order not found");
 
     const { status } = adminOrderUpdateSchema.parse(await request.json());
     const updated = await adminUpdateOrderStatus(id, status, user.id);

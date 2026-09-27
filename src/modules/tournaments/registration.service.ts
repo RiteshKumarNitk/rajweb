@@ -108,6 +108,8 @@ export async function registerForTournament(
             playerId: player.id,
             registrationId: registration.id,
             amount: registration.amount,
+            stateId: tournament.stateId,
+            districtId: tournament.districtId,
           },
         },
       });

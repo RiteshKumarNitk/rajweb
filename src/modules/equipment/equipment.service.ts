@@ -21,20 +21,37 @@ const imageRefSchema = z
     "Image must be a /images/... site path or an http(s) URL"
   );
 
-export const equipmentSchema = z.object({
+// Update schemas are built from default-FREE fields: in Zod 4, `.partial()`
+// still applies `.default()` values, so a PATCH changing one field would
+// silently reset the others (e.g. stock → 0, published → false).
+const equipmentFields = {
   name: z.string().trim().min(2).max(160),
   description: z.string().trim().max(5000).nullable().optional(),
   shortDescription: z.string().trim().max(300).nullable().optional(),
   image: imageRefSchema.nullable().optional(),
-  category: z.enum(EQUIPMENT_CATEGORIES).default("OTHER"),
+  category: z.enum(EQUIPMENT_CATEGORIES),
   // Whole rupees, integer money — no floats.
   price: z.number().int().min(0).max(10000000),
-  stockQuantity: z.number().int().min(0).max(1000000).default(0),
-  sortOrder: z.number().int().min(0).max(100000).default(0),
-  isActive: z.boolean().default(true),
+  stockQuantity: z.number().int().min(0).max(1000000),
+  sortOrder: z.number().int().min(0).max(100000),
+  isActive: z.boolean(),
+  // Owning inventory (validated against the caller's scope in the route):
+  // districtId → that district; stateId only → state stock; neither → RRA central.
+  stateId: z.string().min(1).nullable().optional(),
+  districtId: z.string().min(1).nullable().optional(),
+};
+
+export const equipmentSchema = z.object({
+  ...equipmentFields,
+  category: equipmentFields.category.default("OTHER"),
+  stockQuantity: equipmentFields.stockQuantity.default(0),
+  sortOrder: equipmentFields.sortOrder.default(0),
+  isActive: equipmentFields.isActive.default(true),
 });
 
-export const equipmentUpdateSchema = equipmentSchema.partial()
+export const equipmentUpdateSchema = z
+  .object(equipmentFields)
+  .partial()
   .refine((d) => Object.values(d).some((v) => v !== undefined), { message: "No changes provided" });
 
 export type EquipmentInput = z.infer<typeof equipmentSchema>;
@@ -50,10 +67,12 @@ async function uniqueSlug(base: string): Promise<string> {
   return candidate;
 }
 
-export async function createEquipmentItem(input: EquipmentInput) {
+export async function createEquipmentItem(input: EquipmentInput, owner: { stateId: string | null; districtId: string | null }) {
   const slug = await uniqueSlug(input.name);
   return prisma.equipmentItem.create({
     data: {
+      stateId: owner.stateId,
+      districtId: owner.districtId,
       name: input.name,
       slug,
       description: input.description ?? null,
@@ -68,8 +87,12 @@ export async function createEquipmentItem(input: EquipmentInput) {
   });
 }
 
-export async function updateEquipmentItem(id: string, input: EquipmentUpdate) {
-  const data: Record<string, unknown> = {};
+export async function updateEquipmentItem(
+  id: string,
+  input: EquipmentUpdate,
+  owner?: { stateId: string | null; districtId: string | null }
+) {
+  const data: Record<string, unknown> = owner ? { stateId: owner.stateId, districtId: owner.districtId } : {};
   for (const key of [
     "name",
     "description",

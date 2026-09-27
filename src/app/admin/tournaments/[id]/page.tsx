@@ -12,6 +12,9 @@ import { formatInr } from "@/modules/account/membership-pricing";
 import { formatTournamentSchedule, formatTournamentStatus, toDatetimeLocalValue } from "@/modules/tournaments/tournament-dates";
 import { TournamentEditForm } from "./tournament-edit-form";
 import { CategoriesManager } from "./categories-manager";
+import { CertificatesPanel } from "./certificates-panel";
+import { applicableSignatoryWhere } from "@/modules/certificates/signatory.service";
+import { getStorage } from "@/infrastructure/storage/storage-adapter";
 
 export default async function AdminTournamentDetailPage({
   params,
@@ -35,6 +38,8 @@ export default async function AdminTournamentDetailPage({
       include: {
         district: true,
         registrationCategories: { orderBy: { createdAt: "asc" } },
+        signatories: { orderBy: { sortOrder: "asc" }, select: { signatoryId: true } },
+        certificates: { select: { playerId: true, certificateNumber: true, pdfPath: true } },
         registrations: {
           orderBy: { registeredAt: "desc" },
           include: {
@@ -50,6 +55,16 @@ export default async function AdminTournamentDetailPage({
   if (!tournament) notFound();
 
   const canManage = hasPermission(user, PERMISSIONS.TOURNAMENTS_MANAGE);
+  const canIssue = hasPermission(user, PERMISSIONS.CERTIFICATES_ISSUE);
+
+  // Signatories this tournament may use (federation / its state / its district).
+  const availableSignatories = await prisma.certificateSignatory.findMany({
+    where: applicableSignatoryWhere(tournament),
+    include: { state: { select: { name: true } }, district: { select: { name: true } } },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+  });
+  const storage = getStorage();
+  const certByPlayer = new Map(tournament.certificates.map((c) => [c.playerId, c]));
 
   return (
     <div>
@@ -202,6 +217,41 @@ export default async function AdminTournamentDetailPage({
               </table>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Certificates</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <CertificatesPanel
+            tournamentId={tournament.id}
+            status={tournament.status}
+            certificateTitle={tournament.certificateTitle}
+            certificateLogoUrl={tournament.certificateLogoUrl}
+            availableSignatories={availableSignatories.map((s) => ({
+              id: s.id,
+              name: s.name,
+              designation: s.designation,
+              scopeName: s.district ? s.district.name : s.state ? s.state.name : "Federation level",
+            }))}
+            assignedSignatoryIds={tournament.signatories.map((s) => s.signatoryId)}
+            candidates={tournament.registrations.map((r) => {
+              const cert = certByPlayer.get(r.playerId);
+              return {
+                playerId: r.playerId,
+                playerName: r.player.name,
+                playerCode: r.player.playerId,
+                categoryName: r.category?.name ?? null,
+                registrationStatus: r.status,
+                certificateNumber: cert?.certificateNumber ?? null,
+                pdfUrl: cert?.pdfPath ? storage.getUrl(cert.pdfPath) : null,
+              };
+            })}
+            canManageSettings={canManage}
+            canIssue={canIssue}
+          />
         </CardContent>
       </Card>
     </div>

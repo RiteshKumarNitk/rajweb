@@ -66,7 +66,13 @@ export const POST = withApiHandler(
       action: "CREATE",
       module: "tournaments",
       entityId: tournament.id,
-      details: { event: "TOURNAMENT_CREATED", name: tournament.name, slug: tournament.slug },
+      details: {
+        event: "TOURNAMENT_CREATED",
+        name: tournament.name,
+        slug: tournament.slug,
+        stateId: ownership.stateId,
+        districtId: ownership.districtId,
+      },
     });
 
     revalidatePublicTournaments();

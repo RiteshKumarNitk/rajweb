@@ -2,6 +2,8 @@ import { withApiHandler, jsonSuccess, AppError } from "@/core/api/with-api-handl
 import prisma from "@/infrastructure/database/prisma";
 import { requirePermission } from "@/security/auth/session";
 import { PERMISSIONS } from "@/security/rbac/permissions";
+import { assertInScope } from "@/security/rbac/org-scope";
+import { resolveOwnership } from "@/security/rbac/ownership.server";
 import { createAuditLog } from "@/services/audit/audit-service";
 import {
   equipmentUpdateSchema,
@@ -18,9 +20,19 @@ export const PATCH = withApiHandler(
 
     const existing = await prisma.equipmentItem.findUnique({ where: { id } });
     if (!existing) throw AppError.notFound("Equipment not found");
+    // Another district's/state's inventory (or central stock for scoped admins) → 404.
+    assertInScope(user, existing, "Equipment not found");
 
     const input = equipmentUpdateSchema.parse(await request.json());
-    const updated = await updateEquipmentItem(id, input);
+    const moving = input.stateId !== undefined || input.districtId !== undefined;
+    const owner = moving
+      ? await resolveOwnership(
+          user,
+          { stateId: input.stateId, districtId: input.districtId },
+          { allowCentral: true, current: { stateId: existing.stateId, districtId: existing.districtId } }
+        )
+      : undefined;
+    const updated = await updateEquipmentItem(id, input, owner);
 
     const activated = input.isActive === true && !existing.isActive;
     const deactivated = input.isActive === false && existing.isActive;
@@ -40,6 +52,11 @@ export const PATCH = withApiHandler(
             ? "EQUIPMENT_ITEM_DEACTIVATED"
             : "EQUIPMENT_ITEM_UPDATED",
         name: updated.name,
+        stateId: updated.stateId,
+        districtId: updated.districtId,
+        ...(owner && (owner.stateId !== existing.stateId || owner.districtId !== existing.districtId)
+          ? { movedFrom: { stateId: existing.stateId, districtId: existing.districtId } }
+          : {}),
         ...(priceChanged ? { event2: "EQUIPMENT_PRICE_CHANGED", previousValue: existing.price, newValue: input.price } : {}),
         ...(stockChanged ? { event3: "EQUIPMENT_STOCK_CHANGED", previousValue: existing.stockQuantity, newValue: input.stockQuantity } : {}),
       },
@@ -64,6 +81,7 @@ export const DELETE = withApiHandler(
 
     const existing = await prisma.equipmentItem.findUnique({ where: { id } });
     if (!existing) throw AppError.notFound("Equipment not found");
+    assertInScope(user, existing, "Equipment not found");
 
     // Items referenced by orders are archived (deactivated), not destroyed —
     // historical orders must stay valid forever.
@@ -78,6 +96,8 @@ export const DELETE = withApiHandler(
       details: {
         event: result === "deleted" ? "EQUIPMENT_ITEM_DELETED" : "EQUIPMENT_ITEM_ARCHIVED",
         name: existing.name,
+        stateId: existing.stateId,
+        districtId: existing.districtId,
       },
     });
 

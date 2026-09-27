@@ -41,7 +41,10 @@ function generateOrderNumber(): string {
  *  - each item's stock is reserved with a conditional atomic decrement
  *    (stock >= quantity or the whole purchase fails — never negative),
  *  - name and unit price are snapshotted onto the order items,
- *  - totals are computed from those snapshots.
+ *  - totals are computed from those snapshots,
+ *  - the order belongs to the inventory (state/district) that fulfils it —
+ *    derived from the items, never from the client. One order = one
+ *    inventory: items from different districts must be ordered separately.
  */
 export async function createPurchaseOrder(userId: string, input: PurchaseInput) {
   // Merge duplicate lines for the same product.
@@ -52,6 +55,7 @@ export async function createPurchaseOrder(userId: string, input: PurchaseInput) 
 
   const order = await prisma.$transaction(async (tx) => {
     let subtotal = 0;
+    let owner: { stateId: string | null; districtId: string | null } | undefined;
     const itemRows: {
       equipmentId: string;
       productNameSnapshot: string;
@@ -79,6 +83,16 @@ export async function createPurchaseOrder(userId: string, input: PurchaseInput) 
         throw AppError.notFound("Equipment item not found");
       }
 
+      const productOwner = { stateId: product.stateId, districtId: product.districtId };
+      if (!owner) {
+        owner = productOwner;
+      } else if (owner.stateId !== productOwner.stateId || owner.districtId !== productOwner.districtId) {
+        // Rolls back every reservation made so far in this transaction.
+        throw AppError.validation(
+          "Items from different district stores must be ordered separately. Please place one order per store."
+        );
+      }
+
       const lineTotal = product.price * quantity;
       subtotal += lineTotal;
       itemRows.push({
@@ -98,6 +112,9 @@ export async function createPurchaseOrder(userId: string, input: PurchaseInput) 
         paymentStatus: "PENDING",
         subtotal,
         total: subtotal,
+        // Seller-scope snapshot: stays with the order even if the item moves later.
+        stateId: owner?.stateId ?? null,
+        districtId: owner?.districtId ?? null,
         items: { create: itemRows },
       },
       include: { items: true },
@@ -114,6 +131,8 @@ export async function createPurchaseOrder(userId: string, input: PurchaseInput) 
       event: "EQUIPMENT_ORDER_CREATED",
       orderNumber: order.orderNumber,
       total: order.total,
+      stateId: order.stateId,
+      districtId: order.districtId,
       items: itemAuditSummary(order.items),
     },
   });
@@ -220,6 +239,8 @@ export async function cancelPendingOrder(orderId: string, actorId: string, isAdm
     details: {
       event: isAdmin ? "EQUIPMENT_ORDER_CANCELLED_ADMIN" : "EQUIPMENT_ORDER_CANCELLED",
       orderNumber: order.orderNumber,
+      stateId: order.stateId,
+      districtId: order.districtId,
     },
   });
 
@@ -264,6 +285,8 @@ export async function adminUpdateOrderStatus(orderId: string, status: (typeof AD
     details: {
       event: "EQUIPMENT_ORDER_STATUS_CHANGED",
       orderNumber: existing.orderNumber,
+      stateId: existing.stateId,
+      districtId: existing.districtId,
       previousValue: existing.status,
       newValue: status,
     },

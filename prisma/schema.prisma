@@ -152,6 +152,9 @@ model State {
   districts   District[]
   users       User[]
   tournaments Tournament[]
+  equipmentItems  EquipmentItem[]
+  equipmentOrders EquipmentPurchaseOrder[]
+  signatories     CertificateSignatory[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -182,6 +185,9 @@ model District {
   academyMemberships AcademyMembership[]
   tournaments      Tournament[]
   requestedByRequests Request[]        @relation("RequestedDistrict")
+  equipmentItems   EquipmentItem[]
+  equipmentOrders  EquipmentPurchaseOrder[]
+  signatories      CertificateSignatory[]
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
 
@@ -238,11 +244,20 @@ model Player {
   @@map("players")
 }
 
+// Two kinds share this table:
+//  - registration certificate: tournamentId = null (one active per player);
+//  - tournament certificate:   tournamentId set (one per player per tournament).
+// Scope: a tournament certificate belongs to its tournament's state/district;
+// a registration certificate follows the player's district -> state.
+// Everything printed on the certificate is snapshotted at issue time so a
+// later rename/re-designation never changes an issued certificate.
 model PlayerCertificate {
   id                String   @id @default(cuid())
   certificateNumber String   @unique
   playerId          String
   player            Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  tournamentId      String?
+  tournament        Tournament? @relation(fields: [tournamentId], references: [id], onDelete: Restrict)
   qrCode            String   @unique
   issuedAt          DateTime @default(now())
   expiresAt         DateTime?
@@ -250,8 +265,23 @@ model PlayerCertificate {
   isRevoked         Boolean  @default(false)
   revokedAt         DateTime?
   revokedReason     String?
+  // Issue-time snapshots (null on certificates issued before these existed).
+  title             String?
+  eventName         String?
+  eventStartDate    DateTime?
+  eventEndDate      DateTime?
+  venue             String?
+  districtName      String?
+  stateName         String?
+  position          String?
+  logoUrl           String?
+  // [{ name, designation, organization, signatureImageUrl }] in signing order.
+  signatories       Json?
+  issuedById        String?
 
+  @@unique([tournamentId, playerId])
   @@index([playerId])
+  @@index([tournamentId])
   @@map("player_certificates")
 }
 
@@ -518,6 +548,11 @@ model Tournament {
   contactPhone    String?
   contactEmail    String?
   requiresApprovedPlayer Boolean     @default(true)
+  // Tournament-specific certificate settings (certificates snapshot them).
+  certificateTitle   String?
+  certificateLogoUrl String?
+  signatories     TournamentSignatory[]
+  certificates    PlayerCertificate[]
   registrationCategories TournamentRegistrationCategory[]
   registrations   TournamentRegistration[]
   fixtures        Fixture[]
@@ -765,12 +800,21 @@ model EquipmentItem {
   stockQuantity Int               @default(0)
   isActive      Boolean           @default(true)
   sortOrder     Int               @default(0)
+  // Owning inventory: districtId set = that district's stock (stateId = its
+  // state); stateId only = state-level stock; both null = RRA central store
+  // (Super Admin only). Items created before ownership existed are central.
+  stateId       String?
+  state         State?            @relation(fields: [stateId], references: [id])
+  districtId    String?
+  district      District?         @relation(fields: [districtId], references: [id])
   purchaseItems EquipmentPurchaseOrderItem[]
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 
   @@index([isActive, sortOrder])
   @@index([category])
+  @@index([stateId])
+  @@index([districtId])
   @@map("equipment_items")
 }
 
@@ -800,12 +844,21 @@ model EquipmentPurchaseOrder {
   paymentStatus PaymentStatus   @default(PENDING)
   subtotal      Int
   total         Int
+  // Seller scope snapshot, copied from the items' inventory at order time
+  // (every line of one order comes from the same inventory). Kept even if
+  // the item is later moved, so historical orders never change hands.
+  stateId       String?
+  state         State?          @relation(fields: [stateId], references: [id])
+  districtId    String?
+  district      District?       @relation(fields: [districtId], references: [id])
   items         EquipmentPurchaseOrderItem[]
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
   @@index([userId])
   @@index([status])
+  @@index([stateId])
+  @@index([districtId])
   @@map("equipment_purchase_orders")
 }
 
@@ -948,4 +1001,43 @@ model Setting {
   updatedAt DateTime @updatedAt
 
   @@map("settings")
+}
+
+// ─── Certificate signatories ─────────────────────────────────────
+// Officials who sign certificates. Owned by a scope like other records:
+// districtId set = district official (stateId = its state); stateId only =
+// state official; both null = federation-level. A tournament picks its own
+// signatories (TournamentSignatory, ordered); issued certificates snapshot
+// name/designation, so later edits never alter issued certificates.
+model CertificateSignatory {
+  id                String    @id @default(cuid())
+  name              String
+  designation       String
+  organization      String?
+  signatureImageUrl String?
+  stateId           String?
+  state             State?    @relation(fields: [stateId], references: [id])
+  districtId        String?
+  district          District? @relation(fields: [districtId], references: [id])
+  isActive          Boolean   @default(true)
+  sortOrder         Int       @default(0)
+  tournaments       TournamentSignatory[]
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([stateId])
+  @@index([districtId])
+  @@map("certificate_signatories")
+}
+
+model TournamentSignatory {
+  tournamentId String
+  tournament   Tournament           @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  signatoryId  String
+  signatory    CertificateSignatory @relation(fields: [signatoryId], references: [id], onDelete: Cascade)
+  sortOrder    Int                  @default(0)
+
+  @@id([tournamentId, signatoryId])
+  @@index([signatoryId])
+  @@map("tournament_signatories")
 }

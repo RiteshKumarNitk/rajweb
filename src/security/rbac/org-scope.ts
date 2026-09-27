@@ -102,6 +102,30 @@ export function tournamentWhere(scope: OrgScope) {
   }
 }
 
+/**
+ * Records that carry their own `stateId` / `districtId` columns: equipment
+ * items, equipment orders, certificate signatories. Rows with both null are
+ * federation-level (RRA central) and visible to GLOBAL only.
+ */
+export function directOwnedWhere(scope: OrgScope) {
+  return tournamentWhere(scope);
+}
+
+/**
+ * Player certificates. A tournament certificate belongs to its tournament's
+ * state/district (stable even if the player later moves district); a
+ * registration certificate (no tournament) follows the player's district.
+ */
+export function playerCertificateWhere(scope: OrgScope) {
+  if (scope.level === "GLOBAL") return {};
+  return {
+    OR: [
+      { tournamentId: { not: null }, tournament: tournamentWhere(scope) },
+      { tournamentId: null, player: districtOwnedWhere(scope) },
+    ],
+  };
+}
+
 /** Requests — owned through the linked Player or Coach. */
 export function requestWhere(scope: OrgScope) {
   if (scope.level === "GLOBAL") return {};

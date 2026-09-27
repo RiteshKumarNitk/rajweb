@@ -64,15 +64,19 @@ export const DELETE = withApiHandler(
 
     const state = await prisma.state.findUnique({
       where: { id },
-      include: { _count: { select: { districts: true, users: true, tournaments: true } } },
+      include: {
+        _count: {
+          select: { districts: true, users: true, tournaments: true, equipmentItems: true, equipmentOrders: true, signatories: true },
+        },
+      },
     });
     if (!state) throw AppError.notFound("State not found");
 
     // Never cascade business data: a state with districts, admins or
     // tournaments can only be deactivated.
-    if (state._count.districts > 0 || state._count.users > 0 || state._count.tournaments > 0) {
+    if (Object.values(state._count).some((n) => n > 0)) {
       throw AppError.conflict(
-        "This state still has districts, administrators, or tournaments and cannot be deleted. Deactivate it instead."
+        "This state still has districts, administrators, tournaments, equipment, orders or signatories and cannot be deleted. Deactivate it instead."
       );
     }
 
