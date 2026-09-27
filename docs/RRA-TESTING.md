@@ -423,6 +423,8 @@ Run after **every** phase before merging. Tick all.
 [ ] PRICE SNAPSHOT TEST (§11) — old registration keeps old amount
 [ ] Security: S1, S2, S4, S6, S15, S16
 [ ] Rejection reason required: PL7a, C1b, M5a
+[ ] Multi-state isolation: §17 groups A–F (at least one State A admin, one State B admin, one district admin)
+[ ] Certificate issue produces a PDF (pdfPath not null) and it opens via /api/files for permitted users only
 [ ] /admin/audit-logs shows entries for the actions above
 [ ] All five docs in docs/ updated for the phase
 ```
@@ -442,7 +444,9 @@ After each deploy (Netlify or Docker):
 [ ] NEXT_PUBLIC_ENABLE_LIVE_FORMS set as intended (true = forms live)
 [ ] One public form submission (contact) persists
 [ ] /tournaments shows expected tournaments
-[ ] Certificate issue → PDF opens via /api/files/... (STORAGE_TYPE=netlify on Netlify)
+[ ] Certificate issue → PDF opens via /api/files/... (STORAGE_TYPE=netlify on Netlify); pdfPath is not null
+[ ] Schema applied: no 503 DATABASE_ERROR on /admin/equipment, /admin/media/videos, /media/gallery
+[ ] /admin/states lists the expected states; no "districts not assigned to a state" warning (or each one resolved)
 [ ] /verify with a known certificate → valid
 [ ] Rate limiting: Upstash configured for multi-instance production (else per-instance memory)
 [ ] Sentry receives a test error (if DSN set)

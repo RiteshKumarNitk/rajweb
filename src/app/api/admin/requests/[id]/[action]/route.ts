@@ -2,7 +2,7 @@ import prisma from "@/infrastructure/database/prisma";
 import { withApiHandler, jsonSuccess, AppError } from "@/core/api/with-api-handler";
 import { requirePermission } from "@/security/auth/session";
 import { PERMISSIONS } from "@/security/rbac/permissions";
-import { assertDistrictAccess } from "@/security/rbac/district-scope";
+import { assertInScope } from "@/security/rbac/org-scope";
 import { approveRequest, rejectRequest } from "@/modules/requests/request.service";
 import { createAuditLog } from "@/services/audit/audit-service";
 
@@ -18,16 +18,23 @@ export const POST = withApiHandler(
 
     const serviceRequest = await prisma.request.findUnique({
       where: { id },
-      include: { player: true, coach: true },
+      include: {
+        player: { include: { district: { select: { stateId: true } } } },
+        coach: { include: { district: { select: { stateId: true } } } },
+      },
     });
     if (!serviceRequest) {
       throw AppError.notFound("Request not found");
     }
 
-    const districtId = serviceRequest.player?.districtId ?? serviceRequest.coach?.districtId;
-    if (districtId) {
-      assertDistrictAccess(user, districtId);
-    }
+    // A request is owned through its Player or Coach. One with neither
+    // (should not exist) is treated as out of scope for everyone but GLOBAL.
+    const owner = serviceRequest.player ?? serviceRequest.coach;
+    assertInScope(
+      user,
+      { districtId: owner?.districtId ?? null, stateId: owner?.district?.stateId ?? null },
+      "Request not found"
+    );
 
     if (action === "approve") {
       let body: { remarks?: string } = {};

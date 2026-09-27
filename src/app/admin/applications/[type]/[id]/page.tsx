@@ -2,7 +2,7 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { ShieldAlert, FileText, History, ArrowLeft } from "lucide-react";
 import { getCurrentUser } from "@/security/auth/session";
-import { getDistrictWhereClause } from "@/security/rbac/district-scope";
+import { districtOwnedWhere, getOrgScope } from "@/security/rbac/org-scope";
 import { hasPermission, PERMISSIONS, type PermissionSlug } from "@/security/rbac/permissions";
 import prisma from "@/infrastructure/database/prisma";
 import { getStorage } from "@/infrastructure/storage/storage-adapter";
@@ -50,7 +50,7 @@ function isApplicationType(value: string): value is ApplicationType {
   return value === "player" || value === "coach" || isMembershipReviewType(value);
 }
 
-async function loadRecord(type: ApplicationType, id: string, districtWhere: { districtId?: string }) {
+async function loadRecord(type: ApplicationType, id: string, districtWhere: ReturnType<typeof districtOwnedWhere>) {
   switch (type) {
     case "player":
       return prisma.player.findFirst({
@@ -114,8 +114,8 @@ export default async function ApplicationReviewPage({
     redirect("/admin?error=forbidden");
   }
 
-  const districtWhere = getDistrictWhereClause(user);
-  const record = await loadRecord(type, id, districtWhere);
+  // Out-of-scope records resolve to notFound(), same as missing ones.
+  const record = await loadRecord(type, id, districtOwnedWhere(getOrgScope(user)));
   if (!record) notFound();
 
   const canApprove = hasPermission(user, APPROVE_PERMISSION[type]);

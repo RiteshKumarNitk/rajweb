@@ -1,5 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
 import { requireAdminScope } from "@/security/rbac/admin-scope";
+import { districtOwnedWhere, type OrgScope } from "@/security/rbac/org-scope";
+import { getStateView } from "@/modules/states/state-view.server";
+import { StateFilter } from "@/shared/components/admin/state-filter";
 import { PERMISSIONS } from "@/security/rbac/permissions";
 import { getStorage } from "@/infrastructure/storage/storage-adapter";
 import { Users, UserCheck, Clock, Award, ShieldAlert, Sparkles, Filter } from "lucide-react";
@@ -7,12 +10,12 @@ import { PlayersTable, type PlayerRow } from "./players-table";
 
 export const dynamic = "force-dynamic";
 
-async function getPlayers(districtId?: string): Promise<PlayerRow[]> {
+async function getPlayers(scope: OrgScope): Promise<PlayerRow[]> {
   try {
     const { default: prisma } = await import("@/infrastructure/database/prisma");
     const storage = getStorage();
     const rows = await prisma.player.findMany({
-      where: districtId ? { districtId } : undefined,
+      where: districtOwnedWhere(scope),
       include: {
         district: true,
         certificates: {
@@ -50,9 +53,10 @@ async function getPlayers(districtId?: string): Promise<PlayerRow[]> {
   }
 }
 
-export default async function AdminPlayersPage() {
-  const { districtId, user } = await requireAdminScope(PERMISSIONS.PLAYERS_READ);
-  const players = await getPlayers(districtId);
+export default async function AdminPlayersPage({ searchParams }: { searchParams: Promise<{ state?: string }> }) {
+  const { scope } = await requireAdminScope(PERMISSIONS.PLAYERS_READ);
+  const { viewScope, states, selectedStateId, scopeLabel } = await getStateView(scope, (await searchParams).state);
+  const players = await getPlayers(viewScope);
 
   const totalPlayers = players.length;
   const approvedPlayers = players.filter((p) => p.status === "APPROVED").length;
@@ -67,13 +71,14 @@ export default async function AdminPlayersPage() {
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold tracking-tight text-primary sm:text-3xl">Player Registry</h1>
             <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-800">
-              {districtId ? "District Scoped" : "Federation Wide"}
+              {scopeLabel}
             </span>
           </div>
           <p className="text-sm text-slate-500">
             Manage registered racquetball athletes, review licensing applications, and issue digital certificates.
           </p>
         </div>
+        <StateFilter states={states} selectedStateId={selectedStateId} />
       </div>
 
       {/* Metrics Row */}

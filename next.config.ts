@@ -8,6 +8,11 @@ const nextConfig: NextConfig = {
     imageSizes: [16, 32, 48, 64, 96, 128, 256],
     remotePatterns: [{ protocol: "https", hostname: "**" }],
   },
+  // PDFKit loads its built-in font metrics (data/*.afm) relative to its own
+  // __dirname. Bundled into .next/server/chunks that path does not exist and
+  // every certificate PDF failed with ENOENT, so it must stay a real
+  // node_modules dependency on the server.
+  serverExternalPackages: ["pdfkit"],
   poweredByHeader: false,
   reactStrictMode: true,
   compress: true,

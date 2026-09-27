@@ -9,18 +9,20 @@ export function revalidatePublicDistricts() {
 
 async function loadActiveDistricts(): Promise<PublicDistrict[]> {
   return prisma.district.findMany({
-    where: { isActive: true },
+    // Active districts of active states only, in the admin-defined order.
+    where: { isActive: true, state: { isActive: true } },
     select: {
       id: true,
       name: true,
       slug: true,
+      state: { select: { id: true, name: true } },
       president: true,
       secretary: true,
       email: true,
       phone: true,
       address: true,
     },
-    orderBy: { name: "asc" },
+    orderBy: [{ state: { sortOrder: "asc" } }, { sortOrder: "asc" }, { name: "asc" }],
   });
 }
 
@@ -37,6 +39,7 @@ export interface PublicDistrict {
   id: string;
   name: string;
   slug: string;
+  state: { id: string; name: string } | null;
   president: string | null;
   secretary: string | null;
   email: string | null;

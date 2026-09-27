@@ -4,7 +4,7 @@ import { AppError } from "@/core/errors/app-error";
 import prisma from "@/infrastructure/database/prisma";
 import { requireAuth } from "@/security/auth/session";
 import { hasPermission, PERMISSIONS, type SessionUser } from "@/security/rbac/permissions";
-import { isFederationWide } from "@/security/rbac/district-scope";
+import { getOrgScope, isInScope } from "@/security/rbac/org-scope";
 
 /**
  * A stored file is only served when it is referenced by a record the caller
@@ -14,26 +14,30 @@ import { isFederationWide } from "@/security/rbac/district-scope";
  * Public verification does not use this route.
  */
 async function canAccessFile(user: SessionUser, filePath: string): Promise<boolean> {
-  const inDistrict = (districtId: string) => isFederationWide(user) || user.districtId === districtId;
+  const scope = getOrgScope(user);
+  const inScope = (owner: { districtId: string; district: { stateId: string | null } | null }) =>
+    isInScope(scope, { districtId: owner.districtId, stateId: owner.district?.stateId ?? null });
 
   const [playerCert, coachCert] = await Promise.all([
     prisma.playerCertificate.findFirst({
       where: { pdfPath: filePath },
-      select: { player: { select: { userId: true, districtId: true } } },
+      select: { player: { select: { userId: true, districtId: true, district: { select: { stateId: true } } } } },
     }),
     prisma.coachCertificate.findFirst({
       where: { pdfPath: filePath },
-      select: { coach: { select: { userId: true, districtId: true } } },
+      select: { coach: { select: { userId: true, districtId: true, district: { select: { stateId: true } } } } },
     }),
   ]);
 
   const certOwner = playerCert?.player ?? coachCert?.coach;
   if (certOwner) {
     if (certOwner.userId && certOwner.userId === user.id) return true;
-    return hasPermission(user, PERMISSIONS.CERTIFICATES_READ) && inDistrict(certOwner.districtId);
+    return hasPermission(user, PERMISSIONS.CERTIFICATES_READ) && inScope(certOwner);
   }
 
-  const membershipSelect = { select: { userId: true, districtId: true } } as const;
+  const membershipSelect = {
+    select: { userId: true, districtId: true, district: { select: { stateId: true } } },
+  } as const;
   const membership =
     (await prisma.clubMembership.findFirst({ where: { certificatePath: filePath }, ...membershipSelect })) ??
     (await prisma.schoolMembership.findFirst({ where: { certificatePath: filePath }, ...membershipSelect })) ??
@@ -41,7 +45,7 @@ async function canAccessFile(user: SessionUser, filePath: string): Promise<boole
 
   if (membership) {
     if (membership.userId && membership.userId === user.id) return true;
-    return hasPermission(user, PERMISSIONS.MEMBERSHIPS_READ) && inDistrict(membership.districtId);
+    return hasPermission(user, PERMISSIONS.MEMBERSHIPS_READ) && inScope(membership);
   }
 
   return false;

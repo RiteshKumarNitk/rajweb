@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { getRegistrationLocations } from "@/modules/districts/registration-locations.server";
+import { RegistrationLocationsProvider } from "@/shared/components/forms/registration-locations-context";
 import { redirect } from "next/navigation";
 import { CheckCircle, GraduationCap } from "lucide-react";
 import { PageHeader, PageContent } from "@/shared/components/layout";
@@ -23,6 +25,8 @@ const benefits = [
 ];
 
 export default async function SchoolMembershipPage() {
+  // Empty on DB failure — the forms then fall back to the static district list.
+  const locations = await getRegistrationLocations().catch(() => []);
   const user = await getCurrentUser();
   if (user) redirect("/account/memberships/school");
 
@@ -41,7 +45,9 @@ export default async function SchoolMembershipPage() {
                 <CardTitle>School Registration Form</CardTitle>
               </CardHeader>
               <CardContent>
-                <SchoolMembershipForm />
+                <RegistrationLocationsProvider locations={locations}>
+                  <SchoolMembershipForm />
+                </RegistrationLocationsProvider>
               </CardContent>
             </Card>
           </div>

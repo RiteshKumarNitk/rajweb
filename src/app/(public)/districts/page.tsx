@@ -25,6 +25,20 @@ export default async function DistrictsPage() {
     dbDistricts = [];
   }
 
+  // Districts are admin-managed (add / edit / deactivate / reorder) and grouped
+  // by state. The static list is only a fallback when the database is down.
+  const groups: { stateName: string; districts: { key: string; name: string; record?: PublicDistrict }[] }[] = [];
+  if (dbDistricts.length > 0) {
+    for (const d of dbDistricts) {
+      const stateName = d.state?.name ?? "Other";
+      let group = groups.find((g) => g.stateName === stateName);
+      if (!group) groups.push((group = { stateName, districts: [] }));
+      group.districts.push({ key: d.id, name: d.name, record: d });
+    }
+  } else {
+    groups.push({ stateName: "Rajasthan", districts: rajasthanDistricts.map((name) => ({ key: name, name })) });
+  }
+
   const featuredDistricts = Object.keys(districtLogos);
   const dbNames = new Set(dbDistricts.map((d) => d.name.toLowerCase()));
   const byName = new Map(dbDistricts.map((d) => [d.name.toLowerCase(), d]));
@@ -83,14 +97,15 @@ export default async function DistrictsPage() {
           </section>
         )}
 
-        <h2 className="mb-6 text-xl font-bold text-primary">All Rajasthan Districts</h2>
+        {groups.map((group) => (
+        <section key={group.stateName} className="mb-10">
+        <h2 className="mb-6 text-xl font-bold text-primary">All {group.stateName} Districts</h2>
         <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-          {rajasthanDistricts.map((district) => {
-            const record = byName.get(district.toLowerCase());
+          {group.districts.map(({ key, name: district, record }) => {
             const hasLogo = Boolean(districtLogos[district]);
 
             return (
-              <Card key={district} className="group hover:border-secondary/30">
+              <Card key={key} className="group hover:border-secondary/30">
                 <CardHeader className="pb-2">
                   <div className="flex items-center gap-3">
                     {hasLogo ? (
@@ -114,7 +129,7 @@ export default async function DistrictsPage() {
                   {record ? (
                     <div className="space-y-1 text-sm text-slate-500">
                       <p className="font-medium text-slate-700">
-                        {hasLogo ? "Affiliated chapter" : "District Association — Rajasthan"}
+                        {hasLogo ? "Affiliated chapter" : `District Association — ${group.stateName}`}
                       </p>
                       {record.secretary && <p>Secretary: {record.secretary}</p>}
                       {record.phone && (
@@ -132,13 +147,15 @@ export default async function DistrictsPage() {
                       )}
                     </div>
                   ) : (
-                    <p className="text-sm text-slate-500">District Association — Rajasthan</p>
+                    <p className="text-sm text-slate-500">District Association — {group.stateName}</p>
                   )}
                 </CardContent>
               </Card>
             );
           })}
         </div>
+        </section>
+        ))}
 
         {dbNames.size > 0 && (
           <p className="mt-6 text-sm text-slate-400">

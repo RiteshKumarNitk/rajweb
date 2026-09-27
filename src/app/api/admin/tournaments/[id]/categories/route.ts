@@ -3,7 +3,7 @@ import prisma from "@/infrastructure/database/prisma";
 import { withApiHandler, jsonSuccess, AppError } from "@/core/api/with-api-handler";
 import { requirePermission } from "@/security/auth/session";
 import { PERMISSIONS } from "@/security/rbac/permissions";
-import { assertTournamentDistrictAccess } from "@/security/rbac/district-scope";
+import { assertInScope } from "@/security/rbac/org-scope";
 import { createAuditLog } from "@/services/audit/audit-service";
 import { createRegistrationCategory } from "@/modules/tournaments/tournament.service";
 import { revalidatePublicTournaments } from "@/modules/tournaments/public-tournaments";
@@ -22,7 +22,7 @@ export const POST = withApiHandler(
 
     const tournament = await prisma.tournament.findUnique({ where: { id: tournamentId } });
     if (!tournament) throw AppError.notFound("Tournament not found");
-    assertTournamentDistrictAccess(user, tournament.districtId);
+    assertInScope(user, tournament, "Tournament not found");
 
     const data = categorySchema.parse(await request.json());
     const category = await createRegistrationCategory(tournamentId, data);

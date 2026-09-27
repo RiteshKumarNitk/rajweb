@@ -53,6 +53,14 @@ export async function verifyCertificate(params: {
 
     const byMemberId = await lookupByMemberId(certificateNumber);
     if (byMemberId) return byMemberId;
+
+    // Certificate QR codes open /verify?qrCode=…, and the verify forms send
+    // whatever is in the single serial box as certificateNumber — so a QR
+    // value must also resolve here, or every scanned certificate reads invalid.
+    if (!qrCode) {
+      const byQrValue = await lookupByQrCode(certificateNumber);
+      if (byQrValue) return byQrValue;
+    }
   }
 
   // 3. Lookup by QR Code in Database

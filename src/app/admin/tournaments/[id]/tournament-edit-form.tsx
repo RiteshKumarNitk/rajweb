@@ -11,7 +11,7 @@ import { Textarea } from "@/shared/components/ui/textarea";
 import { apiFetch, handleApiFetch } from "@/lib/api-client";
 import { tournamentDateOrderError } from "@/modules/tournaments/tournament-dates";
 
-export type DistrictOption = { id: string; name: string };
+import { OwnerOptions, ownerValue, parseOwnerValue, type OwnerGroup } from "@/shared/components/admin/tournament-owner-options";
 
 export interface TournamentDetail {
   id: string;
@@ -19,6 +19,7 @@ export interface TournamentDetail {
   description: string | null;
   category: "JUNIOR" | "SENIOR" | "OPEN" | "PROFESSIONAL";
   status: "DRAFT" | "REGISTRATION_OPEN" | "REGISTRATION_CLOSED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+  stateId: string | null;
   districtId: string | null;
   venue: string | null;
   city: string | null;
@@ -56,12 +57,12 @@ interface TournamentFormData {
 
 export function TournamentEditForm({
   tournament,
-  districts,
+  ownerGroups,
   lockedDistrictId,
   readOnly,
 }: {
   tournament: TournamentDetail;
-  districts: DistrictOption[];
+  ownerGroups: OwnerGroup[];
   lockedDistrictId?: string;
   readOnly: boolean;
 }) {
@@ -78,7 +79,8 @@ export function TournamentEditForm({
       description: tournament.description ?? "",
       category: tournament.category,
       status: tournament.status,
-      districtId: tournament.districtId ?? "",
+      // Owner value (s:<stateId> | d:<districtId>), see tournament-owner-options.
+      districtId: ownerValue(tournament),
       venue: tournament.venue ?? "",
       city: tournament.city ?? "",
       startDate: tournament.startDate,
@@ -113,7 +115,8 @@ export function TournamentEditForm({
         method: "PATCH",
         body: JSON.stringify({
           ...data,
-          districtId: lockedDistrictId || data.districtId || null,
+          // District admins cannot re-home a tournament: omit owner fields entirely.
+          ...(lockedDistrictId ? { districtId: undefined } : parseOwnerValue(data.districtId) ?? { districtId: undefined }),
           maxParticipants: data.maxParticipants ? Number(data.maxParticipants) : null,
           description: data.description.trim() || undefined,
           venue: data.venue.trim() || undefined,
@@ -176,17 +179,14 @@ export function TournamentEditForm({
           <p className="text-xs font-semibold uppercase text-slate-400">Location</p>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="districtId">District</Label>
+              <Label htmlFor="districtId">State / District</Label>
               <select
                 id="districtId"
                 className="h-11 w-full rounded-md border border-slate-300 bg-white px-4 text-sm disabled:bg-slate-100"
                 {...register("districtId")}
                 disabled={Boolean(lockedDistrictId)}
               >
-                {!lockedDistrictId && <option value="">State-wide (all districts)</option>}
-                {districts.map((d) => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
-                ))}
+                <OwnerOptions groups={ownerGroups} allowStateWide={!lockedDistrictId} />
               </select>
             </div>
             <div className="space-y-2">

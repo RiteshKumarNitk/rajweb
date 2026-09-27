@@ -2,7 +2,7 @@ import prisma from "@/infrastructure/database/prisma";
 import { withApiHandler, jsonSuccess, AppError } from "@/core/api/with-api-handler";
 import { requirePermission } from "@/security/auth/session";
 import { PERMISSIONS, hasPermission } from "@/security/rbac/permissions";
-import { assertDistrictAccess } from "@/security/rbac/district-scope";
+import { assertInScope, districtTarget, DISTRICT_STATE_SELECT } from "@/security/rbac/org-scope";
 import { approvePlayer, rejectPlayer } from "@/modules/players/player.service";
 import { issuePlayerCertificate } from "@/services/certificates/certificate-service";
 import { getStorage } from "@/infrastructure/storage/storage-adapter";
@@ -18,12 +18,13 @@ export const POST = withApiHandler(
       throw AppError.badRequest("Player ID and action are required");
     }
 
-    const player = await prisma.player.findUnique({ where: { id } });
+    const player = await prisma.player.findUnique({ where: { id }, include: DISTRICT_STATE_SELECT });
     if (!player) {
       throw AppError.notFound("Player not found");
     }
 
-    assertDistrictAccess(user, player.districtId);
+    // Out-of-scope records look identical to missing ones (no IDOR oracle).
+    assertInScope(user, districtTarget(player), "Player not found");
 
     if (action === "approve") {
       await approvePlayer(id, user.id);

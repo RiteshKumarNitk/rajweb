@@ -7,7 +7,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Button } from "@/shared/components/ui/button";
 import { FormBuilder } from "@/shared/components/ui/form-builder";
-import { rajasthanDistricts } from "@/shared/config/site";
+import { useRegistrationLocations } from "@/shared/components/forms/registration-locations-context";
 import { apiPost, handleApiFetch } from "@/lib/api-client";
 
 const clubSchema = z.object({
@@ -16,6 +16,8 @@ const clubSchema = z.object({
   email: z.string().email("Enter a valid email"),
   phone: z.string().min(10, "Enter a valid phone number"),
   district: z.string().min(1, "Select a district"),
+  // State slug; auto-filled when only one state is active.
+  state: z.string().optional(),
   address: z.string().min(10, "Address is required"),
   courts: z.string().min(1, "Number of courts is required"),
 });
@@ -38,9 +40,11 @@ export function ClubMembershipForm({
   resubmit?: ClubResubmitData;
 }) {
   const router = useRouter();
+  const loc = useRegistrationLocations();
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<ClubFormData>({
     resolver: zodResolver(clubSchema),
@@ -50,10 +54,12 @@ export function ClubMembershipForm({
       phone: prefill.phone,
       clubName: resubmit?.clubName ?? "",
       district: resubmit?.district ?? "",
+      state: loc.initialState(resubmit?.district),
       address: resubmit?.address ?? "",
       courts: resubmit?.courts ? String(resubmit.courts) : "",
     },
-  });
+  });  const districtOptions = loc.districtsFor(watch("state"));
+
 
   async function onSubmit(data: ClubFormData) {
     try {
@@ -79,13 +85,26 @@ export function ClubMembershipForm({
           { name: "contactPerson", label: "Contact Person", placeholder: "Your full name" },
           { name: "email", label: "Email", type: "email" },
           { name: "phone", label: "Phone", type: "tel", placeholder: "10-digit mobile number" },
+          ...(loc.multiState
+            ? [
+                {
+                  name: "state" as const,
+                  label: "State",
+                  type: "select" as const,
+                  options: [
+                    { label: "Select state", value: "" },
+                    ...loc.locations.map((l) => ({ label: l.name, value: l.slug })),
+                  ],
+                },
+              ]
+            : []),
           {
             name: "district",
             label: "District",
             type: "select",
             options: [
               { label: "Select district", value: "" },
-              ...rajasthanDistricts.map((d) => ({ label: d, value: d })),
+              ...districtOptions.map((d) => ({ label: d, value: d })),
             ],
           },
           { name: "address", label: "Address", type: "textarea", placeholder: "Full club address" },

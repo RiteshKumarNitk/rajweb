@@ -1,15 +1,18 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
 import { requireAdminScope } from "@/security/rbac/admin-scope";
+import { districtOwnedWhere, type OrgScope } from "@/security/rbac/org-scope";
+import { getStateView } from "@/modules/states/state-view.server";
+import { StateFilter } from "@/shared/components/admin/state-filter";
 import { PERMISSIONS } from "@/security/rbac/permissions";
 import { Building2, School, Landmark, CheckCircle2, Clock } from "lucide-react";
 import { MembershipsManager, type MembershipRow } from "./memberships-manager";
 
 export const dynamic = "force-dynamic";
 
-async function getMemberships(districtId?: string) {
+async function getMemberships(scope: OrgScope) {
   try {
     const { default: prisma } = await import("@/infrastructure/database/prisma");
-    const where = districtId ? { districtId } : undefined;
+    const where = districtOwnedWhere(scope);
     const [clubs, schools, academies] = await Promise.all([
       prisma.clubMembership.findMany({
         where,
@@ -85,9 +88,10 @@ async function getMemberships(districtId?: string) {
   }
 }
 
-export default async function AdminMembershipsPage() {
-  const { districtId } = await requireAdminScope(PERMISSIONS.MEMBERSHIPS_READ);
-  const { clubs, schools, academies } = await getMemberships(districtId);
+export default async function AdminMembershipsPage({ searchParams }: { searchParams: Promise<{ state?: string }> }) {
+  const { scope } = await requireAdminScope(PERMISSIONS.MEMBERSHIPS_READ);
+  const { viewScope, states, selectedStateId, scopeLabel } = await getStateView(scope, (await searchParams).state);
+  const { clubs, schools, academies } = await getMemberships(viewScope);
 
   const totalAffiliations = clubs.length + schools.length + academies.length;
   const pendingClubs = clubs.filter((c) => c.status === "PENDING").length;
@@ -105,13 +109,14 @@ export default async function AdminMembershipsPage() {
               Institutional Affiliations
             </h1>
             <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-800">
-              {districtId ? "District Scoped" : "Federation Wide"}
+              {scopeLabel}
             </span>
           </div>
           <p className="text-sm text-slate-500">
             Official sports clubs, accredited schools, and private coaching academies affiliated with RRA.
           </p>
         </div>
+        <StateFilter states={states} selectedStateId={selectedStateId} />
       </div>
 
       {/* Metrics Row */}

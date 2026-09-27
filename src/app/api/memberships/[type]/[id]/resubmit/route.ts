@@ -16,6 +16,7 @@ const clubSchema = z.object({
   email: z.string().email().max(254),
   phone: z.string().min(10).max(20),
   district: z.string().min(1).max(100),
+  state: z.string().max(100).optional(),
   address: z.string().min(10).max(500),
   courts: z.coerce.number().int().positive().max(100),
 });
@@ -26,6 +27,7 @@ const schoolSchema = z.object({
   email: z.string().email().max(254),
   phone: z.string().min(10).max(20),
   district: z.string().min(1).max(100),
+  state: z.string().max(100).optional(),
   address: z.string().min(10).max(500),
   studentCount: z.coerce.number().int().positive().max(100000).optional(),
 });
@@ -36,6 +38,7 @@ const academySchema = z.object({
   email: z.string().email().max(254),
   phone: z.string().min(10).max(20),
   district: z.string().min(1).max(100),
+  state: z.string().max(100).optional(),
   address: z.string().min(10).max(500),
   coachCount: z.coerce.number().int().positive().max(1000).optional(),
 });

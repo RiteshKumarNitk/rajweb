@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { getRegistrationLocations } from "@/modules/districts/registration-locations.server";
+import { RegistrationLocationsProvider } from "@/shared/components/forms/registration-locations-context";
 import { redirect } from "next/navigation";
 import { Building2, CheckCircle } from "lucide-react";
 import { PageHeader, PageContent } from "@/shared/components/layout";
@@ -23,6 +25,8 @@ const benefits = [
 ];
 
 export default async function ClubMembershipPage() {
+  // Empty on DB failure — the forms then fall back to the static district list.
+  const locations = await getRegistrationLocations().catch(() => []);
   const user = await getCurrentUser();
   if (user) redirect("/account/memberships/club");
 
@@ -41,7 +45,9 @@ export default async function ClubMembershipPage() {
                 <CardTitle>Club Registration Form</CardTitle>
               </CardHeader>
               <CardContent>
-                <ClubMembershipForm />
+                <RegistrationLocationsProvider locations={locations}>
+                  <ClubMembershipForm />
+                </RegistrationLocationsProvider>
               </CardContent>
             </Card>
           </div>

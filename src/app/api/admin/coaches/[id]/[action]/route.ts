@@ -2,7 +2,7 @@ import prisma from "@/infrastructure/database/prisma";
 import { withApiHandler, jsonSuccess, AppError } from "@/core/api/with-api-handler";
 import { requirePermission } from "@/security/auth/session";
 import { PERMISSIONS } from "@/security/rbac/permissions";
-import { assertDistrictAccess } from "@/security/rbac/district-scope";
+import { assertInScope, districtTarget, DISTRICT_STATE_SELECT } from "@/security/rbac/org-scope";
 import { approveCoach, rejectCoach } from "@/modules/coaches/coach.service";
 import { createAuditLog } from "@/services/audit/audit-service";
 
@@ -16,12 +16,12 @@ export const POST = withApiHandler(
       throw AppError.badRequest("Coach ID and action are required");
     }
 
-    const coach = await prisma.coach.findUnique({ where: { id } });
+    const coach = await prisma.coach.findUnique({ where: { id }, include: DISTRICT_STATE_SELECT });
     if (!coach) {
       throw AppError.notFound("Coach not found");
     }
 
-    assertDistrictAccess(user, coach.districtId);
+    assertInScope(user, districtTarget(coach), "Coach not found");
 
     if (action === "approve") {
       await approveCoach(id, user.id);

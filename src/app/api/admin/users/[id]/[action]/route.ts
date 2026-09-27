@@ -4,9 +4,16 @@ import { withApiHandler, jsonSuccess, AppError } from "@/core/api/with-api-handl
 import { requirePermission } from "@/security/auth/session";
 import { PERMISSIONS } from "@/security/rbac/permissions";
 import { createAuditLog } from "@/services/audit/audit-service";
+import { getOrgScope, isInScope } from "@/security/rbac/org-scope";
 
 const assignRoleSchema = z.object({ roleId: z.string().min(1) });
 const assignDistrictSchema = z.object({ districtId: z.string().min(1) });
+const assignStateSchema = z.object({ stateId: z.string().min(1) });
+
+// Actions that change *whose data* a user can see. Only GLOBAL admins may
+// perform them, so a scoped custom role holding users:update can never widen
+// anyone's (including its own) organisational scope.
+const SCOPE_ACTIONS = new Set(["assign-state", "remove-state", "assign-district", "remove-district", "toggle-federation-wide"]);
 
 export const POST = withApiHandler(
   async (request, { requestId, params }) => {
@@ -18,8 +25,19 @@ export const POST = withApiHandler(
       throw AppError.badRequest("User ID and action are required");
     }
 
-    const target = await prisma.user.findUnique({ where: { id }, include: { role: true, district: true } });
-    if (!target) {
+    if (SCOPE_ACTIONS.has(action) && getOrgScope(actor).level !== "GLOBAL") {
+      throw AppError.forbidden("Only the Super Admin can change a user's state, district or federation-wide access");
+    }
+
+    const target = await prisma.user.findUnique({ where: { id }, include: { role: true, district: true, state: true } });
+    // Scoped admins may only act on staff inside their own scope.
+    if (
+      !target ||
+      !isInScope(getOrgScope(actor), {
+        districtId: target.districtId,
+        stateId: target.district?.stateId ?? target.stateId,
+      })
+    ) {
       throw AppError.notFound("User not found");
     }
 
@@ -56,12 +74,53 @@ export const POST = withApiHandler(
       return jsonSuccess({ id, role: role.slug }, requestId, "Role updated");
     }
 
+    if (action === "assign-state") {
+      const { stateId } = assignStateSchema.parse(await request.json());
+      const state = await prisma.state.findUnique({ where: { id: stateId } });
+      if (!state) throw AppError.badRequest("State not found");
+
+      // A district outside the new state would contradict it — clear it.
+      const clearDistrict = target.district !== null && target.district.stateId !== stateId;
+      await prisma.user.update({ where: { id }, data: { stateId, ...(clearDistrict ? { districtId: null } : {}) } });
+      await createAuditLog({
+        userId: actor.id,
+        action: "UPDATE",
+        module: "users",
+        entityId: id,
+        details: {
+          field: "state",
+          previousValue: target.state?.name ?? null,
+          newValue: state.name,
+          ...(clearDistrict ? { districtCleared: target.district?.name ?? null } : {}),
+        },
+      });
+      return jsonSuccess({ id, stateId }, requestId, "State assigned");
+    }
+
+    if (action === "remove-state") {
+      if (!target.stateId && !target.districtId) {
+        return jsonSuccess({ id, stateId: null }, requestId, "No change");
+      }
+      // A district implies a state, so removing the state removes the district too.
+      await prisma.user.update({ where: { id }, data: { stateId: null, districtId: null } });
+      await createAuditLog({
+        userId: actor.id,
+        action: "UPDATE",
+        module: "users",
+        entityId: id,
+        details: { field: "state", previousValue: target.state?.name ?? null, newValue: null, districtCleared: target.district?.name ?? null },
+      });
+      return jsonSuccess({ id, stateId: null }, requestId, "State removed");
+    }
+
     if (action === "assign-district") {
       const { districtId } = assignDistrictSchema.parse(await request.json());
       const district = await prisma.district.findUnique({ where: { id: districtId } });
       if (!district) throw AppError.badRequest("District not found");
+      if (!district.stateId) throw AppError.badRequest("Assign this district to a state before assigning users to it");
 
-      await prisma.user.update({ where: { id }, data: { districtId } });
+      // Keep User.stateId consistent with the district's state.
+      await prisma.user.update({ where: { id }, data: { districtId, stateId: district.stateId } });
       await createAuditLog({
         userId: actor.id,
         action: "UPDATE",

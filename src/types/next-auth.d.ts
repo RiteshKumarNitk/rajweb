@@ -10,6 +10,7 @@ declare module "next-auth" {
       role: RoleSlug;
       permissions: string[];
       districtId?: string | null;
+      stateId?: string | null;
       isFederationWide: boolean;
       isActive: boolean;
     };
@@ -32,6 +33,7 @@ declare module "next-auth/jwt" {
     role: RoleSlug;
     permissions: string[];
     districtId?: string | null;
+    stateId?: string | null;
     isFederationWide: boolean;
     isActive: boolean;
     authCheckedAt?: number;

@@ -4,6 +4,9 @@ import { generateId } from "@/lib/utils";
 import { getStorage } from "@/infrastructure/storage/storage-adapter";
 import prisma from "@/infrastructure/database/prisma";
 import { createPdfDocument } from "@/services/certificates/pdfkit-fonts";
+import { createModuleLogger } from "@/core/logger";
+
+const log = createModuleLogger("certificates");
 
 interface CertificateData {
   type: "player" | "coach";
@@ -116,8 +119,11 @@ export async function issuePlayerCertificate(
     );
     const storage = getStorage();
     pdfPath = await storage.upload(pdfBuffer, `${certificateNumber}.pdf`, "certificates");
-  } catch {
-    // Certificate record is still created if PDF generation fails
+  } catch (err) {
+    // The certificate record is still created (it verifies without a PDF),
+    // but the failure must be visible — a silent null pdfPath looks like a
+    // broken "View PDF" link to admins and members.
+    log.error({ err, certificateNumber }, "Certificate PDF generation/upload failed");
     pdfPath = null;
   }
 

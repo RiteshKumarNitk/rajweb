@@ -2,18 +2,11 @@ import prisma from "@/infrastructure/database/prisma";
 import { AppError } from "@/core/errors/app-error";
 import { sanitizeEmail, sanitizePhone, sanitizeText } from "@/security/sanitize";
 import { createModuleLogger } from "@/core/logger";
+import { resolveRegistrationDistrict } from "@/modules/districts/registration-locations.server";
 
 const log = createModuleLogger("memberships");
 
 export type MembershipReviewType = "club" | "school" | "academy";
-
-async function resolveDistrictId(districtName: string) {
-  const district = await prisma.district.findFirst({
-    where: { name: { equals: districtName, mode: "insensitive" } },
-  });
-  if (!district) throw AppError.validation("Invalid district selected");
-  return district.id;
-}
 
 export interface ResubmitClubInput {
   clubName: string;
@@ -21,6 +14,7 @@ export interface ResubmitClubInput {
   email: string;
   phone: string;
   district: string;
+  state?: string;
   address: string;
   courts: number;
 }
@@ -31,6 +25,7 @@ export interface ResubmitSchoolInput {
   email: string;
   phone: string;
   district: string;
+  state?: string;
   address: string;
   studentCount?: number;
 }
@@ -41,6 +36,7 @@ export interface ResubmitAcademyInput {
   email: string;
   phone: string;
   district: string;
+  state?: string;
   address: string;
   coachCount?: number;
 }
@@ -97,7 +93,7 @@ export async function rejectMembership(type: MembershipReviewType, id: string, r
 }
 
 export async function resubmitClubMembership(id: string, input: ResubmitClubInput) {
-  const districtId = await resolveDistrictId(input.district);
+  const { districtId } = await resolveRegistrationDistrict({ district: input.district, state: input.state });
   const result = await prisma.clubMembership.updateMany({
     where: { id, status: "REJECTED" },
     data: {
@@ -122,7 +118,7 @@ export async function resubmitClubMembership(id: string, input: ResubmitClubInpu
 }
 
 export async function resubmitSchoolMembership(id: string, input: ResubmitSchoolInput) {
-  const districtId = await resolveDistrictId(input.district);
+  const { districtId } = await resolveRegistrationDistrict({ district: input.district, state: input.state });
   const result = await prisma.schoolMembership.updateMany({
     where: { id, status: "REJECTED" },
     data: {
@@ -147,7 +143,7 @@ export async function resubmitSchoolMembership(id: string, input: ResubmitSchool
 }
 
 export async function resubmitAcademyMembership(id: string, input: ResubmitAcademyInput) {
-  const districtId = await resolveDistrictId(input.district);
+  const { districtId } = await resolveRegistrationDistrict({ district: input.district, state: input.state });
   const result = await prisma.academyMembership.updateMany({
     where: { id, status: "REJECTED" },
     data: {

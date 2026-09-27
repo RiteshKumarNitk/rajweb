@@ -6,6 +6,10 @@ import { Pool } from "pg";
 import { ROLES, PERMISSIONS, ROLE_PERMISSIONS } from "../src/security/rbac/permissions";
 import { rajasthanDistricts } from "../src/shared/config/site";
 
+// Seed DATA for the association's founding state. Application logic never
+// refers to a specific state — further states are added via /admin/states.
+const FOUNDING_STATE = { name: "Rajasthan", slug: "rajasthan", code: "RJ" };
+
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
@@ -63,13 +67,31 @@ async function main() {
     }
   }
 
-  // Districts
-  for (const name of rajasthanDistricts) {
+  // States & districts
+  const foundingState = await prisma.state.upsert({
+    where: { slug: FOUNDING_STATE.slug },
+    update: {},
+    create: { ...FOUNDING_STATE, isActive: true, sortOrder: 0 },
+  });
+
+  // Backfill (idempotent): districts created before states existed all came
+  // from this same list, so they belong to the founding state. Only rows with
+  // no state yet are touched — nothing is ever moved between states, and any
+  // other unassigned district stays unassigned (visible to Super Admin only).
+  const backfilledDistricts = await prisma.district.updateMany({
+    where: { stateId: null, name: { in: [...rajasthanDistricts] } },
+    data: { stateId: foundingState.id },
+  });
+  if (backfilledDistricts.count > 0) {
+    console.log(`Backfilled ${backfilledDistricts.count} districts -> ${foundingState.name}`);
+  }
+
+  for (const [index, name] of rajasthanDistricts.entries()) {
     const slug = name.toLowerCase().replace(/\s+/g, "-");
     await prisma.district.upsert({
-      where: { slug },
+      where: { stateId_slug: { stateId: foundingState.id, slug } },
       update: {},
-      create: { name, slug, isActive: true },
+      create: { name, slug, stateId: foundingState.id, sortOrder: index, isActive: true },
     });
   }
 
@@ -456,6 +478,25 @@ async function main() {
       },
     });
   }
+
+  // Backfill tournament ownership (idempotent, only rows with no state):
+  //  - district tournaments take their district's state (exact);
+  //  - state-wide tournaments (no district) predate multi-state support and
+  //    can only belong to the single state that existed then — assigned only
+  //    while exactly one state exists, otherwise left for the Super Admin.
+  const unownedTournaments = await prisma.tournament.findMany({
+    where: { stateId: null },
+    select: { id: true, district: { select: { stateId: true } } },
+  });
+  const stateCount = await prisma.state.count();
+  let backfilledTournaments = 0;
+  for (const t of unownedTournaments) {
+    const stateId = t.district ? t.district.stateId : stateCount === 1 ? foundingState.id : null;
+    if (!stateId) continue;
+    await prisma.tournament.update({ where: { id: t.id }, data: { stateId } });
+    backfilledTournaments += 1;
+  }
+  if (backfilledTournaments > 0) console.log(`Backfilled state on ${backfilledTournaments} tournaments`);
 
   console.log("Seed completed successfully!");
   console.log("Admin login: admin@rajasthanracquetball.com / Admin@123");

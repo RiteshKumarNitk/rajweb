@@ -3,7 +3,8 @@ import Link from "next/link";
 import { ArrowLeft, Trophy } from "lucide-react";
 import prisma from "@/infrastructure/database/prisma";
 import { getCurrentUser } from "@/security/auth/session";
-import { getDistrictWhereClause, isFederationWide } from "@/security/rbac/district-scope";
+import { getOrgScope, tournamentWhere } from "@/security/rbac/org-scope";
+import { getTournamentOwnerGroups } from "@/modules/tournaments/tournament-owner-groups.server";
 import { hasPermission, PERMISSIONS } from "@/security/rbac/permissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { StatusBadge } from "@/shared/components/ui/status-badge";
@@ -26,10 +27,11 @@ export default async function AdminTournamentDetailPage({
     redirect("/admin?error=forbidden");
   }
 
-  const districtWhere = getDistrictWhereClause(user);
-  const [tournament, districts] = await Promise.all([
+  const scope = getOrgScope(user);
+  // Scoped lookup: another state's/district's tournament is a plain 404.
+  const [tournament, ownerGroups] = await Promise.all([
     prisma.tournament.findFirst({
-      where: { id, ...districtWhere },
+      where: { id, ...tournamentWhere(scope) },
       include: {
         district: true,
         registrationCategories: { orderBy: { createdAt: "asc" } },
@@ -43,11 +45,7 @@ export default async function AdminTournamentDetailPage({
         _count: { select: { registrations: true } },
       },
     }),
-    prisma.district.findMany({
-      where: isFederationWide(user) ? undefined : { id: user.districtId ?? undefined },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
-    }),
+    getTournamentOwnerGroups(scope),
   ]);
   if (!tournament) notFound();
 
@@ -117,6 +115,7 @@ export default async function AdminTournamentDetailPage({
                 description: tournament.description,
                 category: tournament.category,
                 status: tournament.status,
+                stateId: tournament.stateId,
                 districtId: tournament.districtId,
                 venue: tournament.venue,
                 city: tournament.city,
@@ -131,8 +130,8 @@ export default async function AdminTournamentDetailPage({
                 contactEmail: tournament.contactEmail,
                 requiresApprovedPlayer: tournament.requiresApprovedPlayer,
               }}
-              districts={districts}
-              lockedDistrictId={!isFederationWide(user) ? (user.districtId ?? undefined) : undefined}
+              ownerGroups={ownerGroups}
+              lockedDistrictId={scope.level === "DISTRICT" ? scope.districtId : undefined}
               readOnly={!canManage}
             />
           </CardContent>

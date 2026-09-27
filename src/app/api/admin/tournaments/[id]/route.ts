@@ -3,7 +3,8 @@ import prisma from "@/infrastructure/database/prisma";
 import { withApiHandler, jsonSuccess, AppError } from "@/core/api/with-api-handler";
 import { requirePermission } from "@/security/auth/session";
 import { PERMISSIONS } from "@/security/rbac/permissions";
-import { assertDistrictAccess, assertTournamentDistrictAccess, isFederationWide } from "@/security/rbac/district-scope";
+import { assertInScope } from "@/security/rbac/org-scope";
+import { resolveTournamentOwnership } from "@/modules/tournaments/tournament-ownership.server";
 import { createAuditLog } from "@/services/audit/audit-service";
 import { updateTournament } from "@/modules/tournaments/tournament.service";
 import { revalidatePublicTournaments } from "@/modules/tournaments/public-tournaments";
@@ -22,6 +23,7 @@ const updateTournamentSchema = z.object({
   description: z.string().max(2000).optional(),
   category: z.enum(["JUNIOR", "SENIOR", "OPEN", "PROFESSIONAL"]).optional(),
   status: z.enum(["DRAFT", "REGISTRATION_OPEN", "REGISTRATION_CLOSED", "IN_PROGRESS", "COMPLETED", "CANCELLED"]).optional(),
+  stateId: z.string().optional(),
   districtId: z.string().nullable().optional(),
   venue: z.string().max(200).optional(),
   city: z.string().max(100).optional(),
@@ -50,24 +52,27 @@ export const PATCH = withApiHandler(
 
     const existing = await prisma.tournament.findUnique({ where: { id } });
     if (!existing) throw AppError.notFound("Tournament not found");
-    assertTournamentDistrictAccess(user, existing.districtId);
+    assertInScope(user, existing, "Tournament not found");
 
     const body = updateTournamentSchema.parse(await request.json());
 
-    let districtId = body.districtId;
-    if (!isFederationWide(user)) {
-      districtId = undefined;
-    } else if (districtId) {
-      assertDistrictAccess(user, districtId);
-      const district = await prisma.district.findUnique({ where: { id: districtId } });
-      if (!district) throw AppError.validation("Invalid district selected");
-    }
+    // Only re-home the tournament when the client asked to; the resolver
+    // keeps district/state admins inside their own scope.
+    const ownership =
+      body.districtId !== undefined || body.stateId !== undefined
+        ? await resolveTournamentOwnership(
+            user,
+            { stateId: body.stateId, districtId: body.districtId },
+            existing.stateId ? { stateId: existing.stateId, districtId: existing.districtId } : undefined
+          )
+        : undefined;
 
     const previousStatus = existing.status;
 
     const tournament = await updateTournament(id, {
       ...body,
-      districtId,
+      stateId: ownership?.stateId,
+      districtId: ownership ? ownership.districtId : undefined,
       contactEmail: body.contactEmail === "" ? null : body.contactEmail,
     });
 

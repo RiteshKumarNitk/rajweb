@@ -10,15 +10,18 @@ import { Label } from "@/shared/components/ui/label";
 import { apiFetch, handleApiFetch } from "@/lib/api-client";
 
 export type RoleOption = { id: string; name: string; slug: string };
-export type DistrictOption = { id: string; name: string };
+export type DistrictOption = { id: string; name: string; stateId: string | null };
+export type StateOption = { id: string; name: string };
 
 export interface UserRowActionsProps {
   userId: string;
   isActive: boolean;
   currentRoleId: string;
+  currentStateId: string | null;
   currentDistrictId: string | null;
   currentIsFederationWide: boolean;
   roles: RoleOption[];
+  states: StateOption[];
   districts: DistrictOption[];
 }
 
@@ -34,9 +37,11 @@ export function UserRowActions({
   userId,
   isActive,
   currentRoleId,
+  currentStateId,
   currentDistrictId,
   currentIsFederationWide,
   roles,
+  states,
   districts,
 }: UserRowActionsProps) {
   const router = useRouter();
@@ -44,7 +49,9 @@ export function UserRowActions({
   const [toggling, setToggling] = useState(false);
   const [saving, setSaving] = useState(false);
   const [roleId, setRoleId] = useState(currentRoleId);
+  const [stateId, setStateId] = useState(currentStateId ?? "");
   const [districtId, setDistrictId] = useState(currentDistrictId ?? "");
+  const stateDistricts = districts.filter((d) => d.stateId === stateId);
   const [federationWide, setFederationWide] = useState(currentIsFederationWide);
 
   async function handleToggleActive() {
@@ -65,6 +72,10 @@ export function UserRowActions({
     try {
       if (roleId !== currentRoleId) {
         await postAction(userId, "assign-role", { roleId });
+      }
+      // State first: assigning a state may clear a district from another state.
+      if (stateId !== (currentStateId ?? "")) {
+        await postAction(userId, stateId ? "assign-state" : "remove-state", stateId ? { stateId } : undefined);
       }
       if (districtId !== (currentDistrictId ?? "")) {
         if (districtId) {
@@ -122,15 +133,39 @@ export function UserRowActions({
               </div>
 
               <div className="space-y-2">
+                <Label htmlFor="state">State</Label>
+                <select
+                  id="state"
+                  className="flex h-11 w-full rounded-md border border-slate-300 bg-white px-4 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  value={stateId}
+                  onChange={(e) => {
+                    setStateId(e.target.value);
+                    setDistrictId("");
+                  }}
+                >
+                  <option value="">No state</option>
+                  {states.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-500">
+                  State only → State Admin scope (every district of that state). State + district → district scope.
+                </p>
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="district">District</Label>
                 <select
                   id="district"
                   className="flex h-11 w-full rounded-md border border-slate-300 bg-white px-4 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   value={districtId}
                   onChange={(e) => setDistrictId(e.target.value)}
+                  disabled={!stateId}
                 >
-                  <option value="">No district</option>
-                  {districts.map((d) => (
+                  <option value="">No district (whole state)</option>
+                  {stateDistricts.map((d) => (
                     <option key={d.id} value={d.id}>
                       {d.name}
                     </option>
@@ -148,8 +183,8 @@ export function UserRowActions({
                 <span>
                   Federation-wide access
                   <span className="block text-xs text-slate-500">
-                    Grants access to all districts regardless of the district above. A district-scoped role with
-                    no district and no federation-wide grant sees zero district data.
+                    Grants access to every state and district regardless of the selections above. A scoped role
+                    with no state, no district and no federation-wide grant sees no member data.
                   </span>
                 </span>
               </label>

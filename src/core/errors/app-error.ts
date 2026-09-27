@@ -10,14 +10,15 @@ export class AppError extends Error {
     message: string,
     code: ErrorCode = ErrorCodes.INTERNAL_ERROR,
     statusCode = 500,
-    details?: unknown
+    details?: unknown,
+    isOperational = true
   ) {
     super(message);
     this.name = "AppError";
     this.code = code;
     this.statusCode = statusCode;
     this.details = details;
-    this.isOperational = true;
+    this.isOperational = isOperational;
   }
 
   static badRequest(message: string, details?: unknown) {
@@ -51,6 +52,21 @@ export class AppError extends Error {
   static internal(message = "Internal server error") {
     return new AppError(message, ErrorCodes.INTERNAL_ERROR, 500);
   }
+
+  /**
+   * The database is missing a table/column the code expects — the deployed
+   * schema is behind prisma/schema.prisma. Non-operational so it is still
+   * logged as an error and sent to Sentry.
+   */
+  static schemaOutOfDate(target: string) {
+    return new AppError(
+      `Database schema is out of date (missing ${target}). Apply the current schema with "npm run db:push" and then "npm run db:seed".`,
+      ErrorCodes.DATABASE_ERROR,
+      503,
+      { target },
+      false
+    );
+  }
 }
 
 export function isAppError(error: unknown): error is AppError {
@@ -59,6 +75,18 @@ export function isAppError(error: unknown): error is AppError {
 
 export function fromUnknownError(error: unknown): AppError {
   if (isAppError(error)) return error;
+
+  // Prisma P2021 (table does not exist) / P2022 (column does not exist).
+  // Duck-typed so this module never imports Prisma (it is client-importable).
+  const prismaCode = (error as { code?: unknown } | null)?.code;
+  if (prismaCode === "P2021" || prismaCode === "P2022") {
+    const meta = (error as { meta?: { table?: string; modelName?: string; column?: string } }).meta;
+    const target =
+      prismaCode === "P2021"
+        ? `table ${meta?.table ?? meta?.modelName ?? "unknown"}`
+        : `column ${meta?.column ?? "unknown"}`;
+    return AppError.schemaOutOfDate(target);
+  }
 
   if (error instanceof Error) {
     if (error.message === "Unauthorized") return AppError.unauthorized();

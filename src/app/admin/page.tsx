@@ -26,14 +26,24 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
 import { Button } from "@/shared/components/ui/button";
 import { requireAdminScope } from "@/security/rbac/admin-scope";
+import { districtOwnedWhere, districtWhere as districtModelWhere, requestWhere, tournamentWhere, type OrgScope } from "@/security/rbac/org-scope";
+import { getStateView } from "@/modules/states/state-view.server";
+import { StateFilter } from "@/shared/components/admin/state-filter";
 import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-async function getStats(districtId?: string) {
+/**
+ * All counts are computed server-side from the viewer's scope (a State
+ * Admin only ever counts their own state). `actorId` limits the activity feed
+ * for scoped viewers: audit rows carry no state, so a scoped admin sees only
+ * their own actions rather than other states' activity.
+ */
+async function getStats(scope: OrgScope, actorId: string | null) {
   try {
     const { default: prisma } = await import("@/infrastructure/database/prisma");
-    const districtWhere = districtId ? { districtId } : {};
+    const districtWhere = districtOwnedWhere(scope);
+    const global = scope.level === "GLOBAL";
     const pendingWhere = { ...districtWhere, status: "PENDING" as const };
     const [
       players,
@@ -52,16 +62,18 @@ async function getStats(districtId?: string) {
       pendingAcademies,
       pendingRequests,
       recentAuditLogs,
+      districtCount,
+      registrationCount,
     ] = await Promise.all([
       prisma.player.count({ where: districtWhere }),
       prisma.coach.count({ where: districtWhere }),
-      prisma.tournament.count({ where: districtId ? { districtId } : {} }),
+      prisma.tournament.count({ where: tournamentWhere(scope) }),
       prisma.clubMembership.count({ where: districtWhere }),
       prisma.schoolMembership.count({ where: districtWhere }),
       prisma.academyMembership.count({ where: districtWhere }),
       prisma.news.count({ where: { isPublished: true } }),
-      prisma.playerCertificate.count({ where: { isRevoked: false } }),
-      prisma.coachCertificate.count({ where: { isRevoked: false } }),
+      prisma.playerCertificate.count({ where: { isRevoked: false, ...(global ? {} : { player: districtWhere }) } }),
+      prisma.coachCertificate.count({ where: { isRevoked: false, ...(global ? {} : { coach: districtWhere }) } }),
       prisma.player.count({ where: pendingWhere }),
       prisma.coach.count({ where: pendingWhere }),
       prisma.clubMembership.count({ where: pendingWhere }),
@@ -70,10 +82,11 @@ async function getStats(districtId?: string) {
       prisma.request.count({
         where: {
           status: "PENDING",
-          ...(districtId ? { OR: [{ player: { districtId } }, { coach: { districtId } }] } : {}),
+          ...requestWhere(scope),
         },
       }),
       prisma.auditLog.findMany({
+        where: actorId ? { userId: actorId } : undefined,
         orderBy: { createdAt: "desc" },
         take: 6,
         select: {
@@ -84,6 +97,8 @@ async function getStats(districtId?: string) {
           user: { select: { name: true, email: true } },
         },
       }),
+      prisma.district.count({ where: districtModelWhere(scope) }),
+      prisma.tournamentRegistration.count({ where: global ? {} : { tournament: tournamentWhere(scope) } }),
     ]);
 
     return {
@@ -102,6 +117,8 @@ async function getStats(districtId?: string) {
       pendingAcademies,
       pendingRequests,
       recentAuditLogs,
+      districtCount,
+      registrationCount,
     };
   } catch {
     return {
@@ -120,13 +137,16 @@ async function getStats(districtId?: string) {
       pendingAcademies: 0,
       pendingRequests: 0,
       recentAuditLogs: [],
+      districtCount: 0,
+      registrationCount: 0,
     };
   }
 }
 
-export default async function AdminDashboard() {
-  const { districtId, user } = await requireAdminScope();
-  const stats = await getStats(districtId);
+export default async function AdminDashboard({ searchParams }: { searchParams: Promise<{ state?: string }> }) {
+  const { user, scope } = await requireAdminScope();
+  const { viewScope, states, selectedStateId, scopeLabel } = await getStateView(scope, (await searchParams).state);
+  const stats = await getStats(viewScope, scope.level === "GLOBAL" ? null : user.id);
 
   const totalPending =
     stats.pendingPlayers +
@@ -318,8 +338,13 @@ export default async function AdminDashboard() {
               </span>
               <span>·</span>
               <span className="text-slate-300 font-medium">
-                Scope: {districtId ? "District Administration" : "All Rajasthan Districts (State-wide)"}
+                Scope: {scopeLabel} · {stats.districtCount} districts · {stats.registrationCount} tournament registrations
               </span>
+              {states.length > 0 && (
+                <span className="rounded-md bg-white px-2 py-1">
+                  <StateFilter states={states} selectedStateId={selectedStateId} />
+                </span>
+              )}
             </div>
           </div>
 

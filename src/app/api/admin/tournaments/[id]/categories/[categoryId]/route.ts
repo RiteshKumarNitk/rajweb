@@ -3,7 +3,7 @@ import prisma from "@/infrastructure/database/prisma";
 import { withApiHandler, jsonSuccess, AppError } from "@/core/api/with-api-handler";
 import { requirePermission } from "@/security/auth/session";
 import { PERMISSIONS } from "@/security/rbac/permissions";
-import { assertTournamentDistrictAccess } from "@/security/rbac/district-scope";
+import { assertInScope } from "@/security/rbac/org-scope";
 import { createAuditLog } from "@/services/audit/audit-service";
 import { updateRegistrationCategory, removeOrDisableRegistrationCategory } from "@/modules/tournaments/tournament.service";
 import { revalidatePublicTournaments } from "@/modules/tournaments/public-tournaments";
@@ -34,7 +34,7 @@ export const PATCH = withApiHandler(
     if (!tournamentId || !categoryId) throw AppError.badRequest("Tournament and category ID are required");
 
     const category = await loadScopedCategory(tournamentId, categoryId);
-    assertTournamentDistrictAccess(user, category.tournament.districtId);
+    assertInScope(user, category.tournament, "Registration category not found");
 
     const data = updateCategorySchema.parse(await request.json());
     const previousFee = category.fee;
@@ -70,7 +70,7 @@ export const DELETE = withApiHandler(
     if (!tournamentId || !categoryId) throw AppError.badRequest("Tournament and category ID are required");
 
     const category = await loadScopedCategory(tournamentId, categoryId);
-    assertTournamentDistrictAccess(user, category.tournament.districtId);
+    assertInScope(user, category.tournament, "Registration category not found");
 
     const result = await removeOrDisableRegistrationCategory(categoryId);
 

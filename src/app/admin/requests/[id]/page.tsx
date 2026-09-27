@@ -2,7 +2,7 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { ShieldAlert, History, ArrowLeft } from "lucide-react";
 import { getCurrentUser } from "@/security/auth/session";
-import { getDistrictWhereClause } from "@/security/rbac/district-scope";
+import { getOrgScope, requestWhere } from "@/security/rbac/org-scope";
 import { hasPermission, PERMISSIONS } from "@/security/rbac/permissions";
 import prisma from "@/infrastructure/database/prisma";
 import { formatDate } from "@/lib/utils";
@@ -25,14 +25,9 @@ export default async function AdminRequestReviewPage({
     redirect("/admin?error=forbidden");
   }
 
-  const districtWhere = getDistrictWhereClause(user);
+  // Scoped lookup: another state's/district's request is a plain 404.
   const serviceRequest = await prisma.request.findFirst({
-    where: {
-      id,
-      ...(districtWhere.districtId
-        ? { OR: [{ player: { districtId: districtWhere.districtId } }, { coach: { districtId: districtWhere.districtId } }] }
-        : {}),
-    },
+    where: { id, ...requestWhere(getOrgScope(user)) },
     include: {
       user: true,
       player: { include: { district: true } },

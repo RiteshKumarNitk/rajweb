@@ -4,6 +4,7 @@ import { generateId } from "@/lib/utils";
 import { sanitizeEmail, sanitizePhone, sanitizeText } from "@/security/sanitize";
 import { createModuleLogger } from "@/core/logger";
 import { REQUEST_TYPE_LABELS, type RequestTypeValue } from "@/modules/requests/request-types";
+import { resolveRegistrationDistrict } from "@/modules/districts/registration-locations.server";
 
 const log = createModuleLogger("requests");
 
@@ -21,12 +22,14 @@ export interface CreateRequestInput {
   requestedDistrictName?: string;
 }
 
-async function resolveDistrictId(districtName: string) {
-  const district = await prisma.district.findFirst({
-    where: { name: { equals: districtName, mode: "insensitive" } },
-  });
-  if (!district) throw AppError.validation("Invalid district selected");
-  return district.id;
+/** The state that currently owns the Player/Coach a request is attached to. */
+async function currentOwnerStateId(input: { playerId?: string; coachId?: string }): Promise<string | null> {
+  const owner = input.playerId
+    ? await prisma.player.findUnique({ where: { id: input.playerId }, select: { district: { select: { stateId: true } } } })
+    : input.coachId
+      ? await prisma.coach.findUnique({ where: { id: input.coachId }, select: { district: { select: { stateId: true } } } })
+      : null;
+  return owner?.district?.stateId ?? null;
 }
 
 export async function createRequest(input: CreateRequestInput) {
@@ -62,7 +65,17 @@ export async function createRequest(input: CreateRequestInput) {
   let requestedDistrictId: string | undefined;
   if (input.type === "DISTRICT_CHANGE") {
     if (!input.requestedDistrictName) throw AppError.validation("Select the district you want to move to");
-    requestedDistrictId = await resolveDistrictId(input.requestedDistrictName);
+    // Moves stay inside the member's current state: a cross-state transfer
+    // would hand the record to another state's administration, which one
+    // state's approval cannot authorise.
+    const ownerStateId = await currentOwnerStateId(input);
+    if (!ownerStateId) {
+      throw AppError.validation("Your registration is not linked to a state yet. Contact RRA administration.");
+    }
+    ({ districtId: requestedDistrictId } = await resolveRegistrationDistrict({
+      district: input.requestedDistrictName,
+      withinStateId: ownerStateId,
+    }));
   }
 
   const request = await prisma.request.create({

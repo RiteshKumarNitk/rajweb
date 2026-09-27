@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ShieldCheck,
   Search,
@@ -72,6 +72,16 @@ export function VerifyClientPanel({ initialQuery = "" }: { initialQuery?: string
       setLoading(false);
     }
   }
+
+  // Deep links (e.g. admin "Verify & Preview" -> ?certificateNumber=…) must
+  // show the result immediately, not just pre-fill the input. Runs once.
+  const autoVerified = useRef(false);
+  useEffect(() => {
+    if (autoVerified.current || !initialQuery.trim()) return;
+    autoVerified.current = true;
+    void handleVerify(initialQuery);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only deep-link verification
+  }, []);
 
   function handleSelectSample(sample: CertificateVerificationResult) {
     setSearchMode("serial");

@@ -12,6 +12,7 @@ const playerSchema = z.object({
   email: z.string().email().max(254),
   mobile: z.string().min(10).max(20),
   district: z.string().min(1).max(100),
+  state: z.string().max(100).optional(),
   category: z.string().max(50).optional(),
 });
 

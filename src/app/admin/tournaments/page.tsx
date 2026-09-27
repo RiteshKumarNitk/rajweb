@@ -2,7 +2,10 @@ import Link from "next/link";
 import { formatTournamentSchedule, formatTournamentStatus } from "@/modules/tournaments/tournament-dates";
 import { requireAdminScope } from "@/security/rbac/admin-scope";
 import { PERMISSIONS, hasPermission } from "@/security/rbac/permissions";
-import { isFederationWide } from "@/security/rbac/district-scope";
+import { tournamentWhere, type OrgScope } from "@/security/rbac/org-scope";
+import { getStateView } from "@/modules/states/state-view.server";
+import { getTournamentOwnerGroups } from "@/modules/tournaments/tournament-owner-groups.server";
+import { StateFilter } from "@/shared/components/admin/state-filter";
 import { AddTournamentButton } from "@/shared/components/admin/add-tournament-button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
 import { DataTable, ColumnDef } from "@/shared/components/ui/data-table";
@@ -11,12 +14,12 @@ import { Button } from "@/shared/components/ui/button";
 
 export const dynamic = "force-dynamic";
 
-async function getTournaments(districtId?: string) {
+async function getTournaments(scope: OrgScope) {
   try {
     const { default: prisma } = await import("@/infrastructure/database/prisma");
     return prisma.tournament.findMany({
-      where: districtId ? { districtId } : undefined,
-      include: { district: true, _count: { select: { registrations: true } } },
+      where: tournamentWhere(scope),
+      include: { district: true, state: { select: { name: true } }, _count: { select: { registrations: true } } },
       orderBy: { startDate: "desc" },
     });
   } catch {
@@ -24,26 +27,19 @@ async function getTournaments(districtId?: string) {
   }
 }
 
-async function getDistricts(districtId?: string) {
-  try {
-    const { default: prisma } = await import("@/infrastructure/database/prisma");
-    return prisma.district.findMany({
-      where: districtId ? { id: districtId } : undefined,
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
-    });
-  } catch {
-    return [];
-  }
-}
 
 type TournamentData = Awaited<ReturnType<typeof getTournaments>>[number];
 
-export default async function AdminTournamentsPage() {
-  const { districtId, user } = await requireAdminScope(PERMISSIONS.TOURNAMENTS_READ);
-  const [tournaments, districts] = await Promise.all([getTournaments(districtId), getDistricts(districtId)]);
+export default async function AdminTournamentsPage({ searchParams }: { searchParams: Promise<{ state?: string }> }) {
+  const { user, scope } = await requireAdminScope(PERMISSIONS.TOURNAMENTS_READ);
+  const { viewScope, states, selectedStateId, scopeLabel } = await getStateView(scope, (await searchParams).state);
   const canManage = hasPermission(user, PERMISSIONS.TOURNAMENTS_MANAGE);
-  const lockedDistrictId = !isFederationWide(user) ? user.districtId ?? undefined : undefined;
+  const [tournaments, ownerGroups] = await Promise.all([
+    getTournaments(viewScope),
+    // Assignable owners come from the real scope, never the display filter.
+    canManage ? getTournamentOwnerGroups(scope).catch(() => []) : Promise.resolve([]),
+  ]);
+  const lockedDistrictId = scope.level === "DISTRICT" ? scope.districtId : undefined;
 
   const totalTournaments = tournaments.length;
   const openRegistrations = tournaments.filter((t) => t.status === "REGISTRATION_OPEN").length;
@@ -132,14 +128,17 @@ export default async function AdminTournamentsPage() {
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold tracking-tight text-primary sm:text-3xl">State Tournaments</h1>
             <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-800">
-              {districtId ? "District Scoped" : "Federation Wide"}
+              {scopeLabel}
             </span>
           </div>
           <p className="text-sm text-slate-500">
             Sanctioned championships, entry deadlines, match fixtures, and tournament registrations.
           </p>
         </div>
-        {canManage && <AddTournamentButton districts={districts} lockedDistrictId={lockedDistrictId} />}
+        <div className="flex items-center gap-3">
+          <StateFilter states={states} selectedStateId={selectedStateId} />
+          {canManage && <AddTournamentButton ownerGroups={ownerGroups} lockedDistrictId={lockedDistrictId} />}
+        </div>
       </div>
 
       {/* Metrics Row */}

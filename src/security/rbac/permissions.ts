@@ -8,6 +8,8 @@
 export const ROLES = {
   SUPER_ADMIN: "super-admin",
   FEDERATION_ADMIN: "federation-admin",
+  // Scoped to one state via User.stateId (see org-scope.ts).
+  STATE_ADMIN: "state-admin",
   DISTRICT_ADMIN: "district-admin",
   TOURNAMENT_MANAGER: "tournament-manager",
   CONTENT_MANAGER: "content-manager",
@@ -53,6 +55,9 @@ export const PERMISSIONS = {
   // Certificates
   CERTIFICATES_READ: "certificates:read",
   CERTIFICATES_ISSUE: "certificates:issue",
+  // States (organisational hierarchy: State -> District)
+  STATES_READ: "states:read",
+  STATES_MANAGE: "states:manage",
   // Districts
   DISTRICTS_READ: "districts:read",
   DISTRICTS_MANAGE: "districts:manage",
@@ -110,6 +115,24 @@ export const ROLE_PERMISSIONS: Record<string, PermissionSlug[]> = {
     PERMISSIONS.VIDEOS_MANAGE,
     PERMISSIONS.AUDIT_READ,
   ],
+  // Everything a district admin can do, but for every district of one state
+  // (scope comes from User.stateId, not from this list).
+  [ROLES.STATE_ADMIN]: [
+    PERMISSIONS.PLAYERS_READ,
+    PERMISSIONS.PLAYERS_APPROVE,
+    PERMISSIONS.COACHES_READ,
+    PERMISSIONS.COACHES_APPROVE,
+    PERMISSIONS.MEMBERSHIPS_READ,
+    PERMISSIONS.MEMBERSHIPS_APPROVE,
+    PERMISSIONS.REQUESTS_VIEW,
+    PERMISSIONS.REQUESTS_APPROVE,
+    PERMISSIONS.TOURNAMENTS_READ,
+    PERMISSIONS.TOURNAMENTS_MANAGE,
+    PERMISSIONS.CERTIFICATES_READ,
+    PERMISSIONS.CERTIFICATES_ISSUE,
+    PERMISSIONS.DISTRICTS_READ,
+    PERMISSIONS.STATES_READ,
+  ],
   [ROLES.DISTRICT_ADMIN]: [
     PERMISSIONS.PLAYERS_READ,
     PERMISSIONS.PLAYERS_CREATE,
@@ -148,6 +171,8 @@ export interface SessionUser {
   role: RoleSlug;
   permissions: PermissionSlug[];
   districtId?: string | null;
+  /** Assigned state (state admins), or the district's state for district users. */
+  stateId?: string | null;
   isFederationWide?: boolean;
   isActive?: boolean;
 }

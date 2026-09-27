@@ -12,6 +12,7 @@ const coachSchema = z.object({
   qualification: z.string().min(2).max(500),
   certificationLevel: z.enum(["LEVEL_1", "LEVEL_2", "LEVEL_3", "INTERNATIONAL"]),
   district: z.string().min(1).max(100),
+  state: z.string().max(100).optional(),
 });
 
 export const POST = withApiHandler(

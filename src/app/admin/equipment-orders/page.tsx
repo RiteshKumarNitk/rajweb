@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/sha
 import { listEquipmentOrders } from "@/modules/equipment/equipment-order.service";
 import prisma from "@/infrastructure/database/prisma";
 import { requireAdminScope } from "@/security/rbac/admin-scope";
+import { districtWhere } from "@/security/rbac/org-scope";
 import { PERMISSIONS } from "@/security/rbac/permissions";
 import { formatDate } from "@/lib/utils";
 import { DataTable, ColumnDef } from "@/shared/components/ui/data-table";
@@ -12,16 +13,16 @@ export const dynamic = "force-dynamic";
 type EquipmentOrder = Awaited<ReturnType<typeof listEquipmentOrders>>[number];
 
 export default async function EquipmentOrdersPage() {
-  const { districtId } = await requireAdminScope(PERMISSIONS.EQUIPMENT_READ);
+  const { scope } = await requireAdminScope(PERMISSIONS.EQUIPMENT_READ);
   let orders: EquipmentOrder[] = [];
 
   try {
-    // District-scoped admins only see enquiries naming their district; a
-    // scoped user with no district gets a sentinel id that resolves to null.
-    const districtName = districtId
-      ? ((await prisma.district.findUnique({ where: { id: districtId }, select: { name: true } }))?.name ?? null)
-      : undefined;
-    orders = await listEquipmentOrders(districtName);
+    // Scoped admins only see enquiries naming a district inside their scope.
+    const districtNames =
+      scope.level === "GLOBAL"
+        ? undefined
+        : (await prisma.district.findMany({ where: districtWhere(scope), select: { name: true } })).map((d) => d.name);
+    orders = await listEquipmentOrders(districtNames);
   } catch {
     orders = [];
   }

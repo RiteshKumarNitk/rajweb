@@ -1,4 +1,7 @@
 import { requireAdminScope } from "@/security/rbac/admin-scope";
+import { requestWhere } from "@/security/rbac/org-scope";
+import { getStateView } from "@/modules/states/state-view.server";
+import { StateFilter } from "@/shared/components/admin/state-filter";
 import { PERMISSIONS } from "@/security/rbac/permissions";
 import prisma from "@/infrastructure/database/prisma";
 import { RequestsTable, type AdminRequestRow } from "./requests-table";
@@ -7,13 +10,12 @@ import { Inbox, Clock, CheckCircle2, RefreshCw, FileText } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminRequestsPage() {
-  const { districtId } = await requireAdminScope(PERMISSIONS.REQUESTS_VIEW);
+export default async function AdminRequestsPage({ searchParams }: { searchParams: Promise<{ state?: string }> }) {
+  const { scope } = await requireAdminScope(PERMISSIONS.REQUESTS_VIEW);
+  const { viewScope, states, selectedStateId, scopeLabel } = await getStateView(scope, (await searchParams).state);
 
   const requests = await prisma.request.findMany({
-    where: districtId
-      ? { OR: [{ player: { districtId } }, { coach: { districtId } }] }
-      : undefined,
+    where: requestWhere(viewScope),
     select: {
       id: true,
       requestNumber: true,
@@ -56,13 +58,14 @@ export default async function AdminRequestsPage() {
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold tracking-tight text-primary sm:text-3xl">Member Request Center</h1>
             <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-800">
-              {districtId ? "District Scoped" : "Federation Wide"}
+              {scopeLabel}
             </span>
           </div>
           <p className="text-sm text-slate-500">
             Player and coach service tickets: district transfers, profile corrections, license reprints, and verification requests.
           </p>
         </div>
+        <StateFilter states={states} selectedStateId={selectedStateId} />
       </div>
 
       {/* Metrics Row */}

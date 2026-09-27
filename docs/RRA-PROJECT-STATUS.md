@@ -105,6 +105,7 @@ All values confirmed from `package.json`, config files, and imports.
 | H | Tournament management | IMPLEMENTED | Create/edit, statuses, dates in IST, registration window, capacity, poster URL, eligibility flag, fee-bearing categories. |
 | I | Tournament registration | IMPLEMENTED | Locked transaction, duplicate/capacity checks, immutable `amount` price snapshot, audit. Registrations stay `PENDING` — no admin approve/reject API for registrations. |
 | Pre-J | Gap fix & readiness | IMPLEMENTED | Equipment-orders RBAC, authorised file access, server-enforced rejection reasons, public-form field clean-up, coach level mapping fix, request value validation, legacy-amount guard. See §13. |
+| — | Multi-state hierarchy | IMPLEMENTED | Super Admin → State → District → members. `State` model, State Admin role, server-side State/District scope on every admin list, detail and action, Super Admin state filter, `/admin/states`, district add/edit/reorder, State + District selection on registration forms. See §14. |
 | I.5 | Performance | IMPLEMENTED | Public tournament caching + tag revalidation, JWT auth refresh throttled to 60 s, loading skeletons, `select`-narrowed queries, list caps. No measured benchmarks recorded. |
 | — | UI refresh (post-I) | IMPLEMENTED | Account and admin UI redesign, in-portal verify, official certificate renderer, sample championship certificates (commits 2026-09-25/26). |
 | J | Tournament payment | NOT STARTED | No payment provider, model, or API. |
@@ -209,7 +210,7 @@ Layout `src/app/account/(panel)/layout.tsx` with a sidebar nav.
 `EXPIRED` exists in the `ApprovalStatus` enum but **no code sets it**; `expiresAt` is never written for players.
 
 - **Registration:** `POST /api/players/register`. Fields: name, dateOfBirth, gender, email, mobile, district (name, case-insensitive match), optional category. Status `PENDING`. If signed in, `userId` is linked and a second registration for the same user is refused (409). Anonymous registrations are unlinked and cannot be resubmitted or used for tournaments.
-- **Approval / rejection:** `POST /api/admin/players/{id}/approve|reject` — permission `players:approve`, district-scoped. Only a `PENDING` row can change (`updateMany … where status = PENDING`), so double-clicks/concurrent admins get **409**. Reject **requires** a non-empty `reason` (≤ 1000 chars) — enforced by the API (400) since Pre-J; the review page and the players table both collect one.
+- **Approval / rejection:** `POST /api/admin/players/{id}/approve|reject` — permission `players:approve`, State/District-scoped (out-of-scope → 404). Only a `PENDING` row can change (`updateMany … where status = PENDING`), so double-clicks/concurrent admins get **409**. Reject **requires** a non-empty `reason` (≤ 1000 chars) — enforced by the API (400) since Pre-J; the review page and the players table both collect one.
 - **Resubmission:** `POST /api/players/{id}/resubmit` — owner only (else 404), only from `REJECTED` (else 409). Updates in place, clears reason/approval fields, back to `PENDING`.
 - **Requests:** an owner with a linked Player can raise requests (§5.8).
 - **Tournaments:** Player is required to register for any tournament; `APPROVED` required when `requiresApprovedPlayer` (default true).
@@ -236,7 +237,7 @@ Identical lifecycle to Player. Differences:
 
 - Common: email, mobile, address, district, status (`MembershipStatus`: `PENDING, APPROVED, REJECTED, ACTIVE, EXPIRED, SUSPENDED`), approval fields, `rejectionReason`, `expiresAt`, `certificatePath`.
 - One application per user per type (`userId @unique` + 409 check).
-- Review: `POST /api/admin/memberships/{club|school|academy}/{id}/approve|reject` (`memberships:approve`, district-scoped, PENDING-only guard, reason required on reject).
+- Review: `POST /api/admin/memberships/{club|school|academy}/{id}/approve|reject` (`memberships:approve`, State/District-scoped, PENDING-only guard, reason required on reject).
 - Resubmit: `POST /api/memberships/{type}/{id}/resubmit` (owner, REJECTED only).
 - **Pricing (display only):** read from `Setting` rows (group `membership`) by `getMembershipPricing()`:
 
@@ -348,7 +349,7 @@ Not implemented: registration approval/rejection by admins, withdrawal/cancellat
 | `/admin/districts` | `districts:read` | **Read-only** list |
 | `/admin/tournaments`, `/[id]` | `tournaments:read` | Full management with `tournaments:manage` |
 | `/admin/certificates` | `certificates:read` | List (≤ 50 each) + issue player certificate |
-| `/admin/equipment-orders` | `equipment:read` (added Pre-J) | Read-only list of equipment enquiries; district-scoped users see only enquiries naming their district |
+| `/admin/equipment-orders` | `equipment:read` (added Pre-J) | Read-only list of equipment enquiries; state/district-scoped users see only enquiries naming a district in their scope |
 | `/admin/media` | `media:read` | **Read-only** lists of news/videos/galleries (summary overview) |
 | `/admin/media/gallery` | `media:read` | **Gallery management** — add/edit/delete items, set each item's optional Google Drive URL, activate/deactivate, change sort order (writes need `media:manage`) |
 | `/admin/contact` (+`/[id]`) | `contact:read` | **Contact inbox** — full message, status transitions (NEW/READ/REPLIED/CLOSED), delete (writes need `contact:manage`); form submissions email the configured Super Admin address |
@@ -414,7 +415,7 @@ Confirmed in code (details in [RRA-ARCHITECTURE.md → Security](RRA-ARCHITECTUR
 | Authentication | NextAuth JWT (30 min); inactive users rejected; role/permissions refreshed from DB ≤ 60 s |
 | Session ownership | User-facing mutations derive the owner from the session (`requireAuth`), never from client-supplied user IDs; resubmit routes return 404 for non-owners |
 | RBAC | Permission slugs checked server-side in every admin API (`requirePermission`) and page (`requireAdminScope`), including `/admin/equipment-orders` (`equipment:read`) |
-| District restriction | `assertDistrictAccess` / `getDistrictWhereClause`; district-scoped user with no district sees nothing; state-wide tournaments are federation-only |
+| State / District restriction | `org-scope.ts`: GLOBAL (Super Admin, federation-wide flag) / STATE (`User.stateId`) / DISTRICT (`User.districtId`) / NONE. All admin queries use scope where-builders; every record action uses `assertInScope`, which answers **404** for another state's or district's record (no IDOR oracle). A Super Admin state filter is display-only |
 | Validation | Zod on every JSON body; text HTML-escaped and length-capped via `sanitize.ts` |
 | CSRF | Double-submit token (`csrf_token` httpOnly SameSite=Strict cookie + `x-csrf-token` header) on every mutating route that sets `requireCsrf` — all mutating custom routes do. NextAuth's own routes use NextAuth's CSRF |
 | Rate limiting | Middleware: 120 req/min/IP on `/api/*`, 20/min on `/login*`; per-route limits (e.g. registrations 20/min, OTP 10/10 min/IP + 3/10 min/email). Upstash if configured, else in-memory (per instance) |
@@ -461,7 +462,7 @@ Functional:
 5. Coach certificate issuance not wired to any API/UI; no certificate revocation flow.
 6. Draws, fixtures, match results, rankings: none (schema for Fixture/Match only).
 7. Notifications: UI shell only; no emails other than OTP.
-8. Media CMS, districts, settings are read-only in admin; donations have no admin view. ~~Media CMS read-only~~ — **gallery, videos (YouTube), equipment catalog/orders and the contact inbox are now database-driven and admin-managed**; the news/videos summary lists in /admin/media remain read-only, and other site content (committee, history, stats, partners, about pages) intentionally stays in code.
+8. Media CMS and settings are read-only in admin (districts are now fully managed: add / edit / delete-when-unused / activate / reorder); donations have no admin view. ~~Media CMS read-only~~ — **gallery, videos (YouTube), equipment catalog/orders and the contact inbox are now database-driven and admin-managed**; the news/videos summary lists in /admin/media remain read-only, and other site content (committee, history, stats, partners, about pages) intentionally stays in code.
 9. ~~Public forms silently discarded fields~~ — **fixed Pre-J** (fields removed). Player/Coach `photo` is still never written (no upload; Phase R).
 10. Public forms are disabled unless `NEXT_PUBLIC_ENABLE_LIVE_FORMS=true`.
 11. Sample championship certificates are hard-coded demo data.
@@ -477,6 +478,11 @@ Technical / security:
 18. No real pagination on admin lists.
 19. `RefreshToken` model and `JWT_SECRET`/`JWT_REFRESH_SECRET` env vars are unused.
 20. `LOGOUT`, `READ`, `DOWNLOAD` audit actions exist in the enum but are never written.
+21. **Multi-state:** there is no user-creation screen — State Admins are existing accounts (e.g. created by Google/OTP sign-in or the seed) that a Super Admin assigns a role + state at `/admin/users`.
+22. **Multi-state:** a scoped admin's dashboard "recent activity" shows only their own actions (audit rows carry no state).
+23. **Multi-state:** `EquipmentOrder.district` (public equipment enquiry form) is free text, so enquiry scoping matches district *names*; the enquiry form still offers the founding state's static district list.
+24. A district created before the hierarchy and not in the founding seed list stays **unassigned** (visible to Super Admin only, flagged on `/admin/states`) until a Super Admin sets its state.
+25. The admin application detail page for an out-of-scope record renders the not-found view with HTTP 200 (streamed response); no record data is included. APIs return a real 404.
 
 ---
 
@@ -519,6 +525,9 @@ All items below are **PLANNED** — none are implemented.
 | Player/Coach registration validity period (`expiresAt`, `EXPIRED`) | NEEDS BUSINESS DECISION |
 | Notification events and channels | NEEDS BUSINESS DECISION |
 | Keeping hard-coded sample championship certificates in production | NEEDS CONFIRMATION |
+| Whether players may register for another state's tournaments (currently allowed; no rule exists) | NEEDS BUSINESS DECISION |
+| Cross-state player/coach transfer process (members can only request moves within their state; a Super Admin must re-home otherwise) | NEEDS BUSINESS DECISION |
+| Whether federation-admin should be GLOBAL by default or assigned per state (today: per-user `isFederationWide` flag) | NEEDS CONFIRMATION |
 | When to turn off static release mode (`NEXT_PUBLIC_ENABLE_LIVE_FORMS`) | NEEDS CONFIRMATION |
 
 ---

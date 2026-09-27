@@ -7,7 +7,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Button } from "@/shared/components/ui/button";
 import { FormBuilder } from "@/shared/components/ui/form-builder";
-import { rajasthanDistricts } from "@/shared/config/site";
+import { useRegistrationLocations } from "@/shared/components/forms/registration-locations-context";
 import { apiPost, handleApiFetch } from "@/lib/api-client";
 
 const playerSchema = z.object({
@@ -17,6 +17,8 @@ const playerSchema = z.object({
   dateOfBirth: z.string().min(1, "Date of birth is required"),
   gender: z.enum(["MALE", "FEMALE", "OTHER"]),
   district: z.string().min(1, "Select a district"),
+  // State slug; auto-filled when only one state is active.
+  state: z.string().optional(),
   category: z.string().min(1, "Select a playing category"),
 });
 
@@ -38,9 +40,11 @@ export function PlayerAccountForm({
   resubmit?: PlayerResubmitData;
 }) {
   const router = useRouter();
+  const loc = useRegistrationLocations();
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<PlayerFormData>({
     resolver: zodResolver(playerSchema),
@@ -51,9 +55,11 @@ export function PlayerAccountForm({
       gender: resubmit?.gender ?? "MALE",
       dateOfBirth: resubmit?.dateOfBirth ?? "",
       district: resubmit?.district ?? "",
+      state: loc.initialState(resubmit?.district),
       category: resubmit?.category ?? "",
     },
-  });
+  });  const districtOptions = loc.districtsFor(watch("state"));
+
 
   async function onSubmit(data: PlayerFormData) {
     try {
@@ -88,13 +94,26 @@ export function PlayerAccountForm({
               { label: "Other", value: "OTHER" },
             ],
           },
+          ...(loc.multiState
+            ? [
+                {
+                  name: "state" as const,
+                  label: "State",
+                  type: "select" as const,
+                  options: [
+                    { label: "Select state", value: "" },
+                    ...loc.locations.map((l) => ({ label: l.name, value: l.slug })),
+                  ],
+                },
+              ]
+            : []),
           {
             name: "district",
             label: "District",
             type: "select",
             options: [
               { label: "Select district", value: "" },
-              ...rajasthanDistricts.map((d) => ({ label: d, value: d })),
+              ...districtOptions.map((d) => ({ label: d, value: d })),
             ],
           },
           {

@@ -1,16 +1,19 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
 import { requireAdminScope } from "@/security/rbac/admin-scope";
+import { districtOwnedWhere, type OrgScope } from "@/security/rbac/org-scope";
+import { getStateView } from "@/modules/states/state-view.server";
+import { StateFilter } from "@/shared/components/admin/state-filter";
 import { PERMISSIONS } from "@/security/rbac/permissions";
 import { GraduationCap, UserCheck, Clock, Award, ShieldCheck } from "lucide-react";
 import { CoachesTable, type CoachRow } from "./coaches-table";
 
 export const dynamic = "force-dynamic";
 
-async function getCoaches(districtId?: string): Promise<CoachRow[]> {
+async function getCoaches(scope: OrgScope): Promise<CoachRow[]> {
   try {
     const { default: prisma } = await import("@/infrastructure/database/prisma");
     const rows = await prisma.coach.findMany({
-      where: districtId ? { districtId } : undefined,
+      where: districtOwnedWhere(scope),
       include: { district: true },
       orderBy: { createdAt: "desc" },
       take: 200,
@@ -33,9 +36,10 @@ async function getCoaches(districtId?: string): Promise<CoachRow[]> {
   }
 }
 
-export default async function AdminCoachesPage() {
-  const { districtId } = await requireAdminScope(PERMISSIONS.COACHES_READ);
-  const coaches = await getCoaches(districtId);
+export default async function AdminCoachesPage({ searchParams }: { searchParams: Promise<{ state?: string }> }) {
+  const { scope } = await requireAdminScope(PERMISSIONS.COACHES_READ);
+  const { viewScope, states, selectedStateId, scopeLabel } = await getStateView(scope, (await searchParams).state);
+  const coaches = await getCoaches(viewScope);
 
   const totalCoaches = coaches.length;
   const approvedCoaches = coaches.filter((c) => c.status === "APPROVED").length;
@@ -52,13 +56,14 @@ export default async function AdminCoachesPage() {
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold tracking-tight text-primary sm:text-3xl">Coaching Staff Registry</h1>
             <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-800">
-              {districtId ? "District Scoped" : "Federation Wide"}
+              {scopeLabel}
             </span>
           </div>
           <p className="text-sm text-slate-500">
             Certified technical coaches, license accreditation levels, and grassroots training officials across Rajasthan.
           </p>
         </div>
+        <StateFilter states={states} selectedStateId={selectedStateId} />
       </div>
 
       {/* Metrics Row */}

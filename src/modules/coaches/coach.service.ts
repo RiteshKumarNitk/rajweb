@@ -3,16 +3,9 @@ import { AppError } from "@/core/errors/app-error";
 import { sanitizeEmail, sanitizePhone, sanitizeText } from "@/security/sanitize";
 import { createModuleLogger } from "@/core/logger";
 import type { CertificationLevel } from "@prisma/client";
+import { resolveRegistrationDistrict } from "@/modules/districts/registration-locations.server";
 
 const log = createModuleLogger("coaches");
-
-async function resolveDistrictId(districtName: string) {
-  const district = await prisma.district.findFirst({
-    where: { name: { equals: districtName, mode: "insensitive" } },
-  });
-  if (!district) throw AppError.validation("Invalid district selected");
-  return district.id;
-}
 
 export async function approveCoach(coachId: string, approvedBy: string) {
   const result = await prisma.coach.updateMany({
@@ -45,10 +38,11 @@ export interface ResubmitCoachInput {
   qualification: string;
   certificationLevel: CertificationLevel;
   district: string;
+  state?: string;
 }
 
 export async function resubmitCoach(coachId: string, input: ResubmitCoachInput) {
-  const districtId = await resolveDistrictId(input.district);
+  const { districtId } = await resolveRegistrationDistrict({ district: input.district, state: input.state });
 
   const result = await prisma.coach.updateMany({
     where: { id: coachId, status: "REJECTED" },

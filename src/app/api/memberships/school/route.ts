@@ -5,6 +5,7 @@ import { generateId } from "@/lib/utils";
 import { sanitizeEmail, sanitizePhone, sanitizeText } from "@/security/sanitize";
 import prisma from "@/infrastructure/database/prisma";
 import { getCurrentUser } from "@/security/auth/session";
+import { resolveRegistrationDistrict } from "@/modules/districts/registration-locations.server";
 
 const schoolSchema = z.object({
   schoolName: z.string().min(2).max(200),
@@ -12,17 +13,10 @@ const schoolSchema = z.object({
   email: z.string().email().max(254),
   phone: z.string().min(10).max(20),
   district: z.string().min(1).max(100),
+  state: z.string().max(100).optional(),
   address: z.string().min(10).max(500),
   studentCount: z.coerce.number().int().positive().max(100000).optional(),
 });
-
-async function resolveDistrictId(districtName: string) {
-  const district = await prisma.district.findFirst({
-    where: { name: { equals: districtName, mode: "insensitive" } },
-  });
-  if (!district) throw AppError.validation("Invalid district selected");
-  return district.id;
-}
 
 export const POST = withApiHandler(
   async (request, { requestId }) => {
@@ -37,7 +31,8 @@ export const POST = withApiHandler(
       }
     }
 
-    const districtId = await resolveDistrictId(data.district);
+    // Owning state is decided by the district, resolved server-side within the submitted state.
+    const { districtId } = await resolveRegistrationDistrict({ district: data.district, state: data.state });
 
     const membership = await prisma.schoolMembership.create({
       data: {

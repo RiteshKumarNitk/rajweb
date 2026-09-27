@@ -45,6 +45,7 @@ export interface CreateTournamentInput extends TournamentDateInput {
   description?: string;
   category: TournamentCategory;
   status?: TournamentStatus;
+  stateId?: string | null;
   districtId?: string | null;
   venue?: string | null;
   city?: string | null;
@@ -67,6 +68,7 @@ export async function createTournament(input: CreateTournamentInput) {
       description: input.description ? sanitizeText(input.description) : undefined,
       category: input.category,
       status: input.status ?? "DRAFT",
+      stateId: input.stateId ?? null,
       districtId: input.districtId ?? null,
       venue: input.venue ? sanitizeText(input.venue) : undefined,
       city: input.city ? sanitizeText(input.city) : undefined,
@@ -113,6 +115,7 @@ export async function updateTournament(id: string, input: UpdateTournamentInput)
       description: input.description !== undefined ? (input.description ? sanitizeText(input.description) : null) : undefined,
       category: input.category,
       status: input.status,
+      stateId: input.stateId !== undefined ? input.stateId : undefined,
       districtId: input.districtId !== undefined ? input.districtId : undefined,
       venue: input.venue !== undefined ? (input.venue ? sanitizeText(input.venue) : null) : undefined,
       city: input.city !== undefined ? (input.city ? sanitizeText(input.city) : null) : undefined,

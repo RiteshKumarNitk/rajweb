@@ -23,7 +23,7 @@ One Next.js 16 application (App Router) that serves pages and JSON APIs, backed 
    └── API routes  src/app/api/**/route.ts  wrapped by withApiHandler()
            │   (rate limit → CSRF → handler → uniform JSON / error mapping → Pino log / Sentry)
            ▼
-       Auth & RBAC (src/security/*)  requireAuth / requirePermission / assertDistrictAccess
+       Auth & RBAC (src/security/*)  requireAuth / requirePermission / getOrgScope + assertInScope
            ▼
        Services  src/modules/*/*.service.ts · src/services/{audit,certificates,email}
            ▼
@@ -66,12 +66,14 @@ rajweb/
 │   │   └── monitoring/      # Sentry capture helper
 │   ├── security/
 │   │   ├── auth/session.ts  # getCurrentUser, requireAuth, requirePermission
-│   │   ├── rbac/            # permissions, district scope, admin scope, DB role→permissions
+│   │   ├── rbac/            # permissions, org-scope.ts (State/District scope), admin-scope, DB role→permissions
 │   │   ├── csrf.ts, rate-limit.ts, sanitize.ts
 │   ├── modules/             # domain logic
 │   │   ├── auth/            # NextAuth config, public-account linking
 │   │   ├── players/, coaches/, memberships/, requests/, applications/
-│   │   ├── tournaments/     # tournament CRUD, registration txn, date rules, public cache
+│   │   ├── tournaments/     # tournament CRUD, ownership resolver, registration txn, date rules, public cache
+│   │   ├── states/          # state admin rules, Super Admin state filter (state-view.server.ts)
+│   │   ├── districts/       # district admin rules, public list, registration State/District resolver
 │   │   ├── account/         # profile completion, membership pricing
 │   │   ├── verify/          # certificate verification (+ client-safe types/constants)
 │   │   ├── contact/, equipment/, home/, media/
@@ -80,7 +82,7 @@ rajweb/
 │   │   ├── database/prisma.ts
 │   │   └── storage/         # StorageAdapter: local FS or Netlify Blobs
 │   ├── shared/
-│   │   ├── components/      # ui/, layout/ (header, footer, admin shell/sidebar), admin/, requests/, certificates/
+│   │   ├── components/      # ui/, layout/ (header, footer, admin shell/sidebar), admin/ (incl. state-filter), forms/ (registration-locations context), requests/, certificates/
 │   │   ├── config/site.ts   # static content: nav, districts, committee, events, images
 │   │   └── lib/static-release.ts   # NEXT_PUBLIC_ENABLE_LIVE_FORMS gate
 │   ├── lib/                 # cn(), generateId(), slugify(), api-client (CSRF-aware fetch)
@@ -159,7 +161,7 @@ Business IDs come from `generateId(prefix)` = `PREFIX-<Date.now() base36>-<4 ran
   - `google` — `GOOGLE_CLIENT_ID/SECRET` (or `AUTH_GOOGLE_ID/SECRET`). `signIn` callback runs `findOrCreatePublicUser`.
   - `email-otp` — verifies code via `verifyOtp`, then `findOrCreatePublicUser`.
 - **Account linking rule:** an email owned by a `CREDENTIALS` user can never be taken over by Google/OTP (conflict → refused).
-- **JWT callback:** on sign-in, and whenever `authCheckedAt` is older than 60 s, reloads `id, name, isActive, districtId, isFederationWide, role.slug` and the role's permission slugs from `RolePermission`. Inactive/missing user → `token.isActive = false` → `getCurrentUser()` returns null. On first sign-in: updates `lastLoginAt` and writes `LOGIN` audit (failures swallowed).
+- **JWT callback:** on sign-in, and whenever `authCheckedAt` is older than 60 s, reloads `id, name, isActive, districtId, stateId (a district user's state is taken from the district), isFederationWide, role.slug` and the role's permission slugs from `RolePermission`. Inactive/missing user → `token.isActive = false` → `getCurrentUser()` returns null. On first sign-in: updates `lastLoginAt` and writes `LOGIN` audit (failures swallowed).
 - **Session callback** copies those fields to `session.user` (typed in `src/types/next-auth.d.ts`).
 - **Pages:** `signIn` and `error` pages are `/account/login`. Admins use `/login` (credentials form with demo "Quick login" buttons for the seeded accounts).
 - **Middleware session detection** tries `__Secure-authjs.session-token`, `authjs.session-token`, and legacy `next-auth.*` cookie names (fix for a redirect loop, commit `d4c7ee8`).
@@ -179,39 +181,49 @@ Hard-coded safety nets:
 
 ### 6.2 Permissions
 
-`users:read|create|update|delete`, `roles:read|manage`, `equipment:read|manage`, `contact:read|manage`, `videos:manage`, `players:read|create|update|approve`, `coaches:read|create|update|approve`, `memberships:read|approve`, `requests:view|approve`, `tournaments:read|manage`, `media:read|manage`, `certificates:read|issue`, `districts:read|manage`, `content:read|manage`, `audit:read`, `settings:manage`.
+`users:read|create|update|delete`, `roles:read|manage`, `states:read|manage`, `equipment:read|manage`, `contact:read|manage`, `videos:manage`, `players:read|create|update|approve`, `coaches:read|create|update|approve`, `memberships:read|approve`, `requests:view|approve`, `tournaments:read|manage`, `media:read|manage`, `certificates:read|issue`, `districts:read|manage`, `content:read|manage`, `audit:read`, `settings:manage`.
 
 Several are defined but not enforced anywhere yet (`users:create|delete`, `players:create|update`, `coaches:create|update`, `media:manage`, `districts:manage`, `content:*`) because the corresponding features don't exist.
 
 ### 6.3 Seeded system roles (`isSystem = true`)
 
-| Permission | super-admin | federation-admin | district-admin | tournament-manager | content-manager | public-user |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| users:read | ✔ | ✔ | | | | |
-| users:update / roles:* / settings:manage | ✔ | | | | | |
-| players:read, players:approve | ✔ | ✔ | ✔ | read only | | |
-| players:create/update | ✔ | | ✔ | | | |
-| coaches:read, coaches:approve | ✔ | ✔ | ✔ | | | |
-| memberships:read/approve | ✔ | ✔ | ✔ | | | |
-| requests:view/approve | ✔ | ✔ | ✔ | | | |
-| tournaments:read/manage | ✔ | ✔ | ✔ | ✔ | | |
-| certificates:read/issue | ✔ | ✔ | ✔ | | | |
-| districts:read | ✔ | ✔ | ✔ | | | |
-| media:read/manage, content:read/manage | ✔ | ✔ | | | ✔ | |
-| audit:read | ✔ | ✔ | | | | |
-| equipment:read | ✔ | ✔ | | | | |
+| Permission | super-admin | federation-admin | state-admin | district-admin | tournament-manager | content-manager | public-user |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| users:read | ✔ | ✔ | | | | | |
+| users:update / roles:* / settings:manage / states:manage | ✔ | | | | | | |
+| states:read | ✔ | | ✔ | | | | |
+| players:read, players:approve | ✔ | ✔ | ✔ | ✔ | read only | | |
+| players:create/update | ✔ | | | ✔ | | | |
+| coaches:read, coaches:approve | ✔ | ✔ | ✔ | ✔ | | | |
+| memberships:read/approve | ✔ | ✔ | ✔ | ✔ | | | |
+| requests:view/approve | ✔ | ✔ | ✔ | ✔ | | | |
+| tournaments:read/manage | ✔ | ✔ | ✔ | ✔ | ✔ | | |
+| certificates:read/issue | ✔ | ✔ | ✔ | ✔ | | | |
+| districts:read | ✔ | ✔ | ✔ | ✔ | | | |
+| media:read/manage, content:read/manage | ✔ | ✔ | | | | ✔ | |
+| audit:read | ✔ | ✔ | | | | | |
+| equipment:read | ✔ | ✔ | | | | | |
 
 System roles cannot be edited via the API (`PATCH /api/admin/roles/{id}` → 403). Super Admin can create **custom roles** with any permission set and edit them later; changes apply within ≤ 60 s.
 
-### 6.4 District scope
+### 6.4 Organisational scope (Super Admin → State → District)
 
-- `isFederationWide(user)` = role is `super-admin` **or** `User.isFederationWide = true` (a per-person flag toggled at `/admin/users`, not per role).
-- `getDistrictWhereClause(user)` → `{}` for federation-wide; otherwise `{ districtId: user.districtId ?? "__no-district-assigned__" }` (sentinel matches nothing).
-- `assertDistrictAccess(user, districtId)` → 403 if not federation-wide and districts differ (or user has none).
-- `assertTournamentDistrictAccess` → also 403 for state-wide (null-district) tournaments unless federation-wide.
-- Requests are scoped by the linked Player/Coach district.
+Authorization = **permission** (what) × **scope** (whose data). Scope is derived per request in `src/security/rbac/org-scope.ts` — there is no second permission system:
 
-Enforcement points: every admin API (`requirePermission` + district assert) and admin page (`requireAdminScope` + `districtWhere` in queries). `/admin/equipment-orders` uses `equipment:read`; because `EquipmentOrder.district` is free text, district-scoped users are filtered by case-insensitive district **name**.
+| Scope | Who | Sees |
+|---|---|---|
+| `GLOBAL` | role `super-admin` (hard-coded) or `User.isFederationWide = true` | Every state and district |
+| `STATE` | `User.stateId` set, no district (the `state-admin` role) | Everything owned by that state |
+| `DISTRICT` | `User.districtId` set (state = the district's state) | Only that district |
+| `NONE` | scoped user with neither | Nothing (sentinel filter matches zero rows) |
+
+- **Query builders** (always server-side, spread into Prisma `where`): `districtOwnedWhere` (Player, Coach, memberships — `{district: {stateId}}` / `{districtId}`), `districtWhere` (District), `stateWhere` (State), `tournamentWhere` (`{stateId}` / `{districtId}`), `requestWhere` (via Player/Coach), `userWhere` (staff users).
+- **Record assertions:** `assertInScope(user, {districtId, stateId}, message)` throws **404** (not 403) for out-of-scope records, so another state's IDs are indistinguishable from missing ones (IDOR protection). Used by every admin action route (players, coaches, memberships, requests, tournaments, categories, districts) and by `/api/files`.
+- **Pages:** `requireAdminScope(permission)` returns `{ user, scope }`; list/detail pages query with the where-builders.
+- **Super Admin state filter:** `getStateView(scope, ?state=)` (`modules/states/state-view.server.ts`) narrows only what a GLOBAL user *views*; it never changes authorization, and scoped users' `?state=` is ignored. States are loaded from the `State` table (nothing is hard-coded). Used on dashboard, players, coaches, memberships, requests, tournaments, districts, certificates.
+- **Scope changes** (`assign-state`, `assign-district`, `remove-*`, `toggle-federation-wide` on `/api/admin/users`) require GLOBAL scope, so a scoped custom role with `users:update` cannot widen anyone's scope. Assigning a district also sets that district's state; assigning a state clears a district from another state.
+- **Dashboard activity feed:** audit rows carry no state, so scoped admins see only their own actions; GLOBAL sees all.
+- `/admin/equipment-orders`: `EquipmentOrder.district` is free text, so scoped users see enquiries whose district name matches a district in their scope.
 
 New permissions reach existing databases only through `npm run db:seed` (idempotent upserts). Runtime checks read `RolePermission`, so a missing permission row means only Super Admin passes.
 
@@ -225,7 +237,7 @@ PostgreSQL via Prisma 7 (`prisma-client-js` generator, `@prisma/adapter-pg`). Al
 
 | Model (table) | Purpose | Key fields / constraints |
 |---|---|---|
-| `User` (`users`) | Every login (admin and public) | `email` unique; `passwordHash?`; `authProvider` (`CREDENTIALS`/`GOOGLE`/`OTP_EMAIL`); `googleId?` unique; `isActive`; `isFederationWide`; `roleId`; `districtId?`; `lastLoginAt`. Indexes: roleId, districtId. 1-1 optional: profile, player, coach, club/school/academy membership |
+| `User` (`users`) | Every login (admin and public) | `email` unique; `passwordHash?`; `authProvider` (`CREDENTIALS`/`GOOGLE`/`OTP_EMAIL`); `googleId?` unique; `isActive`; `isFederationWide`; `roleId`; `stateId?` (state admins); `districtId?`; `lastLoginAt`. Indexes: roleId, districtId, stateId. 1-1 optional: profile, player, coach, club/school/academy membership |
 | `UserProfile` (`user_profiles`) | Personal details for portal | `userId` unique (cascade); dateOfBirth, gender, address, city, state, country (default India), pincode |
 | `EmailOtp` (`email_otps`) | OTP codes | email (indexed), `otpHash`, `expiresAt`, `attempts`, `consumedAt` |
 | `Role` (`roles`) | Role | `name`, `slug` unique; `isSystem` |
@@ -235,8 +247,12 @@ PostgreSQL via Prisma 7 (`prisma-client-js` generator, `@prisma/adapter-pg`). Al
 
 ### 7.2 Organisation
 
-| `District` (`districts`) | 33 Rajasthan districts (seeded from `site.ts`) | `name`, `slug` unique; officers/contact; `isActive` |
+| Model (table) | Purpose | Key fields / constraints |
 |---|---|---|
+| `State` (`states`) | Top of the hierarchy; any number of states, added at `/admin/states` | `name`, `slug`, `code?` unique; `isActive`; `sortOrder` |
+| `District` (`districts`) | Belongs to one state. The founding state's 33 districts are seeded from `site.ts`; more are added at `/admin/districts` | `stateId?` (null only for pre-hierarchy rows not yet assigned — Super Admin only); **unique `(stateId, name)` and `(stateId, slug)`** (names may repeat across states); officers/contact; `isActive`; `sortOrder` |
+
+**Ownership rule:** Player, Coach and Club/School/Academy memberships have **no** `stateId` column — their state is `district.stateId`. Certificates, requests and tournament registrations inherit through their player/coach. `Tournament` owns a direct `stateId` because state-wide tournaments have no district.
 
 ### 7.3 Members
 
@@ -255,7 +271,7 @@ Enums: `Gender {MALE, FEMALE, OTHER}`, `ApprovalStatus {PENDING, APPROVED, REJEC
 
 | Model | Purpose | Key fields / constraints |
 |---|---|---|
-| `Tournament` (`tournaments`) | Event | `slug` unique; `category: TournamentCategory {JUNIOR, SENIOR, OPEN, PROFESSIONAL}`; `status: TournamentStatus {DRAFT, REGISTRATION_OPEN, REGISTRATION_CLOSED, IN_PROGRESS, COMPLETED, CANCELLED}`; districtId? (null = state-wide); venue, city; startDate, endDate, registrationStart?, registrationDeadline?; maxParticipants?; `banner` (poster URL); contact*; `requiresApprovedPlayer` (default true). Indexes: status, districtId |
+| `Tournament` (`tournaments`) | Event | `slug` unique; `category: TournamentCategory {JUNIOR, SENIOR, OPEN, PROFESSIONAL}`; `status: TournamentStatus {DRAFT, REGISTRATION_OPEN, REGISTRATION_CLOSED, IN_PROGRESS, COMPLETED, CANCELLED}`; `stateId` (owning state; set for every new tournament, backfilled by the seed) + `districtId?` (null = state-wide within that state; if set, must be in that state); venue, city; startDate, endDate, registrationStart?, registrationDeadline?; maxParticipants?; `banner` (poster URL); contact*; `requiresApprovedPlayer` (default true). Indexes: status, districtId |
 | `TournamentRegistrationCategory` (`tournament_registration_categories`) | Purchasable entry option | tournamentId (cascade), name, `type: TournamentEventType {SINGLES, DOUBLES}`, **`fee Int` (whole rupees, current price)**, isActive. Index: tournamentId |
 | `TournamentRegistration` (`tournament_registrations`) | A player's entry | tournamentId (cascade), playerId (no cascade), categoryId?, **`amount Int?` (price snapshot; null only on legacy rows — refused by `getPayableRegistrationAmount()`)**, seed? (unused), `status: ApprovalStatus` (always PENDING today), registeredAt. **Unique (tournamentId, playerId)** |
 | `Fixture` (`fixtures`) | **Schema only — unused** | round, roundName, matchNumber, player1Id/player2Id/winnerId (plain strings, no FK), scheduledAt |
@@ -302,7 +318,9 @@ Role ──< RolePermission >── Permission
 District ──< Player, Coach, Club/School/AcademyMembership, Tournament, User
 District ──< Request (as requestedDistrict)
 
-Tournament (district optional)
+State ──< District, Tournament, User (state admins)
+
+Tournament (state; district optional)
  ├──< TournamentRegistrationCategory
  │        └── fee            ← current price
  ├──< TournamentRegistration ── Player
@@ -360,7 +378,9 @@ Known gaps: see Project Status §9 (items 12–16).
 |---|---|---|---|
 | auth | LOGIN | `{email, provider}` | Any successful sign-in |
 | users | CREATE | `{provider, email}` | Public user auto-created |
-| users | UPDATE | `{field: isActive/role/district/isFederationWide, previousValue, newValue}` | Admin user actions |
+| users | UPDATE | `{field: isActive/role/state/district/isFederationWide, previousValue, newValue}` (+ `districtCleared` when a state change clears a district) | Admin user actions |
+| states | CREATE / UPDATE / DELETE | `STATE_CREATED`, `STATE_UPDATED {fields, previousValues, newValues}`, `STATE_DELETED` | `/admin/states` |
+| districts | CREATE / UPDATE / DELETE | `DISTRICT_CREATED {name, stateId}`, `DISTRICT_UPDATED {fields, previousValues, newValues}`, `DISTRICT_DELETED` | `/admin/districts` |
 | roles | CREATE / UPDATE | name/slug/permissionIds · `{field: permissions, previousValue, newValue}` | Role editor |
 | players / coaches | APPROVE / REJECT | `{reason}` on reject | Admin review |
 | players / coaches | UPDATE | `APPLICATION_RESUBMITTED` | Owner resubmits |
@@ -400,14 +420,16 @@ No benchmark data is stored in the repository.
 | Tournament posters | Not stored — external URL in `Tournament.banner` |
 | S3/Azure/MinIO adapters (previously claimed in the README; corrected 2026-09-26) | NOT IMPLEMENTED |
 
+**PDF generation:** `pdfkit` is listed in `serverExternalPackages` (`next.config.ts`). When it was bundled into `.next/server/chunks`, PDFKit could not find its built-in font metrics and **every** certificate was created without a PDF (the error was swallowed). It now runs from `node_modules`, uses the standard `Helvetica` font by name, and any PDF failure is logged (`certificates` module) while the certificate record is still created.
+
 Both adapters return `/api/files/<path>` URLs, so every stored file goes through the authorisation check. Public verification (`/api/verify`) returns data only and never links to files.
 
 **Access rules (`canAccessFile`):**
 
 | File referenced by | Allowed |
 |---|---|
-| `PlayerCertificate.pdfPath` / `CoachCertificate.pdfPath` | The linked user (owner), or `certificates:read` + district access |
-| `Club/School/AcademyMembership.certificatePath` | The linked user, or `memberships:read` + district access |
+| `PlayerCertificate.pdfPath` / `CoachCertificate.pdfPath` | The linked user (owner), or `certificates:read` + record in the caller's State/District scope |
+| `Club/School/AcademyMembership.certificatePath` | The linked user, or `memberships:read` + record in scope |
 | Anything else | Nobody (404) |
 
 ---

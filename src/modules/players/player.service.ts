@@ -4,6 +4,7 @@ import { generateId } from "@/lib/utils";
 import { sanitizeEmail, sanitizePhone, sanitizeText } from "@/security/sanitize";
 import { createModuleLogger } from "@/core/logger";
 import type { Gender } from "@prisma/client";
+import { resolveRegistrationDistrict } from "@/modules/districts/registration-locations.server";
 
 const log = createModuleLogger("players");
 
@@ -14,21 +15,11 @@ export interface RegisterPlayerInput {
   email: string;
   mobile: string;
   district: string;
+  /** State slug/id chosen on the form; required only when the district name is ambiguous. */
+  state?: string;
   category?: string;
   /** Set only when the submitter is a logged-in user — links the record to their account. */
   userId?: string;
-}
-
-async function resolveDistrictId(districtName: string) {
-  const district = await prisma.district.findFirst({
-    where: { name: { equals: districtName, mode: "insensitive" } },
-  });
-
-  if (!district) {
-    throw AppError.validation("Invalid district selected");
-  }
-
-  return district.id;
 }
 
 export async function registerPlayer(input: RegisterPlayerInput) {
@@ -39,7 +30,7 @@ export async function registerPlayer(input: RegisterPlayerInput) {
     }
   }
 
-  const districtId = await resolveDistrictId(input.district);
+  const { districtId } = await resolveRegistrationDistrict({ district: input.district, state: input.state });
 
   const player = await prisma.player.create({
     data: {
@@ -82,6 +73,7 @@ export interface ResubmitPlayerInput {
   email: string;
   mobile: string;
   district: string;
+  state?: string;
   category?: string;
 }
 
@@ -93,7 +85,7 @@ export interface ResubmitPlayerInput {
  * reviving an already-approved application.
  */
 export async function resubmitPlayer(playerId: string, input: ResubmitPlayerInput) {
-  const districtId = await resolveDistrictId(input.district);
+  const { districtId } = await resolveRegistrationDistrict({ district: input.district, state: input.state });
 
   const result = await prisma.player.updateMany({
     where: { id: playerId, status: "REJECTED" },

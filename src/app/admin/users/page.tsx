@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/sha
 import { Input } from "@/shared/components/ui/input";
 import { Button } from "@/shared/components/ui/button";
 import { requireAdminScope } from "@/security/rbac/admin-scope";
+import { userWhere, type OrgScope } from "@/security/rbac/org-scope";
 import { PERMISSIONS, hasPermission } from "@/security/rbac/permissions";
 import { DataTable, ColumnDef } from "@/shared/components/ui/data-table";
 import { UserRowActions } from "./user-row-actions";
@@ -17,11 +18,12 @@ interface SearchParams {
   status?: string;
 }
 
-async function getUsers(filters: SearchParams) {
+async function getUsers(filters: SearchParams, scope: OrgScope) {
   try {
     const { default: prisma } = await import("@/infrastructure/database/prisma");
     return prisma.user.findMany({
       where: {
+        AND: [userWhere(scope)],
         ...(filters.q
           ? {
               OR: [
@@ -35,7 +37,7 @@ async function getUsers(filters: SearchParams) {
         ...(filters.status === "active" ? { isActive: true } : {}),
         ...(filters.status === "inactive" ? { isActive: false } : {}),
       },
-      include: { role: true, district: true },
+      include: { role: true, district: { include: { state: { select: { name: true } } } }, state: { select: { name: true } } },
       orderBy: { createdAt: "desc" },
       take: 200,
     });
@@ -47,13 +49,14 @@ async function getUsers(filters: SearchParams) {
 async function getFilterOptions() {
   try {
     const { default: prisma } = await import("@/infrastructure/database/prisma");
-    const [roles, districts] = await Promise.all([
+    const [roles, districts, states] = await Promise.all([
       prisma.role.findMany({ orderBy: { name: "asc" } }),
-      prisma.district.findMany({ orderBy: { name: "asc" } }),
+      prisma.district.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
+      prisma.state.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true } }),
     ]);
-    return { roles, districts };
+    return { roles, districts, states };
   } catch {
-    return { roles: [], districts: [] };
+    return { roles: [], districts: [], states: [] };
   }
 }
 
@@ -64,9 +67,9 @@ export default async function AdminUsersPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const { user: viewer } = await requireAdminScope(PERMISSIONS.USERS_READ);
+  const { user: viewer, scope } = await requireAdminScope(PERMISSIONS.USERS_READ);
   const filters = await searchParams;
-  const [users, { roles, districts }] = await Promise.all([getUsers(filters), getFilterOptions()]);
+  const [users, { roles, districts, states }] = await Promise.all([getUsers(filters, scope), getFilterOptions()]);
   const canManage = hasPermission(viewer, PERMISSIONS.USERS_UPDATE);
 
   const totalUsers = users.length;
@@ -107,12 +110,17 @@ export default async function AdminUsersPage({
     {
       header: "Jurisdiction",
       cell: (u) =>
-        u.district?.name ? (
+        u.role.slug === "super-admin" || u.isFederationWide ? (
+          <span className="text-xs text-slate-500 italic">All States</span>
+        ) : u.district ? (
           <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
             {u.district.name}
+            {u.district.state ? ` · ${u.district.state.name}` : ""}
           </span>
+        ) : u.state ? (
+          <span className="rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-800">State: {u.state.name}</span>
         ) : (
-          <span className="text-xs text-slate-400 italic">Federation Wide</span>
+          <span className="text-xs text-slate-400 italic">No scope</span>
         ),
     },
     {
@@ -155,10 +163,12 @@ export default async function AdminUsersPage({
                 userId={u.id}
                 isActive={u.isActive}
                 currentRoleId={u.roleId}
+                currentStateId={u.district?.stateId ?? u.stateId}
                 currentDistrictId={u.districtId}
                 currentIsFederationWide={u.isFederationWide}
                 roles={roles.map((r) => ({ id: r.id, name: r.name, slug: r.slug }))}
-                districts={districts.map((d) => ({ id: d.id, name: d.name }))}
+                states={states}
+                districts={districts.map((d) => ({ id: d.id, name: d.name, stateId: d.stateId }))}
               />
             ),
           } satisfies ColumnDef<UserWithRole>,

@@ -132,6 +132,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: true,
           isActive: true,
           districtId: true,
+          stateId: true,
+          district: { select: { stateId: true } },
           isFederationWide: true,
           roleId: true,
           role: { select: { slug: true } },
@@ -150,6 +152,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       token.role = dbUser.role.slug as RoleSlug;
       token.permissions = permissions;
       token.districtId = dbUser.districtId;
+      // A district user's state is always the district's state.
+      token.stateId = dbUser.district?.stateId ?? dbUser.stateId;
       token.isFederationWide = dbUser.isFederationWide;
       token.isActive = true;
       token.authCheckedAt = Date.now();
@@ -180,6 +184,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.role = token.role as RoleSlug;
         session.user.permissions = token.permissions as string[];
         session.user.districtId = token.districtId as string | null;
+        session.user.stateId = (token.stateId as string | null | undefined) ?? null;
         session.user.isFederationWide = token.isFederationWide as boolean;
         session.user.isActive = token.isActive as boolean;
       }

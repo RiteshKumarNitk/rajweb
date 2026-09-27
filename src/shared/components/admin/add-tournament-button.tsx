@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { Button } from "@/shared/components/ui/button";
-import { AddTournamentModal, type DistrictOption } from "./add-tournament-modal";
+import { AddTournamentModal } from "./add-tournament-modal";
+import type { OwnerGroup } from "./tournament-owner-options";
 
 export function AddTournamentButton({
-  districts,
+  ownerGroups,
   lockedDistrictId,
 }: {
-  districts: DistrictOption[];
+  ownerGroups: OwnerGroup[];
   lockedDistrictId?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -19,7 +20,7 @@ export function AddTournamentButton({
       <AddTournamentModal
         open={open}
         onClose={() => setOpen(false)}
-        districts={districts}
+        ownerGroups={ownerGroups}
         lockedDistrictId={lockedDistrictId}
       />
     </>

@@ -1,8 +1,13 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/security/auth/session";
-import { getDistrictWhereClause } from "@/security/rbac/district-scope";
+import { getOrgScope } from "@/security/rbac/org-scope";
 import { hasPermission, type PermissionSlug } from "@/security/rbac/permissions";
 
+/**
+ * Page-level gate for /admin/*: session + optional permission, then the
+ * caller's organisational scope. Pages must build their queries from
+ * `scope` (org-scope.ts where-builders) — never filter in React.
+ */
 export async function requireAdminScope(permission?: PermissionSlug) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -11,6 +16,5 @@ export async function requireAdminScope(permission?: PermissionSlug) {
     redirect("/admin?error=forbidden");
   }
 
-  const districtWhere = getDistrictWhereClause(user);
-  return { user, districtWhere, districtId: districtWhere.districtId };
+  return { user, scope: getOrgScope(user) };
 }

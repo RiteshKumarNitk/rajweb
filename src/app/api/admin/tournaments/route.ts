@@ -1,9 +1,8 @@
 import { z } from "zod";
-import prisma from "@/infrastructure/database/prisma";
-import { withApiHandler, jsonSuccess, AppError } from "@/core/api/with-api-handler";
+import { withApiHandler, jsonSuccess } from "@/core/api/with-api-handler";
 import { requirePermission } from "@/security/auth/session";
 import { PERMISSIONS } from "@/security/rbac/permissions";
-import { assertDistrictAccess, assertTournamentDistrictAccess, isFederationWide } from "@/security/rbac/district-scope";
+import { resolveTournamentOwnership } from "@/modules/tournaments/tournament-ownership.server";
 import { createAuditLog } from "@/services/audit/audit-service";
 import { createTournament } from "@/modules/tournaments/tournament.service";
 import { revalidatePublicTournaments } from "@/modules/tournaments/public-tournaments";
@@ -22,6 +21,7 @@ const createTournamentSchema = z.object({
   description: z.string().max(2000).optional(),
   category: z.enum(["JUNIOR", "SENIOR", "OPEN", "PROFESSIONAL"]),
   status: z.enum(["DRAFT", "REGISTRATION_OPEN", "REGISTRATION_CLOSED", "IN_PROGRESS", "COMPLETED", "CANCELLED"]).optional(),
+  stateId: z.string().optional(),
   districtId: z.string().optional(),
   venue: z.string().max(200).optional(),
   city: z.string().max(100).optional(),
@@ -47,27 +47,17 @@ export const POST = withApiHandler(
     const user = await requirePermission(PERMISSIONS.TOURNAMENTS_MANAGE);
     const body = createTournamentSchema.parse(await request.json());
 
-    let districtId: string | undefined = body.districtId;
-
-    if (!isFederationWide(user)) {
-      if (!user.districtId) {
-        throw AppError.forbidden("District assignment required");
-      }
-      districtId = user.districtId;
-    } else if (districtId) {
-      const district = await prisma.district.findUnique({ where: { id: districtId } });
-      if (!district) throw AppError.validation("Invalid district selected");
-    }
-
-    if (districtId) {
-      assertDistrictAccess(user, districtId);
-    } else if (!isFederationWide(user)) {
-      assertTournamentDistrictAccess(user, null);
-    }
+    // Ownership comes from the caller's scope: district/state admins cannot
+    // create tournaments outside their own district/state.
+    const ownership = await resolveTournamentOwnership(user, {
+      stateId: body.stateId,
+      districtId: body.districtId ?? null,
+    });
 
     const tournament = await createTournament({
       ...body,
-      districtId,
+      stateId: ownership.stateId,
+      districtId: ownership.districtId,
       contactEmail: body.contactEmail || undefined,
     });
 

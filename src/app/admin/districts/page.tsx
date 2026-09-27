@@ -2,16 +2,20 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/sha
 import { requireAdminScope } from "@/security/rbac/admin-scope";
 import { PERMISSIONS, hasPermission } from "@/security/rbac/permissions";
 import { MapPin, Users, GraduationCap, Building2, Trophy, Phone, Mail, ShieldCheck } from "lucide-react";
-import { DistrictCardActions, type DistrictRow } from "./district-card-actions";
+import { DistrictCardActions, AddDistrictButton, type DistrictRow } from "./district-card-actions";
+import { districtWhere, stateWhere, type OrgScope } from "@/security/rbac/org-scope";
+import { getStateView } from "@/modules/states/state-view.server";
+import { StateFilter } from "@/shared/components/admin/state-filter";
 
 export const dynamic = "force-dynamic";
 
-async function getDistricts(districtId?: string) {
+async function getDistricts(scope: OrgScope) {
   try {
     const { default: prisma } = await import("@/infrastructure/database/prisma");
     return prisma.district.findMany({
-      where: districtId ? { id: districtId } : undefined,
+      where: districtWhere(scope),
       include: {
+        state: { select: { name: true } },
         _count: {
           select: {
             players: true,
@@ -23,21 +27,36 @@ async function getDistricts(districtId?: string) {
           },
         },
       },
-      orderBy: { name: "asc" },
+      orderBy: [{ state: { sortOrder: "asc" } }, { sortOrder: "asc" }, { name: "asc" }],
     });
   } catch {
     return [];
   }
 }
 
-export default async function AdminDistrictsPage() {
-  const { user, districtId } = await requireAdminScope(PERMISSIONS.DISTRICTS_READ);
-  const districts = await getDistricts(districtId);
+async function getAssignableStates(scope: OrgScope) {
+  try {
+    const { default: prisma } = await import("@/infrastructure/database/prisma");
+    return prisma.state.findMany({
+      where: stateWhere(scope),
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: { id: true, name: true },
+    });
+  } catch {
+    return [];
+  }
+}
 
-  // District-scoped admins may only edit their own district; management
-  // actions are enforced again server-side by the API (districts:manage +
-  // assertDistrictAccess).
+export default async function AdminDistrictsPage({ searchParams }: { searchParams: Promise<{ state?: string }> }) {
+  const { user, scope } = await requireAdminScope(PERMISSIONS.DISTRICTS_READ);
+  const { viewScope, states, selectedStateId, scopeLabel } = await getStateView(scope, (await searchParams).state);
+  const [districts, assignableStates] = await Promise.all([getDistricts(viewScope), getAssignableStates(scope)]);
+  // Only GLOBAL users pick a district's state; state admins add within their own.
+  const canChooseState = scope.level === "GLOBAL";
+
+  // Management is enforced again server-side (districts:manage + assertInScope).
   const canManage = hasPermission(user, PERMISSIONS.DISTRICTS_MANAGE);
+  const canAdd = canManage && (scope.level === "GLOBAL" || scope.level === "STATE");
 
   const totalDistricts = districts.length;
   const activeDistricts = districts.filter((d) => d.isActive).length;
@@ -52,12 +71,16 @@ export default async function AdminDistrictsPage() {
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold tracking-tight text-primary sm:text-3xl">District Associations</h1>
             <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-800">
-              {districtId ? "District Scoped" : "Federation Wide"}
+              {scopeLabel}
             </span>
           </div>
           <p className="text-sm text-slate-500">
             Governing district units, local association leadership, and regional membership coverage.
           </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <StateFilter states={states} selectedStateId={selectedStateId} />
+          {canAdd && <AddDistrictButton states={assignableStates} canChooseState={canChooseState} />}
         </div>
       </div>
 
@@ -144,7 +167,9 @@ export default async function AdminDistrictsPage() {
                         <MapPin className="h-4 w-4 text-red-500" />
                         {d.name}
                       </CardTitle>
-                      <CardDescription className="text-xs">District Racquetball Unit</CardDescription>
+                      <CardDescription className="text-xs">
+                        {d.state ? d.state.name : <span className="font-semibold text-amber-700">No state assigned</span>}
+                      </CardDescription>
                     </div>
                     <span
                       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${
@@ -209,17 +234,9 @@ export default async function AdminDistrictsPage() {
               {canManage && (
                 <div className="border-t border-slate-100 p-3">
                   <DistrictCardActions
-                    district={{
-                      id: d.id,
-                      name: d.name,
-                      slug: d.slug,
-                      isActive: d.isActive,
-                      president: d.president,
-                      secretary: d.secretary,
-                      email: d.email,
-                      phone: d.phone,
-                      address: d.address,
-                    } satisfies DistrictRow}
+                    district={{ id: d.id, name: d.name, isActive: d.isActive } satisfies DistrictRow}
+                    states={assignableStates}
+                    canChooseState={canChooseState}
                   />
                 </div>
               )}

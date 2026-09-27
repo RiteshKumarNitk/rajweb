@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { getRegistrationLocations } from "@/modules/districts/registration-locations.server";
+import { RegistrationLocationsProvider } from "@/shared/components/forms/registration-locations-context";
 import { redirect } from "next/navigation";
 import { UserCheck } from "lucide-react";
 import { PageHeader, PageContent } from "@/shared/components/layout";
@@ -15,6 +17,8 @@ export const metadata: Metadata = {
 };
 
 export default async function PlayerRegistrationPage() {
+  // Empty on DB failure — the forms then fall back to the static district list.
+  const locations = await getRegistrationLocations().catch(() => []);
   const user = await getCurrentUser();
   if (user) redirect("/account/player");
 
@@ -33,7 +37,9 @@ export default async function PlayerRegistrationPage() {
                 <CardTitle>Player Registration Form</CardTitle>
               </CardHeader>
               <CardContent>
-                <PlayerRegistrationForm />
+                <RegistrationLocationsProvider locations={locations}>
+                  <PlayerRegistrationForm />
+                </RegistrationLocationsProvider>
               </CardContent>
             </Card>
           </div>

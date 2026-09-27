@@ -13,7 +13,9 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
 import { requireAdminScope } from "@/security/rbac/admin-scope";
 import { PERMISSIONS } from "@/security/rbac/permissions";
-import { playerCertDistrictWhere, coachCertDistrictWhere } from "@/security/rbac/district-scope";
+import { districtOwnedWhere, type OrgScope } from "@/security/rbac/org-scope";
+import { getStateView } from "@/modules/states/state-view.server";
+import { StateFilter } from "@/shared/components/admin/state-filter";
 import { hasPermission } from "@/security/rbac/permissions";
 import { getStorage } from "@/infrastructure/storage/storage-adapter";
 import { formatDate } from "@/lib/utils";
@@ -27,18 +29,18 @@ import {
   type CertificateVerificationResult,
 } from "@/modules/verify/verify.service";
 
-async function getCertificates(districtId?: string) {
+async function getCertificates(scope: OrgScope) {
   try {
     const { default: prisma } = await import("@/infrastructure/database/prisma");
     const [playerCerts, coachCerts] = await Promise.all([
       prisma.playerCertificate.findMany({
-        where: playerCertDistrictWhere(districtId),
+        where: scope.level === "GLOBAL" ? {} : { player: districtOwnedWhere(scope) },
         include: { player: { include: { district: true } } },
         orderBy: { issuedAt: "desc" },
         take: 50,
       }),
       prisma.coachCertificate.findMany({
-        where: coachCertDistrictWhere(districtId),
+        where: scope.level === "GLOBAL" ? {} : { coach: districtOwnedWhere(scope) },
         include: { coach: { include: { district: true } } },
         orderBy: { issuedAt: "desc" },
         take: 50,
@@ -50,13 +52,13 @@ async function getCertificates(districtId?: string) {
   }
 }
 
-async function getEligiblePlayers(districtId?: string) {
+async function getEligiblePlayers(scope: OrgScope) {
   try {
     const { default: prisma } = await import("@/infrastructure/database/prisma");
     const players = await prisma.player.findMany({
       where: {
         status: "APPROVED",
-        ...(districtId ? { districtId } : {}),
+        ...districtOwnedWhere(scope),
         certificates: { none: { isRevoked: false } },
       },
       include: { district: true },
@@ -77,11 +79,12 @@ async function getEligiblePlayers(districtId?: string) {
 type PlayerCertWithPlayer = Awaited<ReturnType<typeof getCertificates>>["playerCerts"][number];
 type CoachCertWithCoach = Awaited<ReturnType<typeof getCertificates>>["coachCerts"][number];
 
-export default async function AdminCertificatesPage() {
-  const { districtId, user } = await requireAdminScope(PERMISSIONS.CERTIFICATES_READ);
+export default async function AdminCertificatesPage({ searchParams }: { searchParams: Promise<{ state?: string }> }) {
+  const { user, scope } = await requireAdminScope(PERMISSIONS.CERTIFICATES_READ);
+  const { viewScope, states, selectedStateId } = await getStateView(scope, (await searchParams).state);
   const [{ playerCerts, coachCerts }, eligiblePlayers] = await Promise.all([
-    getCertificates(districtId),
-    getEligiblePlayers(districtId),
+    getCertificates(viewScope),
+    getEligiblePlayers(viewScope),
   ]);
   const storage = getStorage();
   const canIssue = hasPermission(user, PERMISSIONS.CERTIFICATES_ISSUE);
@@ -237,6 +240,7 @@ export default async function AdminCertificatesPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <StateFilter states={states} selectedStateId={selectedStateId} />
           <Button variant="outline" size="sm" asChild>
             <Link href="/account/verify" target="_blank" className="flex items-center gap-1.5">
               <ShieldCheck className="h-4 w-4 text-emerald-600" /> Open Verification Portal

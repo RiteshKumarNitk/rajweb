@@ -27,11 +27,12 @@ Architecture of the handler pipeline: [RRA-ARCHITECTURE.md → Backend](RRA-ARCH
 | `NOT_FOUND` | 404 | Record missing (or not owned by caller on owner routes) |
 | `CONFLICT` | 409 | Already processed, duplicate registration/request/application |
 | `RATE_LIMITED` | 429 | Per-route or global (120/min/IP on `/api/*`) limit |
+| `DATABASE_ERROR` | 503 | Database schema is behind the code (Prisma P2021 missing table / P2022 missing column): "Database schema is out of date (missing table X). Apply the current schema with `npm run db:push` and then `npm run db:seed`." Logged as an error and sent to Sentry |
 | `INTERNAL_ERROR` | 500 | Unexpected; message hidden in production |
 
 **CSRF:** routes marked *CSRF: yes* require `x-csrf-token` header equal to the `csrf_token` cookie obtained from `GET /api/csrf`. The browser client (`src/lib/api-client.ts → apiFetch`) handles this automatically.
 
-**Auth levels:** *Public* (none) · *Session* (any signed-in user, `requireAuth`) · *Permission `x`* (`requirePermission`; `super-admin` always passes) · *District-scoped* (non-federation-wide users restricted to their district, 403 otherwise).
+**Auth levels:** *Public* (none) · *Session* (any signed-in user, `requireAuth`) · *Permission `x`* (`requirePermission`; `super-admin` always passes) · *Scoped* (organisational scope from `org-scope.ts`: GLOBAL = Super Admin / federation-wide, STATE = own state, DISTRICT = own district). A record outside the caller's scope returns **404** with the same message as a missing record — never 403 — so IDs from another state reveal nothing.
 
 **Audit:** see [RRA-ARCHITECTURE.md → Audit](RRA-ARCHITECTURE.md#11-audit-architecture).
 
@@ -83,6 +84,10 @@ Architecture of the handler pipeline: [RRA-ARCHITECTURE.md → Backend](RRA-ARCH
 | 42 | PATCH | `/api/admin/equipment/orders/{id}` | `equipment:manage` | yes |
 | 43 | POST | `/api/admin/media/videos` | `videos:manage` | yes |
 | 44 | PATCH, DELETE | `/api/admin/media/videos/{id}` | `videos:manage` | yes |
+| 45 | POST | `/api/admin/districts` | `districts:manage` (GLOBAL or STATE scope) | yes |
+| 46 | GET, PATCH, DELETE | `/api/admin/districts/{id}` | GET `districts:read`; PATCH/DELETE `districts:manage`; scoped | PATCH/DELETE |
+| 47 | POST | `/api/admin/states` | `states:manage` + GLOBAL scope | yes |
+| 48 | PATCH, DELETE | `/api/admin/states/{id}` | `states:manage` + GLOBAL scope | yes |
 
 **There are no list/GET APIs for admin data** — admin pages read the database directly in Server Components. There are no Payment, Receipt, Notification, Fixture, Match, Ranking, Media-CMS-write, Settings-write, or Certificate-revoke APIs.
 
@@ -174,7 +179,7 @@ Architecture of the handler pipeline: [RRA-ARCHITECTURE.md → Backend](RRA-ARCH
 ```json
 { "name": "Ankit Verma", "dateOfBirth": "2012-01-15", "gender": "MALE",
   "email": "ankit.player@example.com", "mobile": "9876501234",
-  "district": "Jaipur", "category": "Junior" }
+  "district": "Jaipur", "state": "rajasthan", "category": "Junior" }
 ```
 
 | Field | Validation |
@@ -184,8 +189,11 @@ Architecture of the handler pipeline: [RRA-ARCHITECTURE.md → Backend](RRA-ARCH
 | gender | `MALE`/`FEMALE`/`OTHER` |
 | email | email ≤ 254 |
 | mobile | 10–20 chars |
-| district | 1–100; must match a `District.name` case-insensitively |
+| district | 1–100; must match a `District.name` case-insensitively **within the submitted state** |
+| state | optional ≤ 100 — state **slug** (or id). Required in practice when the district name exists in more than one state (400 "Select your state — this district name exists in more than one state"); a district that is not in the given state → 400 "Invalid district selected" |
 | category | optional ≤ 50 |
+
+**State ownership:** the record belongs to the resolved district, and through it to that district's state (`resolveRegistrationDistrict`, server-side). The same `district` + `state` pair applies to **every** registration, membership and resubmit endpoint (players, coaches, club/school/academy, and their resubmits). Forms send the state automatically when only one state is active.
 
 Unknown fields (e.g. `aadharNumber`) are stripped.
 - **Success 200:** `{ "playerId": "PLR-…", "status": "PENDING" }`, message "Player registration submitted for approval".
@@ -204,13 +212,13 @@ Unknown fields (e.g. `aadharNumber`) are stripped.
 
 ### 4.3 Admin player actions
 - **Method / Route:** `POST /api/admin/players/{id}/approve` · `/reject` · `/certificate`
-- **Authentication:** Permission `players:approve`; `certificate` additionally `certificates:issue`. District-scoped by `Player.districtId`. **CSRF:** yes.
+- **Authentication:** Permission `players:approve`; `certificate` additionally `certificates:issue`. Scoped by the player's district → state. **CSRF:** yes.
 - **Bodies:** approve — none. reject — `{ "reason": "…" }` — **required**, trimmed, 1–1000 chars (400 "A rejection reason is required" / "…1000 characters or fewer"; enforced since Pre-J). certificate — optional `{ "certificateNumber"?, "issuedAt"?, "expiresAt"? }` (ISO dates).
 - **Success 200:**
   - approve → `{ playerId, status: "APPROVED" }`
   - reject → `{ playerId, status: "REJECTED" }`
   - certificate → `{ certificateNumber, qrCode, issuedAt, expiresAt, pdfUrl }`, message "Certificate CERT-… issued"
-- **Errors:** 400 missing params / "Invalid action" / "Player not found or not approved" (certificate); 403 permission/district/CSRF; 404 player; 409 "already been processed" (approve/reject of non-PENDING) or "Certificate already issued: …".
+- **Errors:** 400 missing params / "Invalid action" / "Player not found or not approved" (certificate); 403 permission/CSRF; 404 player missing **or outside the caller's state/district**; 409 "already been processed" (approve/reject of non-PENDING) or "Certificate already issued: …".
 - **DB effects:** status guard update (`approvedAt`, `approvedBy` = admin id, `rejectionReason`). Certificate: QR + PDF → storage `certificates/<number>.pdf` → `PlayerCertificate`.
 - **Audit:** APPROVE / REJECT (`players`, reject always includes reason); CREATE (`certificates`, `{certificateNumber}`).
 
@@ -229,7 +237,7 @@ Unknown fields (e.g. `aadharNumber`) are stripped.
 - `POST /api/coaches/{id}/resubmit` — Session owner, CSRF, 10/min. Body as 5.1. Same semantics/errors as 4.2 (404 "Coach application not found"). Audit UPDATE `coaches` `APPLICATION_RESUBMITTED`.
 
 ### 5.3 Admin coach actions
-- `POST /api/admin/coaches/{id}/approve|reject` — `coaches:approve`, district-scoped, CSRF.
+- `POST /api/admin/coaches/{id}/approve|reject` — `coaches:approve`, scoped (404 outside scope), CSRF.
 - reject body `{ reason }` — **required**, 1–1000 chars (400 otherwise). Returns `{ coachId, status }`. 409 when not PENDING. Audit APPROVE/REJECT `coaches`.
 - **No certificate action exists for coaches.**
 
@@ -257,7 +265,7 @@ Unknown fields (e.g. `aadharNumber`) are stripped.
 - Audit UPDATE `memberships` `{ event: APPLICATION_RESUBMITTED, type }`.
 
 ### 6.3 Admin membership actions
-- `POST /api/admin/memberships/{type}/{id}/approve|reject` — `memberships:approve`, district-scoped, CSRF.
+- `POST /api/admin/memberships/{type}/{id}/approve|reject` — `memberships:approve`, scoped (404 outside scope), CSRF.
 - reject body `{ reason }` — **required**, 1–1000 chars (400 otherwise). Returns `{ membershipId, status }`. 409 when not PENDING.
 - Audit APPROVE `{type}` / REJECT `{type, reason?}` in `memberships`.
 
@@ -285,7 +293,7 @@ There is no separate "applications" endpoint. The admin application queue (`/adm
 | `requestedMobile` | optional 10–20 |
 | `requestedEmail` | optional email |
 | `requestedAddress` | optional ≤ 500 |
-| `requestedDistrict` | district **name**; required for `DISTRICT_CHANGE` |
+| `requestedDistrict` | district **name**; required for `DISTRICT_CHANGE`; must be a district **in the member's current state** (400 "Invalid district selected" otherwise — cross-state transfers are not self-service) |
 
 Example:
 
@@ -302,7 +310,7 @@ Example:
 
 ### 8.2 Admin request actions
 - **Method / Route:** `POST /api/admin/requests/{id}/approve` · `/reject`
-- **Authentication:** `requests:approve`; district-scoped via linked Player/Coach district. **CSRF:** yes.
+- **Authentication:** `requests:approve`; scoped via the linked Player/Coach district → state (404 outside scope). **CSRF:** yes.
 - **Bodies:** approve `{ "remarks"?: string }`; reject `{ "reason": string }` — **required** (400 "A rejection reason is required").
 - **Success:** `{ requestId, status }`.
 - **Errors:** 400; 403; 404; 409 "already been processed".
@@ -324,7 +332,8 @@ Example:
 | `description` | ≤ 2000 |
 | `category` | `JUNIOR`/`SENIOR`/`OPEN`/`PROFESSIONAL` (required) |
 | `status` | optional, default `DRAFT` |
-| `districtId` | optional; **ignored/forced** to the admin's district for non-federation-wide users; null = state-wide |
+| `stateId` | optional; owning state for a state-wide event (GLOBAL users only — STATE users always get their own state) |
+| `districtId` | optional; DISTRICT-scope users are forced to their own district; STATE users may pick a district **in their state**; if given, the tournament's state is the district's state; omitted = state-wide |
 | `venue` ≤ 200, `city` ≤ 100 | optional |
 | `startDate`, `endDate` | required strings: `YYYY-MM-DD` (UTC midnight) or `YYYY-MM-DDTHH:mm` (IST) or full ISO |
 | `registrationStart`, `registrationDeadline` | optional/nullable, same formats |
@@ -335,12 +344,13 @@ Example:
 
 - **Date rule:** regStart < regDeadline < startDate ≤ endDate (400 with a specific message otherwise).
 - **Success:** `{ id, name, slug, status }`.
-- **Errors:** 400 validation/dates/"Invalid district selected"; 403 permission / "District assignment required" / state-wide by district admin.
+- **Ownership** (`tournament-ownership.server.ts`): every new tournament gets a `stateId`. A GLOBAL user creating a state-wide event must pass `stateId` when more than one active state exists.
+- **Errors:** 400 validation/dates/"Invalid district selected" (incl. a district in another state) / "Select the state this tournament belongs to"; 403 permission / "A state or district assignment is required…".
 - **DB:** creates `Tournament` with unique slug. **Audit:** CREATE `TOURNAMENT_CREATED`. Revalidates public tournament cache.
 
 ### 9.2 Update tournament
-- `PATCH /api/admin/tournaments/{id}` — same fields, all optional; `districtId` changes only honoured for federation-wide users. Dates are validated against the merged (existing + new) values.
-- Access: `assertTournamentDistrictAccess` on the existing tournament (district admins cannot edit state-wide or other-district tournaments).
+- `PATCH /api/admin/tournaments/{id}` — same fields, all optional. `stateId`/`districtId` re-home the tournament only within the caller's scope (DISTRICT users cannot re-home). Dates are validated against the merged (existing + new) values.
+- Access: `assertInScope` on the existing tournament — another state's (or, for district admins, another district's) tournament is 404.
 - **Success:** `{ id, name, status }`.
 - **Audit:** UPDATE `TOURNAMENT_STATUS_CHANGED {from,to}` when status changes, else `TOURNAMENT_UPDATED`. Revalidates cache.
 - **Note:** changing status to `REGISTRATION_OPEN` is what opens registration; there are no automatic status transitions.
@@ -423,6 +433,7 @@ See 4.3 (`/api/admin/players/{id}/certificate`). No coach issuance and no revoca
 - **Method / Route:** `GET /api/verify?certificateNumber=&qrCode=&name=&district=&fatherName=` or `POST /api/verify` with the same keys as JSON.
 - **Authentication:** Public. **CSRF:** none (POST is read-only). **Rate limit:** 60/min.
 - **Validation:** at least one of `certificateNumber`, `qrCode`, `name` (400 otherwise).
+- **QR values:** a certificate's QR value (`QR-…`) typed or scanned into the serial box (`certificateNumber`) also resolves (fixed 2026-09-27 — previously every scanned certificate read as invalid).
 - **Lookup order:** static sample championship certificates (number match, ignoring `/` and `-`, substring allowed) → `PlayerCertificate`/`CoachCertificate` by number (case-insensitive, non-revoked) → Player/Coach by business ID (`PLR-…`/`CCH-…`) **only if that member has a non-revoked certificate** → by QR code → by candidate name: sample certificates (name + optional district), then **Players only** with a non-revoked certificate (name/district `contains`). `fatherName` is accepted but not used in any database match.
 - **Success 200 (always 200):** a result object with `valid: true|false`, `type` (`player`, `coach`, or `championship`), name, district, certificate number, issue date, signatories, and a message. Anything not found — including a registered member with no certificate — returns `valid: false` with "No certificate found matching the provided details. Please verify the serial number or candidate details."
 - **DB:** read only. **Audit:** none.
@@ -443,14 +454,16 @@ See 4.3 (`/api/admin/players/{id}/certificate`). No coach issuance and no revoca
 
 ### 13.1 User actions
 - **Method / Route:** `POST /api/admin/users/{id}/{action}`
-- **Authentication:** `users:update`. **CSRF:** yes. Not district-scoped.
+- **Authentication:** `users:update`. **CSRF:** yes. Target user must be inside the caller's scope (404 otherwise). **Scope-changing actions (`assign-state`, `remove-state`, `assign-district`, `remove-district`, `toggle-federation-wide`) require GLOBAL scope** (403 otherwise).
 
 | action | Body | Effect | Response |
 |---|---|---|---|
 | `activate` / `deactivate` | — | `isActive` true/false ("No change" if same) | `{ id, isActive }` |
 | `assign-role` | `{ roleId }` | sets `roleId` (400 "Role not found") | `{ id, role: slug }` |
-| `assign-district` | `{ districtId }` | sets `districtId` (400 "District not found") | `{ id, districtId }` |
-| `remove-district` | — | `districtId = null` | `{ id, districtId: null }` |
+| `assign-state` | `{ stateId }` | sets `stateId` (State Admin scope); clears a district from another state (400 "State not found") | `{ id, stateId }` |
+| `remove-state` | — | `stateId = null` and `districtId = null` | `{ id, stateId: null }` |
+| `assign-district` | `{ districtId }` | sets `districtId` **and** `stateId` = the district's state (400 "District not found" / district without a state) | `{ id, districtId }` |
+| `remove-district` | — | `districtId = null` (state kept → State scope) | `{ id, districtId: null }` |
 | `toggle-federation-wide` | — | flips `isFederationWide` | `{ id, isFederationWide }` |
 
 - **Errors:** 400 invalid action; 404 user.
@@ -469,6 +482,22 @@ See 4.3 (`/api/admin/players/{id}/certificate`). No coach issuance and no revoca
 - **Success:** `{ id, permissions: [slugs] }`. **Audit:** UPDATE `roles` with previous/new slugs.
 
 ---
+
+## 13c. States & Districts APIs
+
+### States — `POST /api/admin/states`, `PATCH|DELETE /api/admin/states/{id}`
+- **Authentication:** `states:manage` **and** GLOBAL scope (403 "Only the Super Admin can manage states"). CSRF.
+- **Body:** `{ name 2–100, code? ≤10 (upper-cased, "" clears), isActive?, sortOrder? 0–100000 }`; PATCH: any subset (400 "No changes provided" if empty).
+- **Errors:** 409 duplicate name/slug/code; DELETE 409 while the state has districts, state admins or tournaments ("Deactivate it instead"); 404.
+- **Audit:** `STATE_CREATED` / `STATE_UPDATED {fields, previousValues, newValues}` / `STATE_DELETED` (module `states`). Revalidates public district lists.
+
+### Districts — `POST /api/admin/districts`, `GET|PATCH|DELETE /api/admin/districts/{id}`
+- **Authentication:** GET `districts:read`; others `districts:manage`. All record routes are scoped (404 outside scope). CSRF on mutations.
+- **Create body:** `{ name 2–100, stateId?, president?, secretary?, email?, phone?, address?, isActive?, sortOrder? }`. GLOBAL users must pass `stateId`; STATE users always create in their own state; DISTRICT users are refused (403).
+- **Update body:** any subset of the above. Renaming regenerates the slug. **Changing `stateId` is GLOBAL-only** (403) because it re-homes every player/coach/member of the district. `sortOrder` is the public/admin display order.
+- **GET** returns the full district row — the admin Edit modal loads from it on open, so it always shows the selected district's current data.
+- **Errors:** 409 duplicate name within the state; DELETE 409 while users/players/coaches/memberships/tournaments/requests reference it ("Deactivate it instead").
+- **Audit:** `DISTRICT_CREATED` / `DISTRICT_UPDATED {fields, previousValues, newValues}` / `DISTRICT_DELETED` (module `districts`).
 
 ## 13a. Admin Gallery APIs
 

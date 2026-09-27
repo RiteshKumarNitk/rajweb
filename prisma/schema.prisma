@@ -27,6 +27,13 @@ model User {
   googleId         String?      @unique
   lastLoginAt      DateTime?
   isFederationWide Boolean      @default(false)
+  // Organisational scope (see src/security/rbac/org-scope.ts):
+  //   super-admin / isFederationWide -> GLOBAL
+  //   districtId set                 -> DISTRICT (state inherited from the district)
+  //   stateId set (no district)      -> STATE
+  //   neither                        -> no data access
+  stateId          String?
+  state            State?       @relation(fields: [stateId], references: [id])
   roleId           String
   role             Role         @relation(fields: [roleId], references: [id])
   districtId       String?
@@ -46,6 +53,7 @@ model User {
 
   @@index([roleId])
   @@index([districtId])
+  @@index([stateId])
   @@map("users")
 }
 
@@ -128,12 +136,38 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
-// ─── Districts ─────────────────────────────────────────────────
+// ─── States & Districts ────────────────────────────────────────
+// Hierarchy: State -> District -> Players / Coaches / Memberships.
+// Player, Coach and membership records inherit their State through
+// `districtId -> District.stateId`; they deliberately carry no stateId of
+// their own so ownership can never disagree with the district.
+
+model State {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  slug        String       @unique
+  code        String?      @unique
+  isActive    Boolean      @default(true)
+  sortOrder   Int          @default(0)
+  districts   District[]
+  users       User[]
+  tournaments Tournament[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([isActive, sortOrder])
+  @@map("states")
+}
 
 model District {
   id               String              @id @default(cuid())
-  name             String              @unique
-  slug             String              @unique
+  name             String
+  slug             String
+  // Nullable only so pre-existing rows survive the schema change; the seed
+  // backfills them. A district with no state is visible to Super Admin only.
+  stateId          String?
+  state            State?              @relation(fields: [stateId], references: [id])
+  sortOrder        Int                 @default(0)
   president        String?
   secretary        String?
   email            String?
@@ -151,6 +185,10 @@ model District {
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
 
+  // Names/slugs are unique within a state, not globally.
+  @@unique([stateId, name])
+  @@unique([stateId, slug])
+  @@index([stateId, sortOrder])
   @@map("districts")
 }
 
@@ -458,6 +496,11 @@ model Tournament {
   description     String?
   category        TournamentCategory
   status          TournamentStatus   @default(DRAFT)
+  // Owning state. Always set for new tournaments; for district tournaments
+  // it must equal district.stateId. A tournament with no district is
+  // state-wide for this state.
+  stateId         String?
+  state           State?             @relation(fields: [stateId], references: [id])
   districtId      String?
   district        District?          @relation(fields: [districtId], references: [id])
   venue           String?
@@ -484,6 +527,7 @@ model Tournament {
 
   @@index([status])
   @@index([districtId])
+  @@index([stateId])
   @@map("tournaments")
 }
 

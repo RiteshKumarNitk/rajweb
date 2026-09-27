@@ -8,7 +8,7 @@ import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import { Label } from "@/shared/components/ui/label";
 import { Textarea } from "@/shared/components/ui/textarea";
-import { rajasthanDistricts } from "@/shared/config/site";
+import { useRegistrationLocations } from "@/shared/components/forms/registration-locations-context";
 import { blockSubmitForStaticRelease } from "@/shared/lib/static-release";
 import { ComingSoonBanner } from "@/shared/components/ui/coming-soon-banner";
 import { apiPost, handleApiFetch } from "@/lib/api-client";
@@ -19,6 +19,8 @@ const academySchema = z.object({
   email: z.string().email("Please enter a valid email"),
   phone: z.string().min(10, "Please enter a valid phone number"),
   district: z.string().min(1, "Please select a district"),
+  // State slug; auto-filled when only one state is active.
+  state: z.string().optional(),
   address: z.string().min(10, "Please provide a complete address"),
   coachCount: z.string().min(1, "Number of coaches is required"),
 });
@@ -26,14 +28,18 @@ const academySchema = z.object({
 type AcademyFormData = z.infer<typeof academySchema>;
 
 export function AcademyMembershipForm() {
+  const loc = useRegistrationLocations();
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors, isSubmitting },
     reset,
   } = useForm<AcademyFormData>({
     resolver: zodResolver(academySchema),
+    defaultValues: { state: loc.initialState() },
   });
+  const districtOptions = loc.districtsFor(watch("state"));
 
   async function onSubmit(data: AcademyFormData) {
     if (blockSubmitForStaticRelease("Academy membership")) return;
@@ -75,6 +81,21 @@ export function AcademyMembershipForm() {
         </div>
       </div>
       <div className="grid gap-6 sm:grid-cols-2">
+        {loc.multiState && (
+          <div className="space-y-2">
+            <Label htmlFor="state">State</Label>
+            <select
+              id="state"
+              className="flex h-11 w-full rounded-md border border-slate-300 bg-white px-4 py-2 text-sm"
+              {...register("state")}
+            >
+              <option value="" disabled>Select state</option>
+              {loc.locations.map((s) => (
+                <option key={s.slug} value={s.slug}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="space-y-2">
           <Label htmlFor="district">District</Label>
           <select
@@ -84,7 +105,7 @@ export function AcademyMembershipForm() {
             defaultValue=""
           >
             <option value="" disabled>Select district</option>
-            {rajasthanDistricts.map((d) => (
+            {districtOptions.map((d) => (
               <option key={d} value={d}>{d}</option>
             ))}
           </select>

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/security/auth/session";
-import { getDistrictWhereClause } from "@/security/rbac/district-scope";
+import { districtOwnedWhere, getOrgScope } from "@/security/rbac/org-scope";
 import { hasPermission, hasAnyPermission, PERMISSIONS } from "@/security/rbac/permissions";
 import prisma from "@/infrastructure/database/prisma";
 import { ApplicationsTable, type ApplicationRow } from "./applications-table";
@@ -8,7 +8,7 @@ import { ApplicationsTable, type ApplicationRow } from "./applications-table";
 const LIST_LIMIT = 100;
 
 async function getApplications(
-  districtWhere: { districtId?: string },
+  districtWhere: ReturnType<typeof districtOwnedWhere>,
   canReadPlayers: boolean,
   canReadCoaches: boolean,
   canReadMemberships: boolean
@@ -130,7 +130,8 @@ export default async function AdminApplicationsPage() {
     redirect("/admin?error=forbidden");
   }
 
-  const districtWhere = getDistrictWhereClause(user);
+  const scope = getOrgScope(user);
+  const districtWhere = districtOwnedWhere(scope);
   const applications = await getApplications(districtWhere, canReadPlayers, canReadCoaches, canReadMemberships);
 
   return (
@@ -139,7 +140,7 @@ export default async function AdminApplicationsPage() {
         <h1 className="text-2xl font-bold text-primary">Application Review Center</h1>
         <p className="text-slate-500">
           Review and process Player, Coach, and Membership applications submitted across the system
-          {districtWhere.districtId ? " (your district)" : ""}.
+          {scope.level === "STATE" ? " (your state)" : scope.level === "DISTRICT" ? " (your district)" : ""}.
         </p>
       </div>
 

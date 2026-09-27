@@ -28,12 +28,16 @@ export async function createEquipmentOrder(input: CreateEquipmentOrderInput) {
 }
 
 /**
- * `districtName` scopes the list for district-scoped admins. EquipmentOrder
- * stores the district as free text (public form), so the match is by name.
+ * `districtNames` scopes the list for state/district-scoped admins (undefined
+ * = everything). EquipmentOrder stores the district as free text from the
+ * public form, so scoping matches names; an empty list matches nothing.
  */
-export async function listEquipmentOrders(districtName?: string | null) {
+export async function listEquipmentOrders(districtNames?: string[]) {
   return prisma.equipmentOrder.findMany({
-    where: districtName === undefined ? undefined : { district: { equals: districtName ?? "", mode: "insensitive" } },
+    where:
+      districtNames === undefined
+        ? undefined
+        : { OR: districtNames.length ? districtNames.map((name) => ({ district: { equals: name, mode: "insensitive" as const } })) : [{ id: "__none__" }] },
     orderBy: { createdAt: "desc" },
   });
 }

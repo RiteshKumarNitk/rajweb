@@ -1,7 +1,7 @@
 import { withApiHandler, jsonSuccess, AppError } from "@/core/api/with-api-handler";
 import { requirePermission } from "@/security/auth/session";
 import { PERMISSIONS } from "@/security/rbac/permissions";
-import { assertDistrictAccess } from "@/security/rbac/district-scope";
+import { assertInScope, districtTarget } from "@/security/rbac/org-scope";
 import {
   approveMembership,
   rejectMembership,
@@ -26,7 +26,7 @@ export const POST = withApiHandler(
       throw AppError.notFound("Membership application not found");
     }
 
-    assertDistrictAccess(user, membership.districtId);
+    assertInScope(user, districtTarget(membership), "Membership application not found");
 
     if (action === "approve") {
       await approveMembership(type, id, user.id);

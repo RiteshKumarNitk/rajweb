@@ -7,7 +7,7 @@ import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import { Label } from "@/shared/components/ui/label";
 import { Textarea } from "@/shared/components/ui/textarea";
-import { rajasthanDistricts } from "@/shared/config/site";
+import { useRegistrationLocations } from "@/shared/components/forms/registration-locations-context";
 import { apiPost, handleApiFetch } from "@/lib/api-client";
 import {
   REQUEST_TYPES,
@@ -31,6 +31,11 @@ export function NewRequestForm({
   current: CurrentProfileValues;
   onDone: () => void;
 }) {
+  // District moves stay within the member's current state (enforced server-side too).
+  const loc = useRegistrationLocations();
+  const ownState = loc.locations.find((l) => l.districts.some((d) => d.toLowerCase() === current.district.toLowerCase()));
+  const sameStateDistricts = ownState?.districts ?? [];
+
   const router = useRouter();
   const [type, setType] = useState<RequestTypeValue | "">("");
   const [reason, setReason] = useState("");
@@ -134,7 +139,7 @@ export function NewRequestForm({
               className="mt-1.5 h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               <option value="">Select district</option>
-              {rajasthanDistricts.filter((d) => d !== current.district).map((d) => (
+              {sameStateDistricts.filter((d) => d !== current.district).map((d) => (
                 <option key={d} value={d}>{d}</option>
               ))}
             </select>

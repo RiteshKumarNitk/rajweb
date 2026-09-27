@@ -6,6 +6,7 @@ import { sanitizeEmail, sanitizePhone, sanitizeText } from "@/security/sanitize"
 import prisma from "@/infrastructure/database/prisma";
 import { getCurrentUser } from "@/security/auth/session";
 import type { CertificationLevel } from "@prisma/client";
+import { resolveRegistrationDistrict } from "@/modules/districts/registration-locations.server";
 
 const coachSchema = z.object({
   name: z.string().min(2).max(100),
@@ -14,15 +15,8 @@ const coachSchema = z.object({
   qualification: z.string().min(2).max(500),
   certificationLevel: z.enum(["LEVEL_1", "LEVEL_2", "LEVEL_3", "INTERNATIONAL"]),
   district: z.string().min(1).max(100),
+  state: z.string().max(100).optional(),
 });
-
-async function resolveDistrictId(districtName: string) {
-  const district = await prisma.district.findFirst({
-    where: { name: { equals: districtName, mode: "insensitive" } },
-  });
-  if (!district) throw AppError.validation("Invalid district selected");
-  return district.id;
-}
 
 export const POST = withApiHandler(
   async (request, { requestId }) => {
@@ -37,7 +31,8 @@ export const POST = withApiHandler(
       }
     }
 
-    const districtId = await resolveDistrictId(data.district);
+    // Owning state is decided by the district, resolved server-side within the submitted state.
+    const { districtId } = await resolveRegistrationDistrict({ district: data.district, state: data.state });
 
     const coach = await prisma.coach.create({
       data: {

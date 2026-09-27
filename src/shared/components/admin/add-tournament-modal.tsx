@@ -14,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui
 import { apiFetch, handleApiFetch } from "@/lib/api-client";
 import { tournamentDateOrderError } from "@/modules/tournaments/tournament-dates";
 
-export type DistrictOption = { id: string; name: string };
+import { OwnerOptions, ownerValue, parseOwnerValue, type OwnerGroup } from "@/shared/components/admin/tournament-owner-options";
 
 const isValidUrl = (value: string) => {
   try {
@@ -66,12 +66,12 @@ type TournamentFormData = z.infer<typeof tournamentSchema>;
 export function AddTournamentModal({
   open,
   onClose,
-  districts,
+  ownerGroups,
   lockedDistrictId,
 }: {
   open: boolean;
   onClose: () => void;
-  districts: DistrictOption[];
+  ownerGroups: OwnerGroup[];
   lockedDistrictId?: string;
 }) {
   const router = useRouter();
@@ -84,7 +84,12 @@ export function AddTournamentModal({
     defaultValues: {
       category: "OPEN",
       status: "DRAFT",
-      districtId: lockedDistrictId ?? "",
+      // Holds an owner value (s:<stateId> | d:<districtId>), see tournament-owner-options.
+      districtId: lockedDistrictId
+        ? ownerValue({ stateId: null, districtId: lockedDistrictId })
+        : ownerGroups.length === 1
+          ? ownerValue({ stateId: ownerGroups[0].stateId, districtId: null })
+          : "",
       requiresApprovedPlayer: true,
     },
   });
@@ -97,7 +102,8 @@ export function AddTournamentModal({
         method: "POST",
         body: JSON.stringify({
           ...data,
-          districtId: lockedDistrictId || data.districtId || undefined,
+          // Locked (district admin) owners are re-derived server-side anyway.
+          ...(lockedDistrictId ? { districtId: lockedDistrictId } : parseOwnerValue(data.districtId) ?? { districtId: undefined }),
           maxParticipants: data.maxParticipants ? Number(data.maxParticipants) : undefined,
           description: data.description?.trim() || undefined,
           venue: data.venue?.trim() || undefined,
@@ -175,17 +181,14 @@ export function AddTournamentModal({
               <p className="text-xs font-semibold uppercase text-slate-400">Location</p>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="districtId">District</Label>
+                  <Label htmlFor="districtId">State / District</Label>
                   <select
                     id="districtId"
                     className="h-11 w-full rounded-md border border-slate-300 bg-white px-4 text-sm disabled:bg-slate-100"
                     {...register("districtId")}
                     disabled={Boolean(lockedDistrictId)}
                   >
-                    {!lockedDistrictId && <option value="">State-wide (all districts)</option>}
-                    {districts.map((d) => (
-                      <option key={d.id} value={d.id}>{d.name}</option>
-                    ))}
+                    <OwnerOptions groups={ownerGroups} allowStateWide={!lockedDistrictId} />
                   </select>
                 </div>
                 <div className="space-y-2">

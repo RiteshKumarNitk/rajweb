@@ -380,6 +380,85 @@ Equipment orders are separate business entities with their own snapshots; `Tourn
 
 ---
 
+## Scope correction, regression fixes and full runtime regression pass
+
+### Date
+2026-09-27.
+
+### Summary
+Per product decision, the broad "Website Content CMS" was reverted: all informational pages (Home sections, About, History, Executive Committee, News, Mission/Vision/Governance/Resources/Facilities) are static again; the generic content models, APIs, admin pages and seed were removed. The dynamic scope is exactly: **Districts, Gallery, Videos, Equipment shop, Contact submissions**. This pass also fixed the production regressions and ran a full runtime smoke test of every flow.
+
+### Regression fixes
+- Server Components render error (production): caused by public pages querying `Achievement`/`TimelineItem` tables that did not exist on the deployed database. Those pages are static again and the models are gone from the schema — pages render with static content even when tables are missing.
+- `/news?_rsc=...` 404: `/news` was never a route (news lives at `/media/news`); the admin Media page linked to the wrong URL. Link corrected and a permanent `308` redirect `/news → /media/news` added in `next.config.ts`.
+
+### Schema/seed corrections (CMS leftovers)
+- `ExecutiveMember.order` restored (seed writes it; the column exists in live DBs).
+- `Partner.updatedAt` removed (was a CMS-era addition that broke `db push` on populated tables).
+- Seed news items no longer pass `isActive` (field does not exist on the original `News` model). `npm run db:seed` now runs cleanly.
+- `prisma migrate diff` against the live database is now **purely additive** (new tables/columns/enums only, no drops).
+
+### Verification
+- `tsc --noEmit`, `prisma validate`, `prisma generate`: clean. Lint: 5 pre-existing baseline errors only. `next build --webpack`: 47 pages, all routes present, `/admin/content/*` gone.
+- Runtime smoke test (49 checks) against an isolated disposable Postgres (Docker) with schema push + seed: public pages `200`; `/news` `308`; anonymous admin/account gating; contact submit (CSRF, validation, storage); login-gated purchase with atomic stock reservation; order cancellation with restock; admin CRUD for gallery (incl. Drive-URL validation), videos (YouTube URL validation, duplicate detection), districts (activate/deactivate) and equipment (create/price/delete); RBAC denials for non-admin users; audit rows written for every admin action. All 49 pass.
+- The shared/production database was never modified during testing; no real emails were sent (email sends are best-effort and skipped without `RESEND_API_KEY`).
+
+### Deploy checklist
+On production after pulling: `npm run db:push` (additive only) then `npm run db:seed` (idempotent; adds the new permissions to federation-admin).
+
+---
+
+## Multi-state hierarchy & admin regression fixes
+
+### Date
+2026-09-27.
+
+### Summary
+The platform now models **Super Admin → State → District → members** without hard-coding any state, keeps all existing data (backfilled to the founding state), enforces State/District isolation server-side everywhere, and fixes five reported admin bugs plus three found while tracing them. Full detail: [RRA-PROJECT-STATUS.md §14](RRA-PROJECT-STATUS.md#14-multi-state-hierarchy--regression-fixes-2026-09-27).
+
+### Database Changes (additive)
+- New `State` model (`name`/`slug`/`code` unique, `isActive`, `sortOrder`).
+- `District.stateId` (nullable for legacy rows), `District.sortOrder`; uniqueness is now `(stateId, name)` and `(stateId, slug)` instead of global.
+- `Tournament.stateId`, `User.stateId` (+ indexes, FKs).
+- No stateId on Player/Coach/memberships — ownership is inherited through the district.
+- Seed: founding state row, idempotent backfill of districts and tournaments, `state-admin` role, `states:read|manage` permissions.
+
+### Security / Authorization
+- `src/security/rbac/org-scope.ts` replaces the district-only helpers: GLOBAL / STATE / DISTRICT / NONE scope, Prisma where-builders, and `assertInScope` (404 for out-of-scope records).
+- Scope applied to players, coaches, memberships, applications, requests, certificates (+ file access), tournaments (+ categories), districts, users, dashboard stats and activity feed, equipment enquiries.
+- Super Admin **state filter** (display-only) on dashboard and admin lists.
+- Scope-changing user actions (state/district/federation-wide) are GLOBAL-only; scoped admins can only act on staff in their scope.
+
+### API Changes
+- New: `POST /api/admin/states`, `PATCH|DELETE /api/admin/states/{id}`, `POST /api/admin/districts`, `GET /api/admin/districts/{id}`; district PATCH now also edits name, state (GLOBAL only) and display order.
+- `/api/admin/users/{id}/assign-state|remove-state`.
+- Registration, membership and resubmit endpoints accept `state` (slug/id) and resolve the district inside it; tournament create/update accept `stateId`.
+- Out-of-scope admin actions now return **404** (previously 403 "Access denied for this district").
+- Prisma missing-table/column errors return **503 DATABASE_ERROR** with the missing object named.
+
+### UI Changes
+- `/admin/states` (new), sidebar entry. `/admin/districts`: Add District, server-loaded Edit modal (name, state, contacts, display order), state shown per card.
+- `/admin/users`: State selector (district list filtered by state), jurisdiction column shows state/district.
+- Tournament forms: "State / District" select grouped by state.
+- Registration & membership forms (public + portal): State picker when more than one active state; district options from the database.
+- Public `/districts`: database-driven, grouped by state, honours activate/deactivate and display order (static list only as DB-down fallback).
+
+### Bug Fixes
+- District Edit loads the selected district from the server (was seeded from stale props).
+- Videos: Super Admin recognised via `hasPermission` (page used `permissions.includes`).
+- Equipment 500: root cause is the configured database missing the equipment/video/contact/gallery schema; now a clear 503 + visible admin error. Needs `db push` + `db:seed` on that database.
+- Certificates "Verify & Preview": deep link auto-verifies; QR values resolve in the serial box; **certificate PDFs are generated again** (`serverExternalPackages: ["pdfkit"]`, standard font by name, failures logged).
+- `/news` 404 and the Server Components error were already fixed in HEAD; re-verified.
+- `/admin/equipment` edit controls now require `equipment:manage`.
+
+### Testing
+`tsc`, `prisma validate`, `next build --webpack` pass; lint 0 errors in changed files. Upgrade rehearsal (old schema + legacy rows → new schema → seed) preserved all data; **92/92** HTTP isolation and regression checks passed on a disposable database ([RRA-TESTING.md §17](RRA-TESTING.md#17-multi-state-isolation-matrix)). Browser-only behaviour not automated.
+
+### Deploy
+`npx prisma db push --accept-data-loss` (the only warnings are the new per-state unique indexes, which existing data cannot violate — review before accepting), then `npm run db:seed`. Re-running the seed is safe.
+
+---
+
 ## Upcoming (not started)
 
 Phases J–U are PLANNED — see [RRA-PROJECT-STATUS.md §10](RRA-PROJECT-STATUS.md#10-remaining-roadmap). Add an entry here using the template below when each lands:

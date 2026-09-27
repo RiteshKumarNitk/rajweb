@@ -7,7 +7,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Button } from "@/shared/components/ui/button";
 import { FormBuilder } from "@/shared/components/ui/form-builder";
-import { rajasthanDistricts } from "@/shared/config/site";
+import { useRegistrationLocations } from "@/shared/components/forms/registration-locations-context";
 import { apiPost, handleApiFetch } from "@/lib/api-client";
 
 const schoolSchema = z.object({
@@ -16,6 +16,8 @@ const schoolSchema = z.object({
   email: z.string().email("Enter a valid email"),
   phone: z.string().min(10, "Enter a valid phone number"),
   district: z.string().min(1, "Select a district"),
+  // State slug; auto-filled when only one state is active.
+  state: z.string().optional(),
   address: z.string().min(10, "Address is required"),
   studentCount: z.string().optional(),
 });
@@ -38,9 +40,11 @@ export function SchoolMembershipForm({
   resubmit?: SchoolResubmitData;
 }) {
   const router = useRouter();
+  const loc = useRegistrationLocations();
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<SchoolFormData>({
     resolver: zodResolver(schoolSchema),
@@ -50,10 +54,12 @@ export function SchoolMembershipForm({
       phone: prefill.phone,
       schoolName: resubmit?.schoolName ?? "",
       district: resubmit?.district ?? "",
+      state: loc.initialState(resubmit?.district),
       address: resubmit?.address ?? "",
       studentCount: resubmit?.studentCount ? String(resubmit.studentCount) : "",
     },
-  });
+  });  const districtOptions = loc.districtsFor(watch("state"));
+
 
   async function onSubmit(data: SchoolFormData) {
     try {
@@ -82,13 +88,26 @@ export function SchoolMembershipForm({
           { name: "principalName", label: "Principal Name", placeholder: "Your full name" },
           { name: "email", label: "Email", type: "email" },
           { name: "phone", label: "Phone", type: "tel", placeholder: "10-digit mobile number" },
+          ...(loc.multiState
+            ? [
+                {
+                  name: "state" as const,
+                  label: "State",
+                  type: "select" as const,
+                  options: [
+                    { label: "Select state", value: "" },
+                    ...loc.locations.map((l) => ({ label: l.name, value: l.slug })),
+                  ],
+                },
+              ]
+            : []),
           {
             name: "district",
             label: "District",
             type: "select",
             options: [
               { label: "Select district", value: "" },
-              ...rajasthanDistricts.map((d) => ({ label: d, value: d })),
+              ...districtOptions.map((d) => ({ label: d, value: d })),
             ],
           },
           { name: "address", label: "Address", type: "textarea", placeholder: "Full school address" },
