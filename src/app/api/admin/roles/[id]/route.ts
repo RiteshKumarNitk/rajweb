@@ -4,6 +4,7 @@ import { withApiHandler, jsonSuccess, AppError } from "@/core/api/with-api-handl
 import { requirePermission } from "@/security/auth/session";
 import { PERMISSIONS } from "@/security/rbac/permissions";
 import { createAuditLog } from "@/services/audit/audit-service";
+import { invalidatePermissionsCache } from "@/security/rbac/role-permissions.server";
 
 const updateRoleSchema = z.object({
   permissionIds: z.array(z.string()),
@@ -34,6 +35,10 @@ export const PATCH = withApiHandler(
         skipDuplicates: true,
       }),
     ]);
+    // Drop this instance's cached permission list for the role so the change
+    // applies at the holders' next session refresh (≤ 60 s) instead of after
+    // the cache TTL as well. Other server instances expire it within the TTL.
+    invalidatePermissionsCache(id);
 
     const newPermissions = await prisma.permission.findMany({ where: { id: { in: permissionIds } } });
     const newSlugs = newPermissions.map((p) => p.slug).sort();

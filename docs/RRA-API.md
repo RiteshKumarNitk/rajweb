@@ -21,14 +21,14 @@ Architecture of the handler pipeline: [RRA-ARCHITECTURE.md → Backend](RRA-ARCH
 | Code | HTTP | Typical cause |
 |---|---|---|
 | `VALIDATION_ERROR` | 400 | Zod failure (`details` = Zod issues) or business-rule validation |
-| `BAD_REQUEST` | 400 | Missing path params, invalid action, missing rejection reason |
+| `BAD_REQUEST` | 400 | Missing path params, invalid action, missing rejection reason, request body that is not valid JSON ("Request body must be valid JSON" — applies to every JSON API) |
 | `UNAUTHORIZED` | 401 | No/expired/inactive session on an authenticated route |
 | `FORBIDDEN` | 403 | Missing permission, wrong district, **missing/invalid CSRF token** |
 | `NOT_FOUND` | 404 | Record missing (or not owned by caller on owner routes) |
 | `CONFLICT` | 409 | Already processed, duplicate registration/request/application |
 | `RATE_LIMITED` | 429 | Per-route or global (120/min/IP on `/api/*`) limit |
 | `DATABASE_ERROR` | 503 | Database schema is behind the code (Prisma P2021 missing table / P2022 missing column): "Database schema is out of date (missing table X). Apply the current schema with `npm run db:push` and then `npm run db:seed`." Logged as an error and sent to Sentry |
-| `INTERNAL_ERROR` | 500 | Unexpected; message hidden in production |
+| `INTERNAL_ERROR` | 500 | Unexpected; message hidden in production. Logged at error level with the original exception and sent to Sentry |
 
 **CSRF:** routes marked *CSRF: yes* require `x-csrf-token` header equal to the `csrf_token` cookie obtained from `GET /api/csrf`. The browser client (`src/lib/api-client.ts → apiFetch`) handles this automatically.
 
@@ -108,6 +108,7 @@ Architecture of the handler pipeline: [RRA-ARCHITECTURE.md → Backend](RRA-ARCH
   - `email-otp`: `{ email, otp }`
   - `google`: OAuth redirect; callback `/api/auth/callback/google`.
 - **Errors:** redirects to `/account/login?error=…` — `missing_email`, `account_exists_with_password`, `inactive`, `Callback`; credentials failures return `CredentialsSignin`.
+- **Password-guessing limit (credentials):** at most 10 sign-in attempts per account per client IP in 15 minutes; further attempts fail as `CredentialsSignin` — even with the right password — until the window passes. Other IPs are unaffected (no account-wide lock-out).
 - **Database effects:** Google/OTP may create a `User` (role `public-user`) or update name/avatar/googleId; `lastLoginAt` updated.
 - **Audit:** `LOGIN` (auth); `CREATE` (users) for new public users.
 - **Security notes:** Google/OTP cannot sign into an email owned by a `CREDENTIALS` account. Session JWT 30 min; role/permissions refreshed every ≤ 60 s. `/login*` pages limited to 20 req/min/IP by middleware.

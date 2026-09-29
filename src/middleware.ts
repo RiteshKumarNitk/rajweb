@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { checkRateLimit } from "@/security/rate-limit";
 import { apiError } from "@/core/api/api-response";
-import { generateRequestId } from "@/core/api/request-context";
+import { generateRequestId, getClientIp as clientIpFromHeaders } from "@/core/api/request-context";
 import { ErrorCodes } from "@/core/errors/error-codes";
 import { ROLES } from "@/security/rbac/permissions";
 
@@ -31,11 +31,7 @@ function applySecurityHeaders(response: NextResponse) {
 }
 
 function getClientIp(request: NextRequest) {
-  return (
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
-    "unknown"
-  );
+  return clientIpFromHeaders(request.headers);
 }
 
 async function getSessionToken(request: NextRequest) {

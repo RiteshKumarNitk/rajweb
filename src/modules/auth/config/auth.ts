@@ -8,6 +8,8 @@ import { getPermissionsForRole } from "@/security/rbac/role-permissions.server";
 import { findOrCreatePublicUser } from "@/modules/auth/account-linking";
 import { verifyOtp } from "@/services/email/otp-service";
 import { createAuditLog } from "@/services/audit/audit-service";
+import { checkRateLimit } from "@/security/rate-limit";
+import { getClientIp } from "@/core/api/request-context";
 
 const authSecret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
 
@@ -30,10 +32,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         if (!credentials?.email || !credentials?.password) return null;
 
         const email = (credentials.email as string).trim().toLowerCase();
+
+        // Password-guessing guard: bounded attempts per account and client IP,
+        // plus a per-account ceiling that no (possibly client-supplied)
+        // forwarded-IP header can raise. Both windows are 15 minutes.
+        const withinLimits =
+          (await checkRateLimit(`login:${getClientIp(request.headers)}:${email}`, 10, 15 * 60_000)) &&
+          (await checkRateLimit(`login-account:${email}`, 30, 15 * 60_000));
+        if (!withinLimits) return null;
 
         const user = await prisma.user.findUnique({ where: { email } });
         if (!user || !user.isActive || !user.passwordHash) return null;

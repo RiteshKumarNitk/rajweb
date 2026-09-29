@@ -25,6 +25,8 @@ export interface CertificateVerificationResult {
   playerId?: string;
   coachId?: string;
   qrCode?: string;
+  /** What the certificate's QR code encodes (same payload as the PDF); absent for sample records. */
+  verificationUrl?: string;
   /** Certificate title, e.g. "Certificate of Participation". */
   title?: string;
   /** Owning state name — shown on the emblem. */

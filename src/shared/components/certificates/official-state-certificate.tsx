@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -26,6 +26,25 @@ export function OfficialStateCertificate({
 }) {
   const printRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
+  // Real, scannable QR with the same payload as the PDF (see verification-url.ts).
+  const [qr, setQr] = useState<{ url: string; src: string } | null>(null);
+
+  useEffect(() => {
+    const url = cert.verificationUrl;
+    if (!url) return;
+    const payload = url.startsWith("/") ? `${window.location.origin}${url}` : url;
+    let active = true;
+    import("qrcode")
+      .then((QRCode) => QRCode.toDataURL(payload, { width: 200 }))
+      .then((src) => {
+        if (active) setQr({ url, src });
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [cert.verificationUrl]);
+  const qrSrc = qr && qr.url === cert.verificationUrl ? qr.src : null;
 
   // Signers exactly as recorded on the certificate; the legacy pair is only
   // used for sample records and certificates issued before snapshots existed.
@@ -170,16 +189,19 @@ export function OfficialStateCertificate({
         {/* Certificate Heading & S.No Row */}
         <div className="relative z-10 mt-6 flex items-center justify-between border-t border-b border-pink-200/80 py-3">
           <div className="flex items-center gap-3">
-            {/* QR Code Graphic Box */}
-            <div className="flex h-16 w-16 items-center justify-center rounded-lg border-2 border-slate-800 bg-white p-1 shadow-xs">
-              <div className="grid grid-cols-4 gap-0.5 w-full h-full p-0.5 bg-slate-900 rounded-xs">
-                <div className="bg-white rounded-[1px] col-span-2 row-span-2 m-0.5"></div>
-                <div className="bg-white rounded-[1px] col-span-2"></div>
-                <div className="bg-white rounded-[1px] col-span-2"></div>
-                <div className="bg-white rounded-[1px] col-span-2 row-span-2 m-0.5"></div>
-                <div className="bg-white rounded-[1px] col-span-2"></div>
+            {/* Verification QR — only for certificates that have one (not sample records) */}
+            {qrSrc && (
+              <div className="flex h-16 w-16 items-center justify-center rounded-lg border-2 border-slate-800 bg-white p-0.5 shadow-xs">
+                <Image
+                  src={qrSrc}
+                  alt="Scan to verify this certificate"
+                  width={60}
+                  height={60}
+                  unoptimized
+                  className="h-full w-full"
+                />
               </div>
-            </div>
+            )}
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                 Official Serial No.

@@ -20,7 +20,9 @@ const loginSchema = z.object({
 
 type LoginForm = z.infer<typeof loginSchema>;
 
-const demoAccounts = [
+// Local seed accounts for `next dev` only. The condition is resolved at build
+// time, so production bundles contain neither these buttons nor the passwords.
+const demoAccounts = process.env.NODE_ENV === "development" ? [
   {
     label: "Super Admin",
     description: "Full federation access",
@@ -35,7 +37,7 @@ const demoAccounts = [
     password: "District@123",
     icon: MapPin,
   },
-];
+] : [];
 
 function LoginForm() {
   const router = useRouter();
@@ -112,32 +114,34 @@ function LoginForm() {
             </Button>
           </form>
 
-          <div className="mt-8 border-t border-slate-200 pt-6">
-            <p className="mb-3 text-center text-xs font-medium uppercase tracking-wide text-slate-500">
-              Quick login
-            </p>
-            <div className="space-y-2">
-              {demoAccounts.map((account) => (
-                <Button
-                  key={account.email}
-                  type="button"
-                  variant="outline"
-                  className="h-auto w-full justify-start px-4 py-3"
-                  disabled={isSubmitting || !!quickLoading}
-                  onClick={() => handleQuickLogin(account)}
-                >
-                  <account.icon className="mr-3 h-5 w-5 shrink-0 text-primary" />
-                  <span className="text-left">
-                    <span className="block text-sm font-medium">{account.label}</span>
-                    <span className="block text-xs text-slate-500">{account.description}</span>
-                  </span>
-                  {quickLoading === account.email && (
-                    <Loader2 className="ml-auto h-4 w-4 animate-spin" />
-                  )}
-                </Button>
-              ))}
+          {demoAccounts.length > 0 && (
+            <div className="mt-8 border-t border-slate-200 pt-6">
+              <p className="mb-3 text-center text-xs font-medium uppercase tracking-wide text-slate-500">
+                Quick login
+              </p>
+              <div className="space-y-2">
+                {demoAccounts.map((account) => (
+                  <Button
+                    key={account.email}
+                    type="button"
+                    variant="outline"
+                    className="h-auto w-full justify-start px-4 py-3"
+                    disabled={isSubmitting || !!quickLoading}
+                    onClick={() => handleQuickLogin(account)}
+                  >
+                    <account.icon className="mr-3 h-5 w-5 shrink-0 text-primary" />
+                    <span className="text-left">
+                      <span className="block text-sm font-medium">{account.label}</span>
+                      <span className="block text-xs text-slate-500">{account.description}</span>
+                    </span>
+                    {quickLoading === account.email && (
+                      <Loader2 className="ml-auto h-4 w-4 animate-spin" />
+                    )}
+                  </Button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         <p className="mt-6 text-center text-sm text-slate-500">

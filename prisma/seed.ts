@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { hash } from "bcryptjs";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type Prisma } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import { ROLES, PERMISSIONS, ROLE_PERMISSIONS } from "../src/security/rbac/permissions";
@@ -20,6 +20,33 @@ const pool = new Pool({
 });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
+
+// Seeded accounts carry well-known demo passwords, so a missing account is only
+// CREATED on a local database (or with SEED_DEMO_ACCOUNTS=true for a disposable
+// copy). Elsewhere existing accounts are still updated as before — never their
+// password — but no demo-password account is ever created.
+const DB_HOST = (() => {
+  try {
+    return new URL(process.env.DATABASE_URL ?? "").hostname;
+  } catch {
+    return "";
+  }
+})();
+const CREATE_DEMO_ACCOUNTS =
+  ["localhost", "127.0.0.1", "[::1]"].includes(DB_HOST) || process.env.SEED_DEMO_ACCOUNTS === "true";
+
+async function seedAccount(args: {
+  where: { email: string };
+  update: Prisma.UserUncheckedUpdateInput;
+  create: Prisma.UserUncheckedCreateInput;
+}) {
+  if (CREATE_DEMO_ACCOUNTS) return prisma.user.upsert(args);
+  const { count } = await prisma.user.updateMany({
+    where: args.where,
+    data: args.update as Prisma.UserUncheckedUpdateManyInput,
+  });
+  if (count === 0) console.log(`   Skipped creating demo account ${args.where.email} (non-local database)`);
+}
 
 async function main() {
   console.log("Seeding database...");
@@ -150,7 +177,7 @@ async function main() {
   // 1. Super Admin user (Federation-Wide / GLOBAL)
   if (superAdminRole) {
     const passwordHash = await hash("Admin@123", 10);
-    await prisma.user.upsert({
+    await seedAccount({
       where: { email: "admin@rajasthanracquetball.com" },
       update: { roleId: superAdminRole.id, isFederationWide: true },
       create: {
@@ -168,7 +195,7 @@ async function main() {
   // 2. Rajasthan State Admin (STATE Scope)
   if (stateAdminRole) {
     const stateAdminHash = await hash("State@123", 10);
-    await prisma.user.upsert({
+    await seedAccount({
       where: { email: "state.rajasthan@rajasthanracquetball.com" },
       update: { stateId: foundingState.id, districtId: null, roleId: stateAdminRole.id },
       create: {
@@ -190,7 +217,7 @@ async function main() {
 
     // Jaipur District Admin
     if (jaipurDistrict) {
-      await prisma.user.upsert({
+      await seedAccount({
         where: { email: "district.jaipur@rajasthanracquetball.com" },
         update: { stateId: foundingState.id, districtId: jaipurDistrict.id, roleId: districtAdminRole.id },
         create: {
@@ -208,7 +235,7 @@ async function main() {
 
     // Kota District Admin
     if (kotaDistrict) {
-      await prisma.user.upsert({
+      await seedAccount({
         where: { email: "district.kota@rajasthanracquetball.com" },
         update: { stateId: foundingState.id, districtId: kotaDistrict.id, roleId: districtAdminRole.id },
         create: {
@@ -228,7 +255,7 @@ async function main() {
   // 4. Managers & Public User for Testing
   if (tournamentManagerRole) {
     const tourMgrHash = await hash("Tournament@123", 10);
-    await prisma.user.upsert({
+    await seedAccount({
       where: { email: "tournaments@rajasthanracquetball.com" },
       update: { roleId: tournamentManagerRole.id },
       create: {
@@ -245,7 +272,7 @@ async function main() {
 
   if (contentManagerRole) {
     const contentMgrHash = await hash("Content@123", 10);
-    await prisma.user.upsert({
+    await seedAccount({
       where: { email: "content@rajasthanracquetball.com" },
       update: { roleId: contentManagerRole.id },
       create: {
@@ -262,7 +289,7 @@ async function main() {
 
   if (publicUserRole) {
     const playerUserHash = await hash("Player@123", 10);
-    await prisma.user.upsert({
+    await seedAccount({
       where: { email: "player.test@example.com" },
       update: { roleId: publicUserRole.id },
       create: {

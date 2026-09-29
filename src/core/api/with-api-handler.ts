@@ -29,13 +29,13 @@ export function withApiHandler(handler: ApiHandler, options: ApiHandlerOptions =
   ) {
     const requestId = generateRequestId();
     const ip = getClientIp(request.headers);
-    const module = options.module ?? "api";
+    const moduleName = options.module ?? "api";
     const start = Date.now();
 
     try {
       if (options.rateLimit) {
         const allowed = await checkRateLimit(
-          `${module}:${ip}`,
+          `${moduleName}:${ip}`,
           options.rateLimit.limit,
           options.rateLimit.windowMs
         );
@@ -48,12 +48,21 @@ export function withApiHandler(handler: ApiHandler, options: ApiHandlerOptions =
         throw AppError.forbidden("Invalid or missing CSRF token");
       }
 
+      // A body that is not valid JSON is a client error (400), not an
+      // unexpected server failure — handlers that tolerate a missing body
+      // still catch this themselves.
+      const readJson = request.json.bind(request);
+      request.json = () =>
+        readJson().catch(() => {
+          throw AppError.badRequest("Request body must be valid JSON");
+        });
+
       const params = await routeContext.params;
       const response = await handler(request, { requestId, params });
 
       logger.info({
         requestId,
-        module,
+        module: moduleName,
         method: request.method,
         path: request.nextUrl.pathname,
         ip,
@@ -69,7 +78,7 @@ export function withApiHandler(handler: ApiHandler, options: ApiHandlerOptions =
         const validationError = AppError.validation("Invalid request data", error.issues);
         logger.warn({
           requestId,
-          module,
+          module: moduleName,
           code: validationError.code,
           details: error.issues,
           path: request.nextUrl.pathname,
@@ -80,10 +89,13 @@ export function withApiHandler(handler: ApiHandler, options: ApiHandlerOptions =
         );
       }
 
-      if (isAppError(appError) && appError.isOperational) {
+      // Judge the error as thrown, not after conversion: fromUnknownError()
+      // wraps unexpected exceptions in an operational AppError.internal(),
+      // which would otherwise hide real 500s (no stack, no Sentry).
+      if (isAppError(error) && error.isOperational && error.statusCode < 500) {
         logger.warn({
           requestId,
-          module,
+          module: moduleName,
           code: appError.code,
           message: appError.message,
           path: request.nextUrl.pathname,
@@ -91,11 +103,11 @@ export function withApiHandler(handler: ApiHandler, options: ApiHandlerOptions =
       } else {
         logger.error({
           requestId,
-          module,
+          module: moduleName,
           err: error,
           path: request.nextUrl.pathname,
         });
-        captureException(error, { requestId, module, path: request.nextUrl.pathname });
+        captureException(error, { requestId, module: moduleName, path: request.nextUrl.pathname });
       }
 
       return NextResponse.json(

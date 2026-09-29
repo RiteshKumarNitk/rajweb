@@ -484,6 +484,7 @@ Technical / security:
 23. **Multi-state:** `EquipmentOrder.district` (public equipment enquiry form) is free text, so enquiry scoping matches district *names*; the enquiry form still offers the founding state's static district list.
 24. A district created before the hierarchy and not in the founding seed list stays **unassigned** (visible to Super Admin only, flagged on `/admin/states`) until a Super Admin sets its state.
 25. The admin application detail page for an out-of-scope record renders the not-found view with HTTP 200 (streamed response); no record data is included. APIs return a real 404.
+26. Findings of the 2026-09-29 verification audit that still need action — default passwords on the remote database, seed behaviour, order status rules, per-instance caches — are listed in §16.
 
 ---
 
@@ -700,3 +701,74 @@ All list pages query with the scope where-builders; every record action (approve
 
 ### Deploy
 Code reads the new columns, so apply the schema **with** this release: `npx prisma db push --accept-data-loss` (review that the only warning is the `player_certificates (tournamentId, playerId)` unique index), then `npm run db:seed` (creates the founding state's signatories and grants equipment permissions to state/district admins). Until then tournament registration, the tournament/equipment admin pages and certificate issuance return 503 `DATABASE_ERROR`; login is unaffected.
+
+## 16. Full Hierarchy Verification Audit (2026-09-29)
+
+The whole chain — Super Admin → State → District → players/coaches/members → requests → tournaments → certificates → equipment/orders — was re-verified from the code and by live tests, without relying on earlier reports.
+
+### Method
+- Disposable local database (PostgreSQL 16, Docker): `prisma db push` + `npm run db:seed` + a temporary fixture mirroring the remote database's second-state accounts (Gujarat / Ahmedabad, same e-mail addresses) plus member accounts. The fixture and database were removed afterwards.
+- Production build (`next build --webpack`) served with `next start`.
+- **326** HTTP/database checks, **12** real-browser checks (headless Chrome) and **15** performance/session checks — all passed on the final run. Details: [RRA-TESTING.md §19](RRA-TESTING.md#19-full-hierarchy-verification-2026-09-29).
+- The production (remote) database was only **read** (account/role/scope listing, latency probe). Nothing was written, no password was changed, no migration was run.
+
+### Accounts (verified in the database before use)
+| Account | Role | Scope |
+|---|---|---|
+| admin@rajasthanracquetball.com | super-admin | Global (federation-wide) |
+| state.rajasthan@rajasthanracquetball.com | state-admin | Rajasthan |
+| state.gujarat@rajasthanracquetball.com | state-admin | Gujarat |
+| district.jaipur@rajasthanracquetball.com | district-admin | Rajasthan / Jaipur (District Admin A) |
+| district.kota@rajasthanracquetball.com | district-admin | Rajasthan / Kota (District Admin B) |
+| district.ahmedabad@rajasthanracquetball.com | district-admin | Gujarat / Ahmedabad |
+| tournaments@…, content@… | tournament-manager, content-manager | Global (federation-wide, as seeded) |
+
+### Results
+| Area | Result | What was proven |
+|---|---|---|
+| Player scope | PASS | Registration lands in the chosen district of the chosen state (client `stateId`/`districtId` ignored; a district outside the state → 400); approve/reject/resubmit isolated by district and state (404 out of scope, 403 member, 401 anonymous); resubmission owner-only and REJECTED-only; approved players cannot be renamed through resubmission; list pages scoped; `?district=` cannot widen a scope |
+| Coach scope | PASS | Same rules for coach registration, approval, rejection and resubmission |
+| Requests | PASS | All 8 types via API and the portal form; validation (missing value, cross-state district change, duplicate pending, short reason, unknown type); auto-apply for contact/address/district change, record-only for the rest; cross-scope approve/reject → 404; an approved district change hands the member to the new district's admin |
+| Certificates | PASS | Generation rights: district own district, state own state, Super everywhere; members and tournament managers 403; tournament certificates only for COMPLETED tournaments and registered players; state officials snapshotted on registration certificates |
+| Signatories | PASS | Create forced to own scope; cross-scope edit/delete 404; deactivated signatories cannot be assigned; delete removes unused signatories and deactivates assigned ones; different signatories per tournament |
+| Historical snapshot | PASS | After renaming/re-designating signatories, changing the member's account name, deleting the signatory and moving the player to another district: verification, Verify & Preview and the stored PDF (byte-identical) still show the original data |
+| Verification | PASS | By certificate number, QR value and member ID; demo RRA-2025-PLR001 / RRA-2025-CCH001; public `/verify` and `/account/verify` (Verify & Preview) render in a browser; no storage path exposed; PDF served only to owner / in-scope admins (404 others, 401 anonymous) |
+| Tournaments | PASS | Ownership forced to the creator's district; state-level tournaments; cross-scope edit/category/settings/generation → 404; registration only while REGISTRATION_OPEN inside the registration window (DRAFT, REGISTRATION_CLOSED, IN_PROGRESS, COMPLETED, CANCELLED, before start, after deadline → 400); DRAFT and CANCELLED hidden publicly; Super filters (state, district, statewide, status, name, date) do not affect authorization; a State Admin cannot widen scope with `?state=` |
+| Equipment | PASS | GET/PUT on `/api/admin/equipment` → 405; invalid input → 400 (no 500); stock, price, activate/deactivate; inactive or out-of-stock items cannot be bought; delete archives items that have orders |
+| Orders | PASS | Order carries buyer, state, district, item, quantity, unit price and total; ₹500 → ₹700 price change leaves existing orders at ₹500; mixed-district carts refused; admin order lists and status changes scoped; My Equipment / My Orders show only the member's own |
+| IDOR | PASS | Every cross-scope GET / PATCH / DELETE / approve / reject / certificate generation / file download tested → 404 |
+| Super Admin | PASS | Manages signatories, videos, gallery, districts, equipment and requests in every state |
+| Security | PASS after fixes | CSRF (missing/forged → 403), rate limits, headers, audit entries, path traversal; defects below |
+| Performance | PASS | Pool and permission cache behave as designed (see below) |
+
+### Defects found and fixed
+| Defect | Root cause | Fix | Retest |
+|---|---|---|---|
+| A request body that is not valid JSON returned **HTTP 500** on every JSON API (found on `POST /api/admin/equipment`) | `request.json()` throws `SyntaxError`, which was not mapped | `withApiHandler` turns body-parse failures into 400 `BAD_REQUEST` "Request body must be valid JSON" | 400 on equipment, signatories, purchase, empty body |
+| Real 500s were logged only as warnings, **without the exception**, and **never sent to Sentry** | The handler checked `isOperational` after `fromUnknownError()` had wrapped the exception in an operational `AppError.internal()` | Decide on the thrown error; any 5xx is logged at error level with the original exception and reported | Verified in the server log |
+| No per-account limit on password guessing; rate-limit IP taken from the client-controllable left-most `X-Forwarded-For` | Only the global 120/min/IP limit applied to sign-in | Credentials sign-in limited to 10 attempts / 15 min per account + client IP; client IP prefers Netlify's `x-nf-client-connection-ip` | 11th attempt refused even with the right password; other IP unaffected |
+| Role permission edits also waited out the 60 s permission cache | Cache not cleared on edit | `invalidatePermissionsCache(roleId)` after a role edit | Revocation effective at the next session refresh (60 s) |
+| `npm run lint` failed (5 errors) | Old unescaped apostrophe, empty interfaces, a variable named `module` | Fixed | 0 errors (118 warnings remain) |
+
+### Findings not fixed — need owner action or a decision
+| # | Finding | Severity | Recommended action |
+|---|---|---|---|
+| 1 | Remote database: the **17 privileged accounts** use the default passwords documented in the seed and README (checked read-only 2026-09-29) | **Critical** | Change every privileged password now (the audit made no production writes) |
+| 2 | Tournament Manager and Content Manager are seeded **federation-wide** (all states) | Medium | Confirm, or scope them |
+| 3 | Self-hosted (Docker) deployment: rate limits trust `X-Forwarded-For` unless the proxy overwrites it | Medium | Configure the proxy to overwrite the header |
+| 4 | The seed is idempotent (run twice, no duplicates), but it **re-creates** demo rows an admin deleted (placeholder equipment item, gallery items, demo players/coaches/certificates) | Low | Do not re-run the seed against production after cleanup, or remove demo rows from the seed |
+| 5 | Admins cannot mark an order PAID (server-side payment verification required) but can mark an unpaid order COMPLETED; My Equipment lists PAID and COMPLETED orders | NEEDS BUSINESS DECISION (Phase J) | Decide whether COMPLETED requires payment |
+| 6 | Coach certificates: no issuing route; coach verification shows the fixed legacy signer pair (not a snapshot) | Known (§9 item 5) | — |
+| 7 | The on-screen certificate preview shows a decorative QR; the real QR is only in the PDF (encodes `APP_URL/verify?qrCode=…`, verified to resolve) | Low | — |
+| 8 | The portal request form finds the member's state by district **name**; if two states share a district name, the first state's list is offered (the server still enforces same-state) | Low | — |
+| 9 | Gallery and videos have no state/district owner; only global roles can manage them | By design | — |
+| 10 | Login throttle, rate limits and the permission cache are per server instance unless Upstash is configured; with several instances a role's old permissions can survive up to ~2 minutes | Low | Configure Upstash for multi-instance deployments |
+
+### Performance & database
+- **Pool:** one `pg.Pool` per server process (singleton on `globalThis`; max 20, idle 30 s, connect timeout 10 s, keep-alive). 1 200 requests at 400-way concurrency: peak exactly 20 connections, no growth across rounds, no 5xx; idle connections released after ~30 s.
+- **Permission cache:** keyed by role id only (permissions are role data, not user data); 60 s TTL per instance. User-specific data (active flag, role assignment, state, district) is never cached — it is re-read on every session refresh. Measured: removing a permission took effect after 60 s; deactivating a user after 61 s.
+- **Remote database (read-only probe):** Neon, AWS **us-east-2**, pooled endpoint, `sslmode=require`, PostgreSQL 18.6. From the audit machine: first connection ≈ 3.8 s, `select 1` median 283 ms (max 960 ms). In production the latency that matters is between the app's server functions and the database; the functions' region (Netlify site settings) was not checked by this audit. If they do not run in or near us-east-2, every sequential query pays a cross-region round trip. **No migration was performed; moving the database needs explicit approval.**
+- `pg` warns that `sslmode=require` will get weaker libpq semantics in its next major version; set `sslmode=verify-full` explicitly before upgrading `pg`.
+
+### Not tested
+Google and e-mail-OTP sign-in (no provider keys locally), e-mail delivery (no `RESEND_API_KEY` locally — contact messages are stored with `emailSent=false`), the Upstash limiter, multi-instance behaviour (reasoned from code), the production database beyond read-only queries, mobile layouts.

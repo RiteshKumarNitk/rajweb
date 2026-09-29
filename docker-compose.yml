@@ -1,5 +1,11 @@
 version: "3.8"
 
+# Local / self-hosting template. Ports are bound to 127.0.0.1: publish the app
+# only through a reverse proxy on this host that OVERWRITES X-Forwarded-For
+# (nginx: proxy_set_header X-Forwarded-For $remote_addr;) — the rate limiters
+# key on it. Secrets and URLs come from the environment (e.g. an untracked
+# .env next to this file); nothing secret is committed here.
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -10,7 +16,7 @@ services:
       POSTGRES_PASSWORD: rra_password
       POSTGRES_DB: rra_db
     ports:
-      - "5434:5432"
+      - "127.0.0.1:5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -26,14 +32,13 @@ services:
     container_name: rra-app
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       DATABASE_URL: postgresql://rra:rra_password@postgres:5432/rra_db?schema=public
-      NEXTAUTH_URL: http://localhost:3000
-      NEXTAUTH_SECRET: change-this-in-production
-      JWT_SECRET: change-this-in-production
-      JWT_REFRESH_SECRET: change-this-in-production
-      APP_URL: http://localhost:3000
+      # Required: without AUTH_SECRET sign-in fails closed (no placeholder secret).
+      AUTH_SECRET: ${AUTH_SECRET:-}
+      NEXTAUTH_URL: ${APP_URL:-http://localhost:3000}
+      APP_URL: ${APP_URL:-http://localhost:3000}
       STORAGE_TYPE: local
       STORAGE_LOCAL_PATH: /app/uploads
       STORAGE_PUBLIC_URL: /uploads

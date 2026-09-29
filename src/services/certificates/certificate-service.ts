@@ -7,6 +7,7 @@ import { createPdfDocument } from "@/services/certificates/pdfkit-fonts";
 import { loadCertificateImage } from "@/services/certificates/certificate-images";
 import { createModuleLogger } from "@/core/logger";
 import { siteConfig } from "@/shared/config/site";
+import { certificateVerificationUrl } from "@/modules/verify/verification-url";
 
 const log = createModuleLogger("certificates");
 
@@ -124,7 +125,7 @@ async function generatePDF(content: CertificateContent, qrDataUrl: string): Prom
 /** Renders + stores the PDF; returns its storage path, or null (logged) on failure. */
 async function renderAndStore(content: CertificateContent, qrCode: string): Promise<string | null> {
   try {
-    const qrDataUrl = await QRCode.toDataURL(`${process.env.APP_URL}/verify?qrCode=${qrCode}`, { width: 200 });
+    const qrDataUrl = await QRCode.toDataURL(certificateVerificationUrl(qrCode), { width: 200 });
     const pdfBuffer = await generatePDF(content, qrDataUrl);
     return await getStorage().upload(pdfBuffer, `${content.certificateNumber}.pdf`, "certificates");
   } catch (err) {

@@ -361,14 +361,14 @@ Capacity counts `PENDING` and `APPROVED` registrations; there is no status that 
 | Layer | Mechanism | Where |
 |---|---|---|
 | Transport/headers | CSP (dev allows `unsafe-eval`), HSTS 2y preload, X-Frame-Options DENY, nosniff, X-XSS-Protection, Referrer-Policy, Permissions-Policy, `X-Request-Id` | `middleware.ts`; `next.config.ts` also sets headers; `poweredByHeader: false` |
-| Rate limiting | Global 120/min/IP on `/api/*`; 20/min/IP on `/login*`; per-route module limits | `middleware.ts`, `withApiHandler`, `rate-limit.ts` (Upstash sliding window or in-memory fixed window) |
+| Rate limiting | Global 120/min/IP on `/api/*`; 20/min/IP on `/login*`; per-route module limits; credentials sign-in 10 attempts / 15 min per account + client IP. Client IP = `x-nf-client-connection-ip` (set by Netlify) → left-most `X-Forwarded-For` → `x-real-ip`; behind any other proxy the proxy must **overwrite** `X-Forwarded-For`, otherwise clients can choose their own rate-limit key | `middleware.ts`, `withApiHandler`, `auth.ts`, `request-context.ts`, `rate-limit.ts` (Upstash sliding window or in-memory fixed window) |
 | CSRF | Double-submit: `GET /api/csrf` sets httpOnly `csrf_token` (SameSite=Strict, 8 h) and returns it; client echoes `x-csrf-token`; compared on POST/PUT/PATCH/DELETE when `requireCsrf` | `security/csrf.ts` |
 | AuthN | JWT session; periodic DB refresh; inactive users dropped | §5 |
 | AuthZ | Permission + district checks server-side | §6 |
 | Input | Zod schemas; `sanitizeText` HTML-escapes and caps at 10 000 chars; email lower-cased; phone stripped to digits/`+-()` | `security/sanitize.ts` |
 | Mass assignment | Explicit field mapping in services; profile PATCH schema excludes id/userId/email | routes |
 | Secrets | bcrypt (12 rounds seed passwords, 10 rounds OTP) | seed, otp-service |
-| Errors | Production hides internal messages; request id in every response | `app-error.ts` |
+| Errors | Production hides internal messages; request id in every response; a body that is not valid JSON → 400; any 5xx is logged at error level with the original exception and sent to Sentry (4xx are warnings) | `app-error.ts`, `with-api-handler.ts` |
 | File serving | `/api/files/*`: session required; rejects `..`, backslash and NUL; local paths resolved and confined to the storage root; file served only if a certificate/membership record references that exact path and the caller owns it or has the module read permission in district (else 404); `Cache-Control: private, no-store` | `api/files/[...path]` |
 
 Known gaps: see Project Status §9 (items 12–16).
@@ -401,14 +401,14 @@ Known gaps: see Project Status §9 (items 12–16).
 ## 12. Performance Architecture
 
 - **Caching:** `getPublishedTournaments()` / `getPublicTournamentBySlug()` use `unstable_cache` (60 s, tag `public-tournaments`); slug lookup also wrapped in React `cache()` for per-request dedupe. `revalidatePublicTournaments()` = `revalidateTag("public-tournaments", {expire: 0})` + `revalidatePath` for list and `[slug]`.
-- **Auth:** JWT refresh throttled to 60 s; `getSession`/`getCurrentUser` React-`cache`d.
+- **Auth:** JWT refresh throttled to 60 s; `getSession`/`getCurrentUser` React-`cache`d. On refresh the user row (active flag, role, state, district, federation-wide) is always read from the database; only the role's permission list is cached — per role id, 60 s, per server instance (`role-permissions.server.ts`). A role edit clears that instance's entry; other instances expire it within 60 s. Refreshed claims are persisted only when a route handler rewrites the session cookie (Server Components cannot), so once a token is older than 60 s, server renders re-read the database until the browser's `/api/auth/session` poll rewrites the cookie. Measured: permission revocation and user deactivation took effect after 60–61 s.
 - **Middleware:** early return for public paths.
 - **Queries:** `select` projection on public/list queries, `_count` for counts, `Promise.all` for parallel reads, `take` caps on lists.
-- **Prisma client:** singleton on `globalThis`, lazy proxy (build doesn't need `DATABASE_URL`).
+- **Prisma client:** singleton on `globalThis`, lazy proxy (build doesn't need `DATABASE_URL`). One `pg.Pool` per server process, also on `globalThis`: max 20 connections, idle timeout 30 s, connect timeout 10 s, TCP keep-alive. Measured 2026-09-29 (production build, local Postgres): 1 200 requests at 400-way concurrency → peak exactly 20 connections, no growth across rounds, no 5xx; idle connections released after ~30 s.
 - **Static assets:** `next/image` AVIF/WebP; Netlify immutable caching for `/_next/static/*` and `/images/*`; HTML `s-maxage=86400, stale-while-revalidate=604800` at the CDN (dynamic routes set their own headers).
 - **Bundle:** `optimizePackageImports` for lucide; `.server.ts` split.
 
-No benchmark data is stored in the repository.
+No benchmark data is stored in the repository. Measurements from the 2026-09-29 audit (pool, session refresh, remote database latency) are in [Project Status §16](RRA-PROJECT-STATUS.md#16-full-hierarchy-verification-audit-2026-09-29).
 
 ---
 

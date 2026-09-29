@@ -1,6 +1,7 @@
 import prisma from "@/infrastructure/database/prisma";
 import { AppError } from "@/core/errors/app-error";
 import { createModuleLogger } from "@/core/logger";
+import { certificateVerificationUrl } from "./verification-url";
 
 const log = createModuleLogger("verify");
 
@@ -277,6 +278,7 @@ const shortDate = (d: Date) => d.toLocaleDateString("en-IN", { day: "numeric", m
  */
 function formatPlayerCert(cert: {
   certificateNumber: string;
+  qrCode?: string | null;
   issuedAt: Date;
   expiresAt: Date | null;
   tournamentId?: string | null;
@@ -326,6 +328,7 @@ function formatPlayerCert(cert: {
     issuedAt: cert.issuedAt,
     expiresAt: cert.expiresAt,
     playerId: cert.player.playerId,
+    ...(cert.qrCode ? { verificationUrl: certificateVerificationUrl(cert.qrCode) } : {}),
     ...(signatoryList ? { signatoryList } : {}),
     // Legacy pair: shown only for certificates issued before signatory snapshots.
     signatories: OFFICIAL_SIGNATORIES,
@@ -334,6 +337,7 @@ function formatPlayerCert(cert: {
 
 function formatCoachCert(cert: {
   certificateNumber: string;
+  qrCode?: string | null;
   issuedAt: Date;
   expiresAt: Date | null;
   coach: { name: string; coachId: string; district: { name: string } };
@@ -354,6 +358,7 @@ function formatCoachCert(cert: {
     issuedAt: cert.issuedAt,
     expiresAt: cert.expiresAt,
     coachId: cert.coach.coachId,
+    ...(cert.qrCode ? { verificationUrl: certificateVerificationUrl(cert.qrCode) } : {}),
     signatories: OFFICIAL_SIGNATORIES,
   };
 }

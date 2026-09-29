@@ -263,12 +263,29 @@ export async function adminUpdateOrderStatus(orderId: string, status: (typeof AD
   if (!existing) throw AppError.notFound("Order not found");
   if (existing.status === status) return existing;
 
-  // Cancelling a pending order releases stock; fulfilling requires payment first.
-  if (status === "CANCELLED" && existing.status === "PENDING_PAYMENT") {
-    return cancelPendingOrder(orderId, adminId, true);
+  // `status` is the fulfilment lifecycle; `paymentStatus` records payment and
+  // only verifyAndMarkPaid() sets it. Allowed admin moves:
+  //   PENDING_PAYMENT → CANCELLED (releases stock)
+  //   PAID ⇄ COMPLETED (fulfilled / undo) — both require a verified payment
+  // Cancelled orders are final (their stock is already released), nothing
+  // returns to PENDING_PAYMENT, and paid orders cannot be cancelled until a
+  // refund flow exists (Phase J).
+  if (existing.status === "CANCELLED") {
+    throw AppError.conflict("Cancelled orders cannot be reopened.");
   }
-  if (status === "PAID" && existing.paymentStatus !== "PAID") {
-    throw AppError.badRequest("Order payment must be verified server-side before it can be marked paid.");
+  if (status === "CANCELLED") {
+    if (existing.status === "PENDING_PAYMENT") return cancelPendingOrder(orderId, adminId, true);
+    throw AppError.conflict("Paid orders cannot be cancelled — refunds are not supported yet.");
+  }
+  if (status === "PENDING_PAYMENT") {
+    throw AppError.conflict("An order cannot be moved back to pending payment.");
+  }
+  if (existing.paymentStatus !== "PAID") {
+    throw AppError.badRequest(
+      status === "PAID"
+        ? "Order payment must be verified server-side before it can be marked paid."
+        : "Order payment must be verified before the order can be completed."
+    );
   }
 
   const updated = await prisma.equipmentPurchaseOrder.update({

@@ -503,6 +503,29 @@ The previous entry referenced RRA-PROJECT-STATUS.md §14 and RRA-TESTING.md §17
 
 ---
 
+## Full Hierarchy Verification Audit — 2026-09-29
+
+### Summary
+End-to-end re-verification of the Super Admin → State → District → member → request → tournament → certificate → equipment chain on a disposable database and a production build: 326 HTTP/database, 12 browser and 15 performance/session checks, all passing after the fixes below. Production database only read. Report: [RRA-PROJECT-STATUS.md §16](RRA-PROJECT-STATUS.md#16-full-hierarchy-verification-audit-2026-09-29); matrix: [RRA-TESTING.md §19](RRA-TESTING.md#19-full-hierarchy-verification-2026-09-29).
+
+### Bug Fixes
+- A request body that is not valid JSON returned HTTP 500 on every JSON API → now 400 `BAD_REQUEST` (`with-api-handler.ts`).
+- Unexpected 500s were logged as warnings without the exception and never sent to Sentry → logged at error level with the original exception and reported.
+- Role permission edits now clear the permission cache for that role (`api/admin/roles/[id]`).
+- `npm run lint` errors fixed (0 errors; warnings unchanged).
+
+### Security Changes
+- Credentials sign-in limited to 10 attempts per account + client IP per 15 minutes (`auth.ts`).
+- Client IP for rate limiting prefers Netlify's `x-nf-client-connection-ip` over the client-controllable left-most `X-Forwarded-For` (`request-context.ts`, `middleware.ts`).
+
+### Database Changes
+None.
+
+### Known Limitations
+Default passwords on the remote database's privileged accounts (critical — change them), federation-wide seed roles, seed re-creating deleted demo rows, order COMPLETED without payment, per-instance caches — see Project Status §16.
+
+---
+
 ## Upcoming (not started)
 
 Phases J–U are PLANNED — see [RRA-PROJECT-STATUS.md §10](RRA-PROJECT-STATUS.md#10-remaining-roadmap). Add an entry here using the template below when each lands:
