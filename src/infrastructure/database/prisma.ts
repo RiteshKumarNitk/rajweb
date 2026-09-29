@@ -4,16 +4,29 @@ import { Pool } from "pg";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
+  pool: Pool | undefined;
 };
 
-function createPrismaClient(): PrismaClient {
-  const connectionString = process.env.DATABASE_URL;
-
-  if (!connectionString) {
-    throw new Error("DATABASE_URL environment variable is not set");
+function getPool(): Pool {
+  if (!globalForPrisma.pool) {
+    const connectionString = process.env.DATABASE_URL;
+    if (!connectionString) {
+      throw new Error("DATABASE_URL environment variable is not set");
+    }
+    globalForPrisma.pool = new Pool({
+      connectionString,
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10000,
+    });
   }
+  return globalForPrisma.pool;
+}
 
-  const pool = new Pool({ connectionString });
+function createPrismaClient(): PrismaClient {
+  const pool = getPool();
   const adapter = new PrismaPg(pool);
 
   return new PrismaClient({

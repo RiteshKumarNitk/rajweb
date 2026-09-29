@@ -1,6 +1,9 @@
 import prisma from "@/infrastructure/database/prisma";
 import type { PermissionSlug } from "@/security/rbac/permissions";
 
+const permissionsCache = new Map<string, { permissions: PermissionSlug[]; expiresAt: number }>();
+const CACHE_TTL_MS = 60_000; // 1 minute in-memory cache
+
 /**
  * The single runtime source of truth for what a role can do — reads the
  * RolePermission table, so permissions assigned to a role via /admin/roles
@@ -13,9 +16,25 @@ import type { PermissionSlug } from "@/security/rbac/permissions";
  * (auth.ts) should import this file.
  */
 export async function getPermissionsForRole(roleId: string): Promise<PermissionSlug[]> {
+  const cached = permissionsCache.get(roleId);
+  const now = Date.now();
+  if (cached && cached.expiresAt > now) {
+    return cached.permissions;
+  }
+
   const rolePermissions = await prisma.rolePermission.findMany({
     where: { roleId },
     select: { permission: { select: { slug: true } } },
   });
-  return rolePermissions.map((rp) => rp.permission.slug as PermissionSlug);
+  const permissions = rolePermissions.map((rp) => rp.permission.slug as PermissionSlug);
+  permissionsCache.set(roleId, { permissions, expiresAt: now + CACHE_TTL_MS });
+  return permissions;
+}
+
+export function invalidatePermissionsCache(roleId?: string) {
+  if (roleId) {
+    permissionsCache.delete(roleId);
+  } else {
+    permissionsCache.clear();
+  }
 }

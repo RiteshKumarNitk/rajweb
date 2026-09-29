@@ -11,7 +11,13 @@ import { OFFICIAL_SIGNATORIES } from "../src/modules/verify/verify.types";
 // refers to a specific state — further states are added via /admin/states.
 const FOUNDING_STATE = { name: "Rajasthan", slug: "rajasthan", code: "RJ" };
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
+  keepAlive: true,
+});
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
@@ -34,39 +40,49 @@ async function main() {
     )
   );
 
-  // Permissions
+  // Permissions (parallelized)
   const permissionEntries = Object.entries(PERMISSIONS).map(([key, slug]) => {
     const [module, action] = slug.split(":");
     return { key, slug, module, action };
   });
 
-  for (const perm of permissionEntries) {
-    await prisma.permission.upsert({
-      where: { slug: perm.slug },
-      update: {},
-      create: {
-        name: perm.key.replace(/_/g, " "),
-        slug: perm.slug,
-        module: perm.module,
-        action: perm.action,
-      },
-    });
-  }
+  await Promise.all(
+    permissionEntries.map((perm) =>
+      prisma.permission.upsert({
+        where: { slug: perm.slug },
+        update: {},
+        create: {
+          name: perm.key.replace(/_/g, " "),
+          slug: perm.slug,
+          module: perm.module,
+          action: perm.action,
+        },
+      })
+    )
+  );
 
-  // Role-Permission mappings
+  // Pre-load all permissions to avoid repetitive findUnique queries
+  const allPermissions = await prisma.permission.findMany({ select: { id: true, slug: true } });
+  const permMap = new Map(allPermissions.map((p) => [p.slug, p.id]));
+
+  // Role-Permission mappings (parallelized)
+  const rolePermPromises: Promise<unknown>[] = [];
   for (const role of roles) {
     const perms = ROLE_PERMISSIONS[role.slug as keyof typeof ROLE_PERMISSIONS] ?? [];
     for (const permSlug of perms) {
-      const permission = await prisma.permission.findUnique({ where: { slug: permSlug } });
-      if (permission) {
-        await prisma.rolePermission.upsert({
-          where: { roleId_permissionId: { roleId: role.id, permissionId: permission.id } },
-          update: {},
-          create: { roleId: role.id, permissionId: permission.id },
-        });
+      const permissionId = permMap.get(permSlug);
+      if (permissionId) {
+        rolePermPromises.push(
+          prisma.rolePermission.upsert({
+            where: { roleId_permissionId: { roleId: role.id, permissionId } },
+            update: {},
+            create: { roleId: role.id, permissionId },
+          })
+        );
       }
     }
   }
+  await Promise.all(rolePermPromises);
 
   // States & districts
   const foundingState = await prisma.state.upsert({
@@ -76,9 +92,7 @@ async function main() {
   });
 
   // Backfill (idempotent): districts created before states existed all came
-  // from this same list, so they belong to the founding state. Only rows with
-  // no state yet are touched — nothing is ever moved between states, and any
-  // other unassigned district stays unassigned (visible to Super Admin only).
+  // from this same list, so they belong to the founding state.
   const backfilledDistricts = await prisma.district.updateMany({
     where: { stateId: null, name: { in: [...rajasthanDistricts] } },
     data: { stateId: foundingState.id },
@@ -87,10 +101,7 @@ async function main() {
     console.log(`Backfilled ${backfilledDistricts.count} districts -> ${foundingState.name}`);
   }
 
-  // Certificate signatories (idempotent): the founding state's officials who
-  // were previously hard-coded for certificate display become state-level
-  // signatories, so new certificates are signed from data. Only created while
-  // the founding state has no state-level signatory at all.
+  // Certificate signatories (idempotent):
   const existingStateSigners = await prisma.certificateSignatory.count({
     where: { stateId: foundingState.id, districtId: null },
   });
@@ -112,52 +123,159 @@ async function main() {
     console.log(`Created ${officials.length} state-level certificate signatories for ${foundingState.name}`);
   }
 
-  for (const [index, name] of rajasthanDistricts.entries()) {
-    const slug = name.toLowerCase().replace(/\s+/g, "-");
-    await prisma.district.upsert({
-      where: { stateId_slug: { stateId: foundingState.id, slug } },
-      update: {},
-      create: { name, slug, stateId: foundingState.id, sortOrder: index, isActive: true },
-    });
-  }
+  await Promise.all(
+    rajasthanDistricts.map((name, index) => {
+      const slug = name.toLowerCase().replace(/\s+/g, "-");
+      return prisma.district.upsert({
+        where: { stateId_slug: { stateId: foundingState.id, slug } },
+        update: {},
+        create: { name, slug, stateId: foundingState.id, sortOrder: index, isActive: true },
+      });
+    })
+  );
 
-  // Super Admin user
+  const jaipurDistrict = await prisma.district.findFirst({ where: { stateId: foundingState.id, slug: "jaipur" } });
+  const kotaDistrict = await prisma.district.findFirst({ where: { stateId: foundingState.id, slug: "kota" } });
+  const jodhpurDistrict = await prisma.district.findFirst({ where: { stateId: foundingState.id, slug: "jodhpur" } });
+  const udaipurDistrict = await prisma.district.findFirst({ where: { stateId: foundingState.id, slug: "udaipur" } });
+
+  // Pre-fetch roles
   const superAdminRole = await prisma.role.findUnique({ where: { slug: ROLES.SUPER_ADMIN } });
+  const stateAdminRole = await prisma.role.findUnique({ where: { slug: ROLES.STATE_ADMIN } });
+  const districtAdminRole = await prisma.role.findUnique({ where: { slug: ROLES.DISTRICT_ADMIN } });
+  const tournamentManagerRole = await prisma.role.findUnique({ where: { slug: ROLES.TOURNAMENT_MANAGER } });
+  const contentManagerRole = await prisma.role.findUnique({ where: { slug: ROLES.CONTENT_MANAGER } });
+  const publicUserRole = await prisma.role.findUnique({ where: { slug: ROLES.PUBLIC_USER } });
+
+  // 1. Super Admin user (Federation-Wide / GLOBAL)
   if (superAdminRole) {
-    const passwordHash = await hash("Admin@123", 12);
+    const passwordHash = await hash("Admin@123", 10);
     await prisma.user.upsert({
       where: { email: "admin@rajasthanracquetball.com" },
-      update: {},
+      update: { roleId: superAdminRole.id, isFederationWide: true },
       create: {
         email: "admin@rajasthanracquetball.com",
         passwordHash,
         name: "Super Admin",
         roleId: superAdminRole.id,
+        isFederationWide: true,
         isActive: true,
         authProvider: "CREDENTIALS",
       },
     });
   }
 
-  // District Admin user (Jaipur)
-  const districtAdminRole = await prisma.role.findUnique({ where: { slug: ROLES.DISTRICT_ADMIN } });
-  const jaipurDistrict = await prisma.district.findFirst({ where: { slug: "jaipur" } });
-  if (districtAdminRole && jaipurDistrict) {
-    const passwordHash = await hash("District@123", 12);
+  // 2. Rajasthan State Admin (STATE Scope)
+  if (stateAdminRole) {
+    const stateAdminHash = await hash("State@123", 10);
     await prisma.user.upsert({
-      where: { email: "district.jaipur@rajasthanracquetball.com" },
-      update: { districtId: jaipurDistrict.id },
+      where: { email: "state.rajasthan@rajasthanracquetball.com" },
+      update: { stateId: foundingState.id, districtId: null, roleId: stateAdminRole.id },
       create: {
-        email: "district.jaipur@rajasthanracquetball.com",
-        passwordHash,
-        name: "Jaipur District Admin",
-        roleId: districtAdminRole.id,
-        districtId: jaipurDistrict.id,
+        email: "state.rajasthan@rajasthanracquetball.com",
+        passwordHash: stateAdminHash,
+        name: "Rajasthan State Admin",
+        roleId: stateAdminRole.id,
+        stateId: foundingState.id,
+        districtId: null,
         isActive: true,
         authProvider: "CREDENTIALS",
       },
     });
   }
+
+  // 3. District Admins (DISTRICT Scope: Jaipur & Kota)
+  if (districtAdminRole) {
+    const districtAdminHash = await hash("District@123", 10);
+
+    // Jaipur District Admin
+    if (jaipurDistrict) {
+      await prisma.user.upsert({
+        where: { email: "district.jaipur@rajasthanracquetball.com" },
+        update: { stateId: foundingState.id, districtId: jaipurDistrict.id, roleId: districtAdminRole.id },
+        create: {
+          email: "district.jaipur@rajasthanracquetball.com",
+          passwordHash: districtAdminHash,
+          name: "Jaipur District Admin",
+          roleId: districtAdminRole.id,
+          stateId: foundingState.id,
+          districtId: jaipurDistrict.id,
+          isActive: true,
+          authProvider: "CREDENTIALS",
+        },
+      });
+    }
+
+    // Kota District Admin
+    if (kotaDistrict) {
+      await prisma.user.upsert({
+        where: { email: "district.kota@rajasthanracquetball.com" },
+        update: { stateId: foundingState.id, districtId: kotaDistrict.id, roleId: districtAdminRole.id },
+        create: {
+          email: "district.kota@rajasthanracquetball.com",
+          passwordHash: districtAdminHash,
+          name: "Kota District Admin",
+          roleId: districtAdminRole.id,
+          stateId: foundingState.id,
+          districtId: kotaDistrict.id,
+          isActive: true,
+          authProvider: "CREDENTIALS",
+        },
+      });
+    }
+  }
+
+  // 4. Managers & Public User for Testing
+  if (tournamentManagerRole) {
+    const tourMgrHash = await hash("Tournament@123", 10);
+    await prisma.user.upsert({
+      where: { email: "tournaments@rajasthanracquetball.com" },
+      update: { roleId: tournamentManagerRole.id },
+      create: {
+        email: "tournaments@rajasthanracquetball.com",
+        passwordHash: tourMgrHash,
+        name: "Tournament Manager",
+        roleId: tournamentManagerRole.id,
+        isFederationWide: true,
+        isActive: true,
+        authProvider: "CREDENTIALS",
+      },
+    });
+  }
+
+  if (contentManagerRole) {
+    const contentMgrHash = await hash("Content@123", 10);
+    await prisma.user.upsert({
+      where: { email: "content@rajasthanracquetball.com" },
+      update: { roleId: contentManagerRole.id },
+      create: {
+        email: "content@rajasthanracquetball.com",
+        passwordHash: contentMgrHash,
+        name: "Content Manager",
+        roleId: contentManagerRole.id,
+        isFederationWide: true,
+        isActive: true,
+        authProvider: "CREDENTIALS",
+      },
+    });
+  }
+
+  if (publicUserRole) {
+    const playerUserHash = await hash("Player@123", 10);
+    await prisma.user.upsert({
+      where: { email: "player.test@example.com" },
+      update: { roleId: publicUserRole.id },
+      create: {
+        email: "player.test@example.com",
+        passwordHash: playerUserHash,
+        name: "Rahul Sharma (Player)",
+        roleId: publicUserRole.id,
+        isActive: true,
+        authProvider: "CREDENTIALS",
+      },
+    });
+  }
+
 
   // Executive Committee
   const executives = [
@@ -225,13 +343,15 @@ async function main() {
     },
   ];
 
-  for (const news of newsItems) {
-    await prisma.news.upsert({
-      where: { slug: news.slug },
-      update: {},
-      create: news,
-    });
-  }
+  await Promise.all(
+    newsItems.map((news) =>
+      prisma.news.upsert({
+        where: { slug: news.slug },
+        update: {},
+        create: news,
+      })
+    )
+  );
 
   // Sample Tournaments
   if (jaipurDistrict) {
@@ -296,18 +416,17 @@ async function main() {
     },
   ];
 
-  for (const video of videos) {
-    await prisma.video.upsert({
-      where: { slug: video.slug },
-      update: {},
-      create: video,
-    });
-  }
+  await Promise.all(
+    videos.map((video) =>
+      prisma.video.upsert({
+        where: { slug: video.slug },
+        update: {},
+        create: video,
+      })
+    )
+  );
 
-  // Gallery items — migrates the static siteImages.gallery list into the DB so
-  // admins can manage it (title/category/image/order preserved exactly; driveUrl
-  // left null — no Drive URLs are invented). Public page order = sortOrder asc,
-  // matching the static array order. Idempotent on slug.
+  // Gallery items — migrates the static siteImages.gallery list into the DB
   const staticGalleryItems = [
     { title: "State Championship Poster", src: "/images/rra/poster-state-championship-2026.jpg", category: "Tournament" },
     { title: "National Championship Award", src: "/images/rra/award-national-championship.jpg", category: "Events" },
@@ -325,30 +444,30 @@ async function main() {
     { title: "RRA Affiliations", src: "/images/RRA.jpeg", category: "Leadership" },
   ];
 
-  for (const [index, item] of staticGalleryItems.entries()) {
-    const slug = `gallery-${item.title
-      .toLowerCase()
-      .replace(/[^\w\s-]/g, "")
-      .replace(/[\s_-]+/g, "-")
-      .replace(/^-+|-+$/g, "")}`;
-    await prisma.gallery.upsert({
-      where: { slug },
-      update: {},
-      create: {
-        title: item.title,
-        slug,
-        category: item.category,
-        imageUrl: item.src,
-        sortOrder: index,
-        isPublished: true,
-        publishedAt: new Date(),
-      },
-    });
-  }
+  await Promise.all(
+    staticGalleryItems.map((item, index) => {
+      const slug = `gallery-${item.title
+        .toLowerCase()
+        .replace(/[^\w\s-]/g, "")
+        .replace(/[\s_-]+/g, "-")
+        .replace(/^-+|-+$/g, "")}`;
+      return prisma.gallery.upsert({
+        where: { slug },
+        update: {},
+        create: {
+          title: item.title,
+          slug,
+          category: item.category,
+          imageUrl: item.src,
+          sortOrder: index,
+          isPublished: true,
+          publishedAt: new Date(),
+        },
+      });
+    })
+  );
 
-  // Equipment catalog demo item — admins add the real inventory via
-  // /admin/equipment; this placeholder keeps the public shop non-empty on
-  // fresh installs. Idempotent on slug.
+  // Equipment catalog demo item
   await prisma.equipmentItem.upsert({
     where: { slug: "demo-equipment-placeholder" },
     update: {},
@@ -370,8 +489,6 @@ async function main() {
     { key: "site_name", value: "Rajasthan Racquetball Association", group: "general" },
     { key: "contact_email", value: "rajasthanracquetball@gmail.com", group: "contact" },
     { key: "contact_phone", value: "+91 99289 62982", group: "contact" },
-    // Membership pricing — new vs renewal, per approved amounts. Read by
-    // src/modules/account/membership-pricing.ts, not hardcoded in components.
     { key: "membership_fee_club_new", value: "51000", type: "number", group: "membership" },
     { key: "membership_fee_club_renewal", value: "21000", type: "number", group: "membership" },
     { key: "membership_fee_school_new", value: "31000", type: "number", group: "membership" },
@@ -380,23 +497,21 @@ async function main() {
     { key: "membership_fee_academy_renewal", value: "5100", type: "number", group: "membership" },
   ];
 
-  // Superseded by the new_/renewal_ split above — remove the old single-value keys.
   await prisma.setting.deleteMany({
     where: { key: { in: ["membership_fee_club", "membership_fee_school", "membership_fee_academy"] } },
   });
 
-  for (const setting of settings) {
-    await prisma.setting.upsert({
-      where: { key: setting.key },
-      update: { value: setting.value },
-      create: setting,
-    });
-  }
+  await Promise.all(
+    settings.map((setting) =>
+      prisma.setting.upsert({
+        where: { key: setting.key },
+        update: { value: setting.value },
+        create: setting,
+      })
+    )
+  );
 
   // ─── Sample QA / demo records (fixed IDs for testing) ─────────
-  const jodhpurDistrict = await prisma.district.findFirst({ where: { slug: "jodhpur" } });
-  const udaipurDistrict = await prisma.district.findFirst({ where: { slug: "udaipur" } });
-
   if (jaipurDistrict) {
     const approvedPlayer = await prisma.player.upsert({
       where: { playerId: "PLR-TEST-001" },
@@ -524,11 +639,30 @@ async function main() {
   }
   if (backfilledTournaments > 0) console.log(`Backfilled state on ${backfilledTournaments} tournaments`);
 
-  console.log("Seed completed successfully!");
-  console.log("Admin login: admin@rajasthanracquetball.com / Admin@123");
-  console.log("District admin: district.jaipur@rajasthanracquetball.com / District@123");
-  console.log("Verify player cert: RRA-2025-PLR001  |  QR: QR-RRA-2025-PLR001");
-  console.log("Verify coach cert:  RRA-2025-CCH001  |  QR: QR-RRA-2025-CCH001");
+  console.log("\n========================================================");
+  console.log("             SEED COMPLETED SUCCESSFULLY!                ");
+  console.log("========================================================");
+  console.log("\n--- SUPER ADMIN (GLOBAL / FEDERATION) ---");
+  console.log("Email:    admin@rajasthanracquetball.com");
+  console.log("Password: Admin@123");
+  console.log("Role:     super-admin (Full System Access)");
+
+  console.log("\n--- STATE ADMIN ACCOUNT (STATE SCOPE) ---");
+  console.log("State (Rajasthan): state.rajasthan@rajasthanracquetball.com / State@123");
+
+  console.log("\n--- DISTRICT ADMIN ACCOUNTS (DISTRICT SCOPE) ---");
+  console.log("1. Jaipur District: district.jaipur@rajasthanracquetball.com / District@123");
+  console.log("2. Kota District:   district.kota@rajasthanracquetball.com   / District@123");
+
+  console.log("\n--- MODULE MANAGERS & TEST USER ---");
+  console.log("Tournament Manager: tournaments@rajasthanracquetball.com     / Tournament@123");
+  console.log("Content Manager:    content@rajasthanracquetball.com        / Content@123");
+  console.log("Test Player User:   player.test@example.com                 / Player@123");
+
+  console.log("\n--- CERTIFICATE VERIFICATION DEMO ---");
+  console.log("Player Cert: RRA-2025-PLR001  |  QR: QR-RRA-2025-PLR001");
+  console.log("Coach Cert:  RRA-2025-CCH001  |  QR: QR-RRA-2025-CCH001");
+  console.log("========================================================\n");
 }
 
 main()
@@ -538,4 +672,5 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
+    await pool.end();
   });
