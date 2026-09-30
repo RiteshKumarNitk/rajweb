@@ -143,7 +143,7 @@ Uniform envelopes (`src/core/api/api-response.ts`):
 | Registration | `modules/tournaments/registration.service.ts` | locked registration transaction |
 | Public tournaments | `modules/tournaments/public-tournaments.ts` | cached reads + revalidation |
 | Verify | `modules/verify/verify.service.ts` | certificate lookup |
-| Certificates | `services/certificates/certificate-service.ts` | PDF + QR + storage + record |
+| Certificates | `services/certificates/certificate-service.ts` | PDF + QR + storage + record. The QR payload comes from `modules/verify/verification-url.ts` (`{APP_URL}/verify?qrCode=…`) and is the same one the on-screen certificate renders as a real QR |
 | Audit | `services/audit/audit-service.ts` | `createAuditLog()` |
 | OTP / Email | `services/email/otp-service.ts`, `email-service.ts` | OTP generate/verify, Resend send |
 
@@ -163,7 +163,7 @@ Business IDs come from `generateId(prefix)` = `PREFIX-<Date.now() base36>-<4 ran
 - **Account linking rule:** an email owned by a `CREDENTIALS` user can never be taken over by Google/OTP (conflict → refused).
 - **JWT callback:** on sign-in, and whenever `authCheckedAt` is older than 60 s, reloads `id, name, isActive, districtId, stateId (a district user's state is taken from the district), isFederationWide, role.slug` and the role's permission slugs from `RolePermission`. Inactive/missing user → `token.isActive = false` → `getCurrentUser()` returns null. On first sign-in: updates `lastLoginAt` and writes `LOGIN` audit (failures swallowed).
 - **Session callback** copies those fields to `session.user` (typed in `src/types/next-auth.d.ts`).
-- **Pages:** `signIn` and `error` pages are `/account/login`. Admins use `/login` (credentials form with demo "Quick login" buttons for the seeded accounts).
+- **Pages:** `signIn` and `error` pages are `/account/login`. Admins use `/login` (credentials form). In `next dev` only, `/login` also lists every active admin account that has a known credential as one-click "Quick login" buttons: credentials come from the file named by `RRA_QUICK_LOGIN_FILE` (lines `role | email | password`, kept outside the repository), or the seed accounts when the database is local. The server signs in (`app/login/actions.ts`); passwords never reach the browser, and production builds render no buttons. `?callbackUrl=` is honoured only for same-site paths.
 - **Middleware session detection** tries `__Secure-authjs.session-token`, `authjs.session-token`, and legacy `next-auth.*` cookie names (fix for a redirect loop, commit `d4c7ee8`).
 - **Ownership:** account APIs never accept a user id; they use `requireAuth().id`. Resubmit routes compare `record.userId === session.id` and return 404 otherwise (avoids confirming existence).
 
@@ -217,6 +217,8 @@ Authorization = **permission** (what) × **scope** (whose data). Scope is derive
 | `DISTRICT` | `User.districtId` set (state = the district's state) | Only that district |
 | `NONE` | scoped user with neither | Nothing (sentinel filter matches zero rows) |
 
+Scope belongs to the **user**, not the role: any role (including Tournament Manager and Content Manager) is global, state- or district-scoped depending on the account's `isFederationWide` / `stateId` / `districtId`, which only a Super Admin can change. The seeded `tournaments@…` and `content@…` accounts are federation-wide by design. Gallery and videos have no state/district owner, so content roles manage them globally.
+
 - **Query builders** (always server-side, spread into Prisma `where`): `districtOwnedWhere` (Player, Coach, memberships — `{district: {stateId}}` / `{districtId}`), `districtWhere` (District), `stateWhere` (State), `tournamentWhere` (`{stateId}` / `{districtId}`), `requestWhere` (via Player/Coach), `userWhere` (staff users).
 - **Record assertions:** `assertInScope(user, {districtId, stateId}, message)` throws **404** (not 403) for out-of-scope records, so another state's IDs are indistinguishable from missing ones (IDOR protection). Used by every admin action route (players, coaches, memberships, requests, tournaments, categories, districts) and by `/api/files`.
 - **Pages:** `requireAdminScope(permission)` returns `{ user, scope }`; list/detail pages query with the where-builders.
@@ -228,7 +230,7 @@ Authorization = **permission** (what) × **scope** (whose data). Scope is derive
 - **Player certificates** use `playerCertificateWhere(scope)`: a tournament certificate follows its tournament, a registration certificate follows the player's district.
 - **Assigning an owner** (equipment item, signatory) goes through `resolveOwnership()` (`security/rbac/ownership.server.ts`): DISTRICT users are forced to their district, STATE users to their state (optionally a district inside it), GLOBAL may pick any or central. Tournaments use the equivalent `resolveTournamentOwnership()`.
 
-New permissions reach existing databases only through `npm run db:seed` (idempotent upserts). Runtime checks read `RolePermission`, so a missing permission row means only Super Admin passes.
+New permissions reach existing databases only through `npm run db:seed` (idempotent upserts). The seed never changes an existing password, and it only **creates** its demo accounts (well-known passwords) when `DATABASE_URL` points at `localhost`/`127.0.0.1` or `SEED_DEMO_ACCOUNTS=true` — elsewhere existing accounts still get their role/scope updates, missing ones are skipped. Other demo rows (sample players/coaches/certificates, gallery items, the placeholder equipment item) are upserted, so re-running the seed restores any of them that were deleted. Runtime checks read `RolePermission`, so a missing permission row means only Super Admin passes.
 
 ---
 
@@ -361,7 +363,7 @@ Capacity counts `PENDING` and `APPROVED` registrations; there is no status that 
 | Layer | Mechanism | Where |
 |---|---|---|
 | Transport/headers | CSP (dev allows `unsafe-eval`), HSTS 2y preload, X-Frame-Options DENY, nosniff, X-XSS-Protection, Referrer-Policy, Permissions-Policy, `X-Request-Id` | `middleware.ts`; `next.config.ts` also sets headers; `poweredByHeader: false` |
-| Rate limiting | Global 120/min/IP on `/api/*`; 20/min/IP on `/login*`; per-route module limits; credentials sign-in 10 attempts / 15 min per account + client IP. Client IP = `x-nf-client-connection-ip` (set by Netlify) → left-most `X-Forwarded-For` → `x-real-ip`; behind any other proxy the proxy must **overwrite** `X-Forwarded-For`, otherwise clients can choose their own rate-limit key | `middleware.ts`, `withApiHandler`, `auth.ts`, `request-context.ts`, `rate-limit.ts` (Upstash sliding window or in-memory fixed window) |
+| Rate limiting | Global 120/min/IP on `/api/*`; 20/min/IP on `/login*`; per-route module limits; credentials sign-in 10 attempts / 15 min per account + client IP, and 30 / 15 min per account from all IPs (a ceiling that forged forwarded-IP headers cannot raise). Client IP = `x-nf-client-connection-ip` (set by Netlify) → left-most `X-Forwarded-For` → `x-real-ip`; behind any other proxy the proxy must **overwrite** `X-Forwarded-For`, otherwise clients can choose their own rate-limit key | `middleware.ts`, `withApiHandler`, `auth.ts`, `request-context.ts`, `rate-limit.ts` (Upstash sliding window or in-memory fixed window) |
 | CSRF | Double-submit: `GET /api/csrf` sets httpOnly `csrf_token` (SameSite=Strict, 8 h) and returns it; client echoes `x-csrf-token`; compared on POST/PUT/PATCH/DELETE when `requireCsrf` | `security/csrf.ts` |
 | AuthN | JWT session; periodic DB refresh; inactive users dropped | §5 |
 | AuthZ | Permission + district checks server-side | §6 |

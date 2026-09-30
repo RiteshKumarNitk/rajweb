@@ -67,12 +67,18 @@ All created by `npm run db:seed` (idempotent upserts; re-run to restore).
 
 ### 2.1 Login accounts
 
-| Role | Email | Password | Login at | Scope |
-|---|---|---|---|---|
-| Super Admin | `admin@rajasthanracquetball.com` | `Admin@123` | `/login` | Everything |
-| District Admin (Jaipur) | `district.jaipur@rajasthanracquetball.com` | `District@123` | `/login` | Jaipur only |
+**Local development databases only.** These seed passwords are not valid on production — production accounts have unique passwords held outside the repository (Project Status §17) — and the seed no longer creates these accounts on a non-local database.
 
-`/login` has one-click "Quick login" buttons for both. There is **no seeded public (member) account** — member testing requires a Google account or a working Resend setup for OTP. Other roles (federation-admin, tournament-manager, content-manager) exist but have no seeded user; create one by signing in a new user and using `/admin/users → assign role`.
+| Role | Email | Password | Scope |
+|---|---|---|---|
+| Super Admin | `admin@rajasthanracquetball.com` | `Admin@123` | Everything |
+| State Admin | `state.rajasthan@rajasthanracquetball.com` | `State@123` | Rajasthan |
+| District Admin | `district.jaipur@rajasthanracquetball.com` / `district.kota@rajasthanracquetball.com` | `District@123` | Jaipur / Kota |
+| Tournament Manager | `tournaments@rajasthanracquetball.com` | `Tournament@123` | All states |
+| Content Manager | `content@rajasthanracquetball.com` | `Content@123` | All states |
+| Member | `player.test@example.com` | `Player@123` | Own records |
+
+All sign in at `/login`. In `next dev`, `/login` shows one-click "Quick login" buttons for every admin account above (or, with `RRA_QUICK_LOGIN_FILE` set, for every account in that private file — see Architecture §5).
 
 ### 2.2 Seeded records
 
@@ -580,3 +586,16 @@ Run on a **disposable** database against a production build (`next build --webpa
 **Performance / session checks (15):** peak pool connections ≤ 20 under load with no growth across bursts and release after idle; custom role with `players:read` sees its state's players; permission removal effective within 60 s, re-grant and user scope change effective at the next refresh; deactivated user gets 401 within the refresh window.
 
 **How to repeat:** use a throw-away database, never production. Create a second state and district with one State Admin and one District Admin, register players/coaches from member accounts in two districts of the first state and in the second state, then walk the groups above with two District Admins of the same state (cross-district), a State Admin of each state (cross-state) and the Super Admin.
+
+## 20. Release Hardening Verification (2026-09-30)
+
+Same throw-away setup as §19 plus two members (`tm.jaipur`, `tm.gujarat`) that the Super Admin turns into Tournament Managers scoped to Jaipur and to Gujarat through `/api/admin/users`.
+
+| Group | Result | Expected behaviour verified |
+|---|---|---|
+| Full hierarchy suite (§19 groups, updated) | 360/360 | Everything in §19, plus: manager scoping (district/state managers 404 outside scope, 400 for another state's district, 403 on player approval, State Admin cannot change a manager's scope, federation-wide manager global, Content Manager 403 on tournaments/players); orders (unpaid → COMPLETED 400, paid → COMPLETED 200, COMPLETED → PAID 200, paid → CANCELLED 409, → PENDING_PAYMENT 409, cancelled → COMPLETED/PENDING_PAYMENT 409, stock unchanged by refused moves, My Equipment lists only paid + completed orders); `verificationUrl` equals the PDF QR payload for player and coach certificates; per-account login ceiling holds across 31 different forwarded IPs; production `/login` has no quick login and `.next/static` contains no seed password |
+| Browser (production build) | 15/15 | §19 browser checks plus the on-screen QR on `/verify` and Verify & Preview decoded to the same pixels as a QR generated for the PDF payload |
+| Pool / session | 15/15 | As §19 (revocation 60 s, deactivation 62 s) |
+| Error reporting | 6/6 | App pointed at a missing database with `SENTRY_DSN` aimed at a local capture endpoint: HTTP 500 with the message hidden, error-level log with the original exception, a Sentry exception event received; a 4xx produced no event |
+| Seed guard | 10/10 | Non-local database: 7 demo accounts skipped, no users created, roles/states still seeded; `SEED_DEMO_ACCOUNTS=true` creates them; re-seed keeps a changed password, restores a changed scope flag, does not re-create a deleted demo account, creates no duplicates; a local database re-creates it |
+| Quick login (`next dev`, real browser) | 18/18 (10 from a clean browser including the wrong-password and account-list checks, 8 switching accounts while signed in) | Buttons list every admin account in the credentials file with role and scope, members excluded, no password in the page; each button signs in and lands on `/admin` with that account's scope; switching accounts while signed in lands on the new account; a wrong stored password shows an error and stays on `/login` |

@@ -355,7 +355,7 @@ Not implemented: registration approval/rejection by admins, withdrawal/cancellat
 | `/admin/media/gallery` | `media:read` | **Gallery management** — add/edit/delete items, set each item's optional Google Drive URL, activate/deactivate, change sort order (writes need `media:manage`) |
 | `/admin/contact` (+`/[id]`) | `contact:read` | **Contact inbox** — full message, status transitions (NEW/READ/REPLIED/CLOSED), delete (writes need `contact:manage`); form submissions email the configured Super Admin address |
 | `/admin/equipment` | `equipment:read` | **Equipment catalog management** — CRUD, price/stock/image/category, activate/deactivate, archive-on-delete when purchased (writes need `equipment:manage`) |
-| `/admin/equipment/orders` | `equipment:read` | **Equipment orders** — customer, items, amounts, payment status; fulfilment-status updates (`equipment:manage`) cannot mark unpaid orders paid |
+| `/admin/equipment/orders` | `equipment:read` | **Equipment orders** — customer, items, amounts, payment status; fulfilment-status updates (`equipment:manage`): pending → cancelled, paid ⇄ completed; unpaid orders can be neither paid nor completed here |
 | `/admin/media/videos` | `media:read` | **YouTube video management** — CRUD with server-side URL/ID validation, ordering, activate/deactivate (writes need `videos:manage`) |
 | `/admin/users` | `users:read` | List (≤ 200); activate/deactivate, assign role, assign/remove district, toggle federation-wide (`users:update`) |
 | `/admin/roles` | `roles:read` | Create custom roles and edit permissions of non-system roles (`roles:manage`) |
@@ -363,7 +363,7 @@ Not implemented: registration approval/rejection by admins, withdrawal/cancellat
 | `/admin/settings` | `settings:manage` | **Read-only** view of `Setting` rows |
 | `/admin/contact` (+`/[id]`) | `contact:read` | **Contact inbox** — list, full message, status transitions (NEW/READ/REPLIED/CLOSED), delete (writes need `contact:manage`) |
 | `/admin/equipment` | `equipment:read` | **Equipment catalog management** — CRUD, price/stock/image/category, activate/deactivate, archive-on-delete when purchased (writes need `equipment:manage`) |
-| `/admin/equipment/orders` | `equipment:read` | **Equipment orders** — customer, items, amounts, payment status; fulfilment-status updates (`equipment:manage`) cannot mark unpaid orders paid |
+| `/admin/equipment/orders` | `equipment:read` | **Equipment orders** — customer, items, amounts, payment status; fulfilment-status updates (`equipment:manage`): pending → cancelled, paid ⇄ completed; unpaid orders can be neither paid nor completed here |
 | `/admin/media/videos` | `media:read` | **YouTube video management** — CRUD with server-side URL/ID validation, ordering, activate/deactivate (writes need `videos:manage`) |
 
 Contact messages and donations are stored but have **no admin page**.
@@ -484,7 +484,7 @@ Technical / security:
 23. **Multi-state:** `EquipmentOrder.district` (public equipment enquiry form) is free text, so enquiry scoping matches district *names*; the enquiry form still offers the founding state's static district list.
 24. A district created before the hierarchy and not in the founding seed list stays **unassigned** (visible to Super Admin only, flagged on `/admin/states`) until a Super Admin sets its state.
 25. The admin application detail page for an out-of-scope record renders the not-found view with HTTP 200 (streamed response); no record data is included. APIs return a real 404.
-26. Findings of the 2026-09-29 verification audit that still need action — default passwords on the remote database, seed behaviour, order status rules, per-instance caches — are listed in §16.
+26. Findings of the 2026-09-29 verification audit and how each was resolved are in §16–§17; the remaining gaps are listed in §17.
 
 ---
 
@@ -751,6 +751,8 @@ The whole chain — Super Admin → State → District → players/coaches/membe
 | `npm run lint` failed (5 errors) | Old unescaped apostrophe, empty interfaces, a variable named `module` | Fixed | 0 errors (118 warnings remain) |
 
 ### Findings not fixed — need owner action or a decision
+
+> **Status update 2026-09-30:** items 1, 3, 4, 5 and 7 were resolved and item 2 was decided — see §17. The table below is the audit as recorded on 2026-09-29 (item 1 counted 17 accounts; it is 16 privileged accounts plus one demo member).
 | # | Finding | Severity | Recommended action |
 |---|---|---|---|
 | 1 | Remote database: the **17 privileged accounts** use the default passwords documented in the seed and README (checked read-only 2026-09-29) | **Critical** | Change every privileged password now (the audit made no production writes) |
@@ -772,3 +774,42 @@ The whole chain — Super Admin → State → District → players/coaches/membe
 
 ### Not tested
 Google and e-mail-OTP sign-in (no provider keys locally), e-mail delivery (no `RESEND_API_KEY` locally — contact messages are stored with `emailSent=false`), the Upstash limiter, multi-instance behaviour (reasoned from code), the production database beyond read-only queries, mobile layouts.
+
+## 17. Release Hardening (2026-09-30)
+
+### Production credentials
+- The production database had **16 privileged accounts** (1 Super Admin, 5 State Admins, 8 District Admins, 1 Tournament Manager, 1 Content Manager), all on seed-default passwords. Each now has a unique random password (22 characters, bcrypt cost 12). Only those 16 password hashes were changed — verified before the write (e-mail, role, active, still on a default) and after it (new password accepted, every seed default rejected, role unchanged, the 2 other users byte-identical). No schema change, no seed run, no other data touched.
+- The new credentials are in a private file in the owner's Windows profile, outside the repository and outside OneDrive, readable only by that Windows account. They are not in git, docs, `.env` or logs.
+- The demo member `player.test@example.com` still has its seed password — left unchanged by owner decision.
+- A password change does not end sessions already open: JWT sessions stay valid until they expire (≤ 30 minutes).
+
+### Decisions and fixes
+| Topic | Result |
+|---|---|
+| Tournament Manager / Content Manager scope | Scope is per user (see Architecture §6). The seeded accounts are federation-wide by design; a Super Admin can scope any manager to a state or district and this is enforced server-side (verified: district/state-scoped managers get 404 outside their scope, cannot place tournaments in another state, cannot approve players; only a Super Admin can change scope) |
+| Forged `X-Forwarded-For` vs the login limiter | Added a 30-per-15-minutes ceiling per account that no forwarded-IP header can raise (verified: 29 failures from 29 different forwarded IPs, the 30th attempt still signs in, the 31st from a new IP is refused). `docker-compose.yml` now publishes both ports on `127.0.0.1` only and documents that a reverse proxy must overwrite `X-Forwarded-For`. On Netlify the platform's `x-nf-client-connection-ip` is used first |
+| `docker-compose.yml` secrets | Removed the committed placeholder secrets (`change-this-in-production`); `AUTH_SECRET` and `APP_URL` come from the environment, and sign-in fails closed without a secret |
+| Seed | Still idempotent. It never changes an existing password and no longer **creates** demo-password accounts unless the database is local or `SEED_DEMO_ACCOUNTS=true` (verified on a throw-away database: 7 skipped, rotated password untouched, role/scope still updated, deleted demo account not re-created). Re-running it **does** restore deleted demo data rows (sample players/coaches/certificates, gallery items, placeholder equipment) |
+| Equipment order states | `status` is the fulfilment lifecycle; `paymentStatus` is the payment record, set only by server-side verification. COMPLETED ("fulfilled") now requires a verified payment, cancelled orders are final, nothing returns to pending payment, and paid orders cannot be cancelled until refunds exist. No payment provider exists yet, so no order can currently become PAID or COMPLETED and My Equipment stays empty until Phase J |
+| Certificate QR | The on-screen certificate now shows a real QR with exactly the PDF's payload (`{APP_URL}/verify?qrCode=…`, one helper for both); verified pixel-for-pixel against a QR generated for that payload. Sample records without a QR value show none |
+| Coach certificates | Not a current requirement — remains a roadmap gap (Phase Q): `issueCoachCertificate()` exists but no route or UI calls it |
+| `/login` | Quick-login buttons appear only in `next dev` and list every active admin account with a known credential (see Architecture §5); passwords stay on the server. A redundant nested `SessionProvider` was removed and the buttons wait for the page's session check, which fixes switching accounts while signed in. `callbackUrl` is restricted to same-site paths (it previously accepted absolute URLs — an open redirect after sign-in) |
+
+### Production configuration (values live in the Netlify site settings — not readable from the repository)
+Verified in the repository: no secrets in tracked files or in any of the 26 commits of history (only placeholders), `.env*` git-ignored, no authentication bypass, Netlify header rules do not apply to server-rendered/API responses. To confirm in Netlify: `AUTH_SECRET` set and strong; `APP_URL`/`NEXTAUTH_URL` = the public https domain (the certificate QR encodes `APP_URL`); `SENTRY_DSN` set (without it nothing is reported); `UPSTASH_REDIS_REST_URL`/`TOKEN` set (otherwise every limiter is per instance); `RESEND_*` and `GOOGLE_*` set; `STORAGE_TYPE` unset or `netlify`; `RRA_QUICK_LOGIN_FILE` and `SEED_DEMO_ACCOUNTS` **not** set.
+
+### Verification (2026-09-30)
+- `prisma validate`, `tsc --noEmit`, `npm run lint` (0 errors) and `next build --webpack` pass.
+- Throw-away database, production build: **360/360** HTTP/database checks (all earlier groups plus manager scoping, order transitions, QR payload, per-account login ceiling, production `/login` without quick login or seed passwords), **15/15** browser checks, **15/15** pool/session checks, **6/6** error-reporting checks (a real 500 is logged at error level and delivered to a local Sentry endpoint; 4xx are not), **10/10** seed checks.
+- Quick login in `next dev` (real browser): 18/18 (10 from a clean browser including the wrong-password and account-list checks, 8 switching accounts while signed in).
+
+### Remaining gaps
+| Gap | Current behaviour | Phase / decision |
+|---|---|---|
+| Online payment | No provider; orders stay PENDING_PAYMENT, so nothing can be marked paid or completed | Phase J |
+| Refunds / cancelling paid orders | Refused (409) | Phase J |
+| Coach certificate issuance, revocation, membership certificates | Not implemented | Phase Q |
+| Demo member `player.test@example.com` | Still on its seed password | Owner decision (kept) |
+| Per-instance limiters and permission cache | Without Upstash every instance counts separately; a role's old permissions can survive up to ~2 minutes across instances | Configure Upstash |
+| Per-account login ceiling | 30 bad attempts lock an account's password sign-in for 15 minutes | Accepted trade-off |
+| Request form district lists | State inferred from the district name (first match if two states share one); server still enforces same-state | Low |

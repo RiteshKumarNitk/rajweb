@@ -526,6 +526,37 @@ Default passwords on the remote database's privileged accounts (critical — cha
 
 ---
 
+## Release Hardening — 2026-09-30
+
+### Summary
+Production credential rotation, the decisions left open by the 2026-09-29 audit, and a development-only quick login for every admin account. Details: [RRA-PROJECT-STATUS.md §17](RRA-PROJECT-STATUS.md#17-release-hardening-2026-09-30); tests: [RRA-TESTING.md §20](RRA-TESTING.md#20-release-hardening-verification-2026-09-30).
+
+### Security Changes
+- The 16 privileged production accounts moved off their seed-default passwords (data change only; credentials kept outside the repository).
+- Credentials sign-in: added a 30-attempts-per-15-minutes ceiling per account that forged `X-Forwarded-For` values cannot raise.
+- `/login`: quick-login buttons and seed passwords removed from production builds; `callbackUrl` limited to same-site paths (open redirect fixed).
+- `docker-compose.yml`: ports bound to `127.0.0.1`, committed placeholder secrets removed.
+- Seed: never creates demo-password accounts on a non-local database unless `SEED_DEMO_ACCOUNTS=true`.
+
+### Bug Fixes
+- Equipment orders: an unpaid order could be marked COMPLETED and a cancelled order reopened → fulfilment now requires a verified payment, cancelled is final, no return to pending payment, paid orders cannot be cancelled until refunds exist.
+- On-screen certificate QR was decorative → real QR with the PDF's payload (shared `verification-url.ts`).
+- Switching accounts from `/login` while signed in could keep the old session (a concurrent session refresh re-issued the old cookie) → redundant nested `SessionProvider` removed; quick login waits for the session check and reloads the page.
+
+### UI Changes
+`/login` in `next dev`: Quick login lists every admin account (role and scope) from `RRA_QUICK_LOGIN_FILE` or the local seed accounts. Production `/login` shows only the sign-in form.
+
+### API Changes
+Public verify results add `verificationUrl`. `PATCH /api/admin/equipment/orders/{id}` enforces the order transitions (400/409).
+
+### Database Changes
+None (schema unchanged).
+
+### Known Limitations
+See Project Status §17 "Remaining gaps".
+
+---
+
 ## Upcoming (not started)
 
 Phases J–U are PLANNED — see [RRA-PROJECT-STATUS.md §10](RRA-PROJECT-STATUS.md#10-remaining-roadmap). Add an entry here using the template below when each lands:
