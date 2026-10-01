@@ -3,13 +3,14 @@ export function generateRequestId(): string {
 }
 
 /**
- * Client IP for rate limiting. The platform-set header comes first: the
- * left-most X-Forwarded-For entry can be supplied by the client itself when
- * the proxy appends rather than overwrites it.
+ * Client IP for rate limiting. Vercel (production) overwrites X-Forwarded-For
+ * with the real client IP. Netlify's own header is trusted only on Netlify —
+ * anywhere else a client could simply send it. Behind any other proxy, the
+ * proxy must overwrite X-Forwarded-For.
  */
 export function getClientIp(headers: Headers): string {
   return (
-    headers.get("x-nf-client-connection-ip") ||
+    (process.env.NETLIFY === "true" ? headers.get("x-nf-client-connection-ip") : null) ||
     headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     headers.get("x-real-ip") ||
     "unknown"

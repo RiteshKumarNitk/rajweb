@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { X } from "lucide-react";
+import { X, KeyRound, Copy } from "lucide-react";
 import { Button } from "@/shared/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Label } from "@/shared/components/ui/label";
+import { Input } from "@/shared/components/ui/input";
 import { apiFetch, handleApiFetch } from "@/lib/api-client";
 
 export type RoleOption = { id: string; name: string; slug: string };
@@ -23,6 +24,22 @@ export interface UserRowActionsProps {
   roles: RoleOption[];
   states: StateOption[];
   districts: DistrictOption[];
+  /** Super Admin viewing an e-mail + password account. */
+  canResetPassword?: boolean;
+}
+
+/** Strong random password generated in the browser (never sent anywhere but the reset call). */
+function generatePassword(): string {
+  const sets = ["ABCDEFGHJKLMNPQRSTUVWXYZ", "abcdefghijkmnopqrstuvwxyz", "23456789", "!#%+=?@^_-"];
+  const all = sets.join("");
+  const random = (n: number) => crypto.getRandomValues(new Uint32Array(1))[0] % n;
+  const chars = sets.map((set) => set[random(set.length)]);
+  while (chars.length < 20) chars.push(all[random(all.length)]);
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = random(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join("");
 }
 
 async function postAction(userId: string, action: string, body?: Record<string, unknown>) {
@@ -43,6 +60,7 @@ export function UserRowActions({
   roles,
   states,
   districts,
+  canResetPassword = false,
 }: UserRowActionsProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -53,6 +71,23 @@ export function UserRowActions({
   const [districtId, setDistrictId] = useState(currentDistrictId ?? "");
   const stateDistricts = districts.filter((d) => d.stateId === stateId);
   const [federationWide, setFederationWide] = useState(currentIsFederationWide);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [resetting, setResetting] = useState(false);
+
+  async function handleResetPassword() {
+    setResetting(true);
+    try {
+      await postAction(userId, "reset-password", { password: newPassword });
+      toast.success("Password reset. Share it with the account holder through a private channel.");
+      setNewPassword("");
+      setResetOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to reset password");
+    } finally {
+      setResetting(false);
+    }
+  }
 
   async function handleToggleActive() {
     setToggling(true);
@@ -105,6 +140,71 @@ export function UserRowActions({
       <Button variant="ghost" size="sm" disabled={toggling} onClick={handleToggleActive}>
         {isActive ? "Deactivate" : "Activate"}
       </Button>
+      {canResetPassword && (
+        <Button variant="ghost" size="sm" onClick={() => setResetOpen(true)}>
+          <KeyRound className="mr-1 h-3.5 w-3.5" /> Reset password
+        </Button>
+      )}
+
+      {resetOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Card className="w-full max-w-md">
+            <CardHeader className="flex flex-row items-start justify-between space-y-0">
+              <CardTitle>Reset Password</CardTitle>
+              <button
+                type="button"
+                onClick={() => {
+                  setNewPassword("");
+                  setResetOpen(false);
+                }}
+                className="rounded-md p-1 hover:bg-slate-100"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="new-password">New password</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="new-password"
+                    type="text"
+                    autoComplete="new-password"
+                    spellCheck={false}
+                    className="font-mono"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-11"
+                    disabled={!newPassword}
+                    onClick={() => navigator.clipboard.writeText(newPassword).then(() => toast.success("Copied"))}
+                    aria-label="Copy password"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-xs text-slate-500">
+                  At least 12 characters with upper- and lower-case letters, a digit and a symbol. It is shown only
+                  here — copy it before saving; it cannot be viewed again.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => setNewPassword(generatePassword())}>
+                  Generate strong password
+                </Button>
+                <Button onClick={handleResetPassword} disabled={resetting || newPassword.length < 12}>
+                  {resetting ? "Saving..." : "Set password"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">

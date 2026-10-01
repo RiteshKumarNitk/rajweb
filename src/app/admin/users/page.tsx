@@ -3,7 +3,7 @@ import { Input } from "@/shared/components/ui/input";
 import { Button } from "@/shared/components/ui/button";
 import { requireAdminScope } from "@/security/rbac/admin-scope";
 import { userWhere, type OrgScope } from "@/security/rbac/org-scope";
-import { PERMISSIONS, hasPermission } from "@/security/rbac/permissions";
+import { PERMISSIONS, ROLES, hasPermission } from "@/security/rbac/permissions";
 import { DataTable, ColumnDef } from "@/shared/components/ui/data-table";
 import { UserRowActions } from "./user-row-actions";
 import { Users, Shield, UserCheck, KeyRound, Filter, RefreshCw } from "lucide-react";
@@ -169,6 +169,7 @@ export default async function AdminUsersPage({
                 roles={roles.map((r) => ({ id: r.id, name: r.name, slug: r.slug }))}
                 states={states}
                 districts={districts.map((d) => ({ id: d.id, name: d.name, stateId: d.stateId }))}
+                canResetPassword={viewer.role === ROLES.SUPER_ADMIN && u.authProvider === "CREDENTIALS"}
               />
             ),
           } satisfies ColumnDef<UserWithRole>,

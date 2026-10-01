@@ -1,14 +1,31 @@
 import { z } from "zod";
+import { hash } from "bcryptjs";
 import prisma from "@/infrastructure/database/prisma";
 import { withApiHandler, jsonSuccess, AppError } from "@/core/api/with-api-handler";
 import { requirePermission } from "@/security/auth/session";
-import { PERMISSIONS } from "@/security/rbac/permissions";
+import { PERMISSIONS, ROLES } from "@/security/rbac/permissions";
+import { checkRateLimit } from "@/security/rate-limit";
 import { createAuditLog } from "@/services/audit/audit-service";
 import { getOrgScope, isInScope } from "@/security/rbac/org-scope";
 
 const assignRoleSchema = z.object({ roleId: z.string().min(1) });
 const assignDistrictSchema = z.object({ districtId: z.string().min(1) });
 const assignStateSchema = z.object({ stateId: z.string().min(1) });
+const resetPasswordSchema = z.object({
+  password: z
+    .string()
+    .min(12, "Use at least 12 characters")
+    .max(128)
+    .regex(/[a-z]/, "Add a lower-case letter")
+    .regex(/[A-Z]/, "Add an upper-case letter")
+    .regex(/[0-9]/, "Add a digit")
+    .regex(/[^A-Za-z0-9]/, "Add a symbol")
+    // The seed/demo passwords are published in the repository.
+    .refine(
+      (p) => !["admin@123", "state@123", "district@123", "tournament@123", "content@123", "player@123", "test@12345"].includes(p.toLowerCase()),
+      "This is a published demo password — choose another"
+    ),
+});
 
 // Actions that change *whose data* a user can see. Only GLOBAL admins may
 // perform them, so a scoped custom role holding users:update can never widen
@@ -23,6 +40,10 @@ export const POST = withApiHandler(
 
     if (!id || !action) {
       throw AppError.badRequest("User ID and action are required");
+    }
+
+    if (action === "reset-password" && actor.role !== ROLES.SUPER_ADMIN) {
+      throw AppError.forbidden("Only the Super Admin can reset passwords");
     }
 
     if (SCOPE_ACTIONS.has(action) && getOrgScope(actor).level !== "GLOBAL") {
@@ -158,6 +179,27 @@ export const POST = withApiHandler(
         details: { field: "isFederationWide", previousValue: target.isFederationWide, newValue: nextValue },
       });
       return jsonSuccess({ id, isFederationWide: nextValue }, requestId, "Updated");
+    }
+
+    if (action === "reset-password") {
+      // Google / e-mail-code accounts have no password; giving them one would
+      // silently add a second way to sign in.
+      if (target.authProvider !== "CREDENTIALS") {
+        throw AppError.badRequest("This account signs in with Google or an e-mail code and has no password to reset");
+      }
+      if (!(await checkRateLimit(`password-reset:${actor.id}`, 10, 15 * 60_000))) throw AppError.rateLimited();
+      const { password } = resetPasswordSchema.parse(await request.json());
+
+      await prisma.user.update({ where: { id }, data: { passwordHash: await hash(password, 12) } });
+      await createAuditLog({
+        userId: actor.id,
+        action: "UPDATE",
+        module: "users",
+        entityId: id,
+        details: { event: "PASSWORD_RESET", field: "password", email: target.email },
+      });
+      // The password is never echoed back.
+      return jsonSuccess({ id }, requestId, "Password reset");
     }
 
     throw AppError.badRequest("Invalid action");
