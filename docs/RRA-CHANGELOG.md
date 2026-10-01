@@ -557,6 +557,25 @@ See Project Status §17 "Remaining gaps".
 
 ---
 
+## Production Login Diagnosis — 2026-10-01
+
+### Summary
+The live "Invalid email or password" was the rotated credentials (seed passwords are rejected by design); the live site uses the intended Neon database and all four admin roles sign in correctly (35/35 live checks). Details: [RRA-PROJECT-STATUS.md §18](RRA-PROJECT-STATUS.md#18-production-login-diagnosis--credential-management-2026-10-01).
+
+### Features Added
+- Super Admin password reset in `/admin/users` (`POST /api/admin/users/{id}/reset-password`).
+
+### Security Changes
+- Rate-limit client IP no longer trusts Netlify's `x-nf-client-connection-ip` outside Netlify (production is on Vercel, where visitors could forge it).
+
+### Database Changes
+None. No production password was changed in this round.
+
+### Known Limitations
+Certificate PDFs cannot be stored on Vercel (no storage adapter for it). Docs that said production runs on Netlify are corrected.
+
+---
+
 ## Upcoming (not started)
 
 Phases J–U are PLANNED — see [RRA-PROJECT-STATUS.md §10](RRA-PROJECT-STATUS.md#10-remaining-roadmap). Add an entry here using the template below when each lands:

@@ -795,7 +795,9 @@ Google and e-mail-OTP sign-in (no provider keys locally), e-mail delivery (no `R
 | Coach certificates | Not a current requirement — remains a roadmap gap (Phase Q): `issueCoachCertificate()` exists but no route or UI calls it |
 | `/login` | Quick-login buttons appear only in `next dev` and list every active admin account with a known credential (see Architecture §5); passwords stay on the server. A redundant nested `SessionProvider` was removed and the buttons wait for the page's session check, which fixes switching accounts while signed in. `callbackUrl` is restricted to same-site paths (it previously accepted absolute URLs — an open redirect after sign-in) |
 
-### Production configuration (values live in the Netlify site settings — not readable from the repository)
+### Production configuration (values live in the hosting settings — not readable from the repository)
+
+> Correction 2026-10-01: production runs on **Vercel** (`https://rajweb-sage.vercel.app`), not Netlify — read "Netlify" below as the Vercel project settings. See §18.
 Verified in the repository: no secrets in tracked files or in any of the 26 commits of history (only placeholders), `.env*` git-ignored, no authentication bypass, Netlify header rules do not apply to server-rendered/API responses. To confirm in Netlify: `AUTH_SECRET` set and strong; `APP_URL`/`NEXTAUTH_URL` = the public https domain (the certificate QR encodes `APP_URL`); `SENTRY_DSN` set (without it nothing is reported); `UPSTASH_REDIS_REST_URL`/`TOKEN` set (otherwise every limiter is per instance); `RESEND_*` and `GOOGLE_*` set; `STORAGE_TYPE` unset or `netlify`; `RRA_QUICK_LOGIN_FILE` and `SEED_DEMO_ACCOUNTS` **not** set.
 
 ### Verification (2026-09-30)
@@ -813,3 +815,35 @@ Verified in the repository: no secrets in tracked files or in any of the 26 comm
 | Per-instance limiters and permission cache | Without Upstash every instance counts separately; a role's old permissions can survive up to ~2 minutes across instances | Configure Upstash |
 | Per-account login ceiling | 30 bad attempts lock an account's password sign-in for 15 minutes | Accepted trade-off |
 | Request form district lists | State inferred from the district name (first match if two states share one); server still enforces same-state | Low |
+
+## 18. Production Login Diagnosis & Credential Management (2026-10-01)
+
+Reported: `https://rajweb-sage.vercel.app/login` answered "Invalid email or password".
+
+### Diagnosis
+| Step | Result |
+|---|---|
+| Deployment | **Vercel** (`Server: Vercel`, Mumbai edge), latest code deployed |
+| Database used by the live site | **The Neon database in `.env`** (AWS us-east-2, database `neondb`) — proven: logging in on the live site updated `lastLoginAt` in that database |
+| Accounts `admin@`, `state.rajasthan@`, `district.jaipur@`, `district.kota@` | Exist once each (no case-insensitive duplicates; all e-mails normalised), active, correct role / state / district, e-mail + password accounts (no Google link), bcrypt hash present |
+| Cause | The passwords were rotated on 2026-09-29 (§17). The seed passwords (`Admin@123`, `State@123`, `District@123`) are rejected by design. Repeated failed attempts also count toward the 10-per-account-per-IP throttle, so for 15 minutes even the right password can be refused from that IP |
+| Fix needed in the database | **None** — no password was reset; the current credentials are in the owner's private credentials file |
+
+### Live verification (real HTTP sign-in, fresh cookie jar per account)
+35/35: each seed password rejected; all four accounts sign in, get a session with the right role and scope (Super Admin federation-wide; State Admin state only; District Admins district + state), see their dashboard ("All States", "State: Rajasthan", "District: Jaipur", "District: Kota"), see only their own players (Jaipur admin sees the Jaipur player but not the Jodhpur one; Kota admin sees neither), are redirected away from `/admin/roles` (the Super Admin gets the roles editor), log out, and sign in again. Anonymous `/admin` redirects to `/login`.
+
+### Environment (checked from outside, no secret values read)
+`DATABASE_URL` → the intended Neon database (above). Auth secret → sessions are issued and read. Auth URL → Google's `redirect_uri` is `https://rajweb-sage.vercel.app/api/auth/callback/google`. Google OAuth → client ID configured. `APP_URL` → `https://rajweb-sage.vercel.app` (certificate QR payload). Providers: credentials, google, email-otp. Security headers present. **Not verifiable without Vercel access:** `SENTRY_DSN`, `UPSTASH_*`, `RESEND_*`.
+
+### Changes
+- **Super Admin password reset** in `/admin/users` (`reset-password` action, API §13.1): Super Admin only, e-mail + password accounts only, strong password required (a "Generate strong password" button creates one in the browser), bcrypt hash, audit entry without the password, never returned or displayed afterwards. Verified 27/27 API checks and 9/9 in a browser on a throw-away database.
+- **Client IP on Vercel:** the rate-limit IP no longer trusts `x-nf-client-connection-ip` outside Netlify. On Vercel any visitor could send that header to dodge the per-IP sign-in throttle (the per-account ceiling still held). Verified: a forged header no longer escapes the throttle.
+
+### Production gaps found
+| Gap | Detail |
+|---|---|
+| Certificate PDFs on Vercel | Storage falls back to the local filesystem, which Vercel does not keep — certificates issued on the live site get no PDF (they still verify). Needs a storage service (e.g. Vercel Blob) |
+| Equipment shop | Production has one item (the central demo placeholder) and no district inventory yet; District Admins add theirs at `/admin/equipment`. "My Equipment" lists only paid/completed orders, and nothing can be paid until a payment provider exists (Phase J) |
+
+### Regression after these changes
+Production build, `tsc` and lint (0 errors) pass; 360/360 HTTP/database checks and 15/15 browser checks on a throw-away database.

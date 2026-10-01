@@ -363,7 +363,7 @@ Capacity counts `PENDING` and `APPROVED` registrations; there is no status that 
 | Layer | Mechanism | Where |
 |---|---|---|
 | Transport/headers | CSP (dev allows `unsafe-eval`), HSTS 2y preload, X-Frame-Options DENY, nosniff, X-XSS-Protection, Referrer-Policy, Permissions-Policy, `X-Request-Id` | `middleware.ts`; `next.config.ts` also sets headers; `poweredByHeader: false` |
-| Rate limiting | Global 120/min/IP on `/api/*`; 20/min/IP on `/login*`; per-route module limits; credentials sign-in 10 attempts / 15 min per account + client IP, and 30 / 15 min per account from all IPs (a ceiling that forged forwarded-IP headers cannot raise). Client IP = `x-nf-client-connection-ip` (set by Netlify) → left-most `X-Forwarded-For` → `x-real-ip`; behind any other proxy the proxy must **overwrite** `X-Forwarded-For`, otherwise clients can choose their own rate-limit key | `middleware.ts`, `withApiHandler`, `auth.ts`, `request-context.ts`, `rate-limit.ts` (Upstash sliding window or in-memory fixed window) |
+| Rate limiting | Global 120/min/IP on `/api/*`; 20/min/IP on `/login*`; per-route module limits; credentials sign-in 10 attempts / 15 min per account + client IP, and 30 / 15 min per account from all IPs (a ceiling that forged forwarded-IP headers cannot raise). Client IP = left-most `X-Forwarded-For` (production runs on **Vercel**, which overwrites it with the real client IP) → `x-real-ip`; Netlify's `x-nf-client-connection-ip` is used only when `NETLIFY=true` (anywhere else a client could send it). Behind any other proxy the proxy must **overwrite** `X-Forwarded-For`, otherwise clients can choose their own per-IP key — the per-account login ceiling still applies | `middleware.ts`, `withApiHandler`, `auth.ts`, `request-context.ts`, `rate-limit.ts` (Upstash sliding window or in-memory fixed window) |
 | CSRF | Double-submit: `GET /api/csrf` sets httpOnly `csrf_token` (SameSite=Strict, 8 h) and returns it; client echoes `x-csrf-token`; compared on POST/PUT/PATCH/DELETE when `requireCsrf` | `security/csrf.ts` |
 | AuthN | JWT session; periodic DB refresh; inactive users dropped | §5 |
 | AuthZ | Permission + district checks server-side | §6 |
@@ -422,6 +422,7 @@ No benchmark data is stored in the repository. Measurements from the 2026-09-29 
 | Local adapter — writes to `STORAGE_LOCAL_PATH` (default `./uploads`); URLs are `/api/files/<path>` (Pre-J; `STORAGE_PUBLIC_URL` no longer used) | IMPLEMENTED |
 | Netlify Blobs adapter — store `NETLIFY_BLOBS_STORE` (default `rra-uploads`), served through `/api/files/<path>` | IMPLEMENTED |
 | Selection: `STORAGE_TYPE`, else `netlify` when `NETLIFY=true`, else `local` | IMPLEMENTED |
+| Production on **Vercel**: no storage adapter fits — `local` writes to Vercel's read-only/temporary filesystem, so certificate PDFs cannot be stored there (the certificate is still created and verifies; the error is logged) | **GAP** — needs a storage service such as Vercel Blob |
 | What is stored: certificate PDFs (`certificates/<CERT>.pdf`) only | IMPLEMENTED |
 | User uploads (photos, ID proofs, documents) | NOT IMPLEMENTED |
 | Tournament posters | Not stored — external URL in `Tournament.banner` |

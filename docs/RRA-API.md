@@ -473,6 +473,7 @@ See 4.3 (`/api/admin/players/{id}/certificate`). No coach issuance and no revoca
 | `assign-district` | `{ districtId }` | sets `districtId` **and** `stateId` = the district's state (400 "District not found" / district without a state) | `{ id, districtId }` |
 | `remove-district` | — | `districtId = null` (state kept → State scope) | `{ id, districtId: null }` |
 | `toggle-federation-wide` | — | flips `isFederationWide` | `{ id, isFederationWide }` |
+| `reset-password` | `{ password }` | **Super Admin only** (403 for every other role, even with `users:update`). Only for e-mail + password accounts (400 for Google / e-mail-code accounts). Password: 12–128 characters with upper- and lower-case letters, a digit and a symbol, not a published demo password (400). Stored as a bcrypt hash; 10 resets per admin per 15 minutes; audit `PASSWORD_RESET` (no password recorded). Sessions already open stay valid until they expire (≤ 30 min) | `{ id }` — the password is never returned |
 
 - **Errors:** 400 invalid action; 404 user.
 - **Audit:** UPDATE `users` `{ field, previousValue, newValue }`.
