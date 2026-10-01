@@ -17,8 +17,8 @@ const imageRefSchema = z
   .trim()
   .max(500)
   .refine(
-    (v) => v.startsWith("/images/") || /^https?:\/\//i.test(v),
-    "Image must be a /images/... site path or an http(s) URL"
+    (v) => v.startsWith("/images/") || /^\/api\/media\/[a-z0-9]+$/i.test(v) || /^https?:\/\//i.test(v),
+    "Image must be an uploaded image, a /images/... site path or an http(s) URL"
   );
 
 // Update schemas are built from default-FREE fields: in Zod 4, `.partial()`
@@ -29,6 +29,8 @@ const equipmentFields = {
   description: z.string().trim().max(5000).nullable().optional(),
   shortDescription: z.string().trim().max(300).nullable().optional(),
   image: imageRefSchema.nullable().optional(),
+  sku: z.string().trim().max(60).nullable().optional(),
+  specifications: z.string().trim().max(3000).nullable().optional(),
   category: z.enum(EQUIPMENT_CATEGORIES),
   // Whole rupees, integer money — no floats.
   price: z.number().int().min(0).max(10000000),
@@ -78,6 +80,8 @@ export async function createEquipmentItem(input: EquipmentInput, owner: { stateI
       description: input.description ?? null,
       shortDescription: input.shortDescription ?? null,
       image: input.image ?? null,
+      sku: input.sku || null,
+      specifications: input.specifications || null,
       category: input.category,
       price: input.price,
       stockQuantity: input.stockQuantity,
@@ -98,6 +102,8 @@ export async function updateEquipmentItem(
     "description",
     "shortDescription",
     "image",
+    "sku",
+    "specifications",
     "category",
     "price",
     "stockQuantity",

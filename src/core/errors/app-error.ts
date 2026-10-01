@@ -79,6 +79,12 @@ export function fromUnknownError(error: unknown): AppError {
   // Prisma P2021 (table does not exist) / P2022 (column does not exist).
   // Duck-typed so this module never imports Prisma (it is client-importable).
   const prismaCode = (error as { code?: unknown } | null)?.code;
+  // P2002: unique constraint (e.g. a role or district name that already
+  // exists) — a client conflict, not a server fault.
+  if (prismaCode === "P2002") {
+    return AppError.conflict("A record with these details already exists.");
+  }
+
   if (prismaCode === "P2021" || prismaCode === "P2022") {
     const meta = (error as { meta?: { table?: string; modelName?: string; column?: string } }).meta;
     const target =

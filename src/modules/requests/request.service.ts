@@ -142,6 +142,12 @@ export async function approveRequest(requestId: string, adminId: string, adminRe
           if (request.coachId) {
             await tx.coach.update({ where: { id: request.coachId }, data: { districtId: request.requestedDistrictId } });
           }
+          // Keep the member's home district (equipment catalog / orders scope) in step.
+          const moved = await tx.district.findUnique({ where: { id: request.requestedDistrictId }, select: { stateId: true } });
+          await tx.userProfile.updateMany({
+            where: { userId: request.userId, districtId: { not: null } },
+            data: { districtId: request.requestedDistrictId, stateId: moved?.stateId ?? null },
+          });
         }
         break;
       }

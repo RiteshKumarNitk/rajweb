@@ -42,7 +42,8 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
     headers.set("x-csrf-token", await getCsrfToken());
   }
 
-  if (options.body && !headers.has("Content-Type")) {
+  // FormData sets its own multipart boundary.
+  if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 

@@ -19,8 +19,8 @@ export const PATCH = withApiHandler(
     if (!order) throw AppError.notFound("Order not found");
     assertInScope(user, order, "Order not found");
 
-    const { status } = adminOrderUpdateSchema.parse(await request.json());
-    const updated = await adminUpdateOrderStatus(id, status, user.id);
+    const input = adminOrderUpdateSchema.parse(await request.json());
+    const updated = await adminUpdateOrderStatus(id, input, user.id);
 
     return jsonSuccess(
       { id, status: updated.status, paymentStatus: updated.paymentStatus },

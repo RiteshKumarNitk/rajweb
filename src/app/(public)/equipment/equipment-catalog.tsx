@@ -2,12 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { X, Minus, Plus, ShoppingBag } from "lucide-react";
+import { X, ShoppingBag } from "lucide-react";
 import { Button } from "@/shared/components/ui/button";
 import { MediaImage } from "@/shared/components/ui/media-image";
 import { useSession } from "next-auth/react";
-import { apiFetch, handleApiFetch } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
 export interface CatalogItem {
@@ -55,36 +53,12 @@ function BuyPanel({
   onClose: () => void;
 }) {
   const router = useRouter();
-  const [quantity, setQuantity] = useState(1);
-  const [placing, setPlacing] = useState(false);
-  const maxQty = Math.min(item.stockQuantity, 10);
-
-  function handleSignInRedirect() {
-    router.push(`/account/login?callbackUrl=${encodeURIComponent(`/equipment?item=${item.slug}`)}`);
-  }
-
-  async function handlePlaceOrder() {
-    setPlacing(true);
-    try {
-      const res = await apiFetch("/api/equipment/purchase", {
-        method: "POST",
-        body: JSON.stringify({ items: [{ equipmentId: item.id, quantity }] }),
-      });
-      const { data, message } = await handleApiFetch<{ orderNumber: string; total: number }>(res);
-      toast.success(message ?? "Order placed");
-      router.push(`/account/orders?placed=${encodeURIComponent(data.orderNumber)}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to place order");
-    } finally {
-      setPlacing(false);
-    }
-  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-md rounded-lg bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-          <h2 className="text-base font-bold text-primary">Order Summary</h2>
+          <h2 className="text-base font-bold text-primary">{item.name}</h2>
           <button onClick={onClose} aria-label="Close" className="rounded p-1 text-slate-400 hover:bg-slate-100">
             <X className="h-4 w-4" />
           </button>
@@ -98,66 +72,20 @@ function BuyPanel({
               </div>
             ) : null}
             <div>
-              <p className="font-semibold text-primary">{item.name}</p>
-              <p className="text-xs uppercase tracking-wide text-secondary">
-                {CATEGORY_LABELS[item.category] ?? item.category}
-              </p>
+              <p className="text-xs uppercase tracking-wide text-secondary">{CATEGORY_LABELS[item.category] ?? item.category}</p>
               <p className="text-sm font-bold text-slate-800">{formatInr(item.price)}</p>
             </div>
           </div>
 
-          {authenticated ? (
-            <>
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-slate-600">Quantity</span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                    disabled={quantity <= 1 || placing}
-                    aria-label="Decrease quantity"
-                  >
-                    <Minus className="h-3.5 w-3.5" />
-                  </Button>
-                  <span className="w-8 text-center font-semibold">{quantity}</span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setQuantity((q) => Math.min(maxQty, q + 1))}
-                    disabled={quantity >= maxQty || placing}
-                    aria-label="Increase quantity"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between border-t border-slate-100 pt-3">
-                <span className="text-sm text-slate-600">Total</span>
-                <span className="text-lg font-extrabold text-primary">{formatInr(item.price * quantity)}</span>
-              </div>
-
-              <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
-                Online payment is coming soon. Your order will be reserved as{" "}
-                <strong>pending payment</strong> and RRA will contact you to complete the purchase.
-              </p>
-
-              <Button className="w-full" onClick={handlePlaceOrder} disabled={placing || maxQty < 1}>
-                <ShoppingBag className="mr-2 h-4 w-4" />
-                {placing ? "Placing order…" : "Place Order"}
-              </Button>
-            </>
-          ) : (
-            <div className="space-y-3">
-              <p className="text-sm text-slate-600">
-                Sign in to your RRA account to purchase equipment.
-              </p>
-              <Button className="w-full" onClick={handleSignInRedirect}>
-                Sign in to continue
-              </Button>
-            </div>
-          )}
+          <p className="text-sm text-slate-600">
+            {authenticated
+              ? "Checkout, delivery details and payment happen in your account’s Equipment Shop — it also lists your own district association’s equipment."
+              : "Sign in to buy. Your account’s Equipment Shop also lists your own district association’s equipment."}
+          </p>
+          <Button className="w-full" onClick={() => router.push(authenticated ? "/account/equipment" : "/account/login?callbackUrl=/account/equipment")}>
+            <ShoppingBag className="mr-2 h-4 w-4" />
+            {authenticated ? "Continue to Equipment Shop" : "Sign in to continue"}
+          </Button>
         </div>
       </div>
     </div>

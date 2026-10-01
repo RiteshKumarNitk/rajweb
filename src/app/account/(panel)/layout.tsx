@@ -4,12 +4,18 @@ import prisma from "@/infrastructure/database/prisma";
 import { PanelNavbar } from "./panel-navbar";
 import { getRegistrationLocations } from "@/modules/districts/registration-locations.server";
 import { RegistrationLocationsProvider } from "@/shared/components/forms/registration-locations-context";
+import { needsOnboarding } from "@/modules/account/member-home.server";
 
 export const dynamic = "force-dynamic";
 
 export default async function AccountPanelLayout({ children }: { children: React.ReactNode }) {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/account/login");
+
+  // New members (e.g. first Google sign-in) choose their State/District first.
+  // Not a security boundary — the APIs enforce the home district themselves.
+  const mustOnboard = await needsOnboarding(authUser).catch(() => false);
+  if (mustOnboard) redirect("/account/onboarding");
 
   let dbUser = null;
   try {

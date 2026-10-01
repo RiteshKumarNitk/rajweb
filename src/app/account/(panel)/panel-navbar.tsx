@@ -60,7 +60,7 @@ const navSections = [
     title: "Equipment",
     items: [
       { name: "My Orders", href: "/account/orders", icon: ShoppingBag },
-      { name: "My Equipment", href: "/account/equipment", icon: Package },
+      { name: "Equipment Shop", href: "/account/equipment", icon: Package },
     ],
   },
   {

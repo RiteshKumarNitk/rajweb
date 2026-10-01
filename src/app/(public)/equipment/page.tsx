@@ -24,7 +24,7 @@ export default async function EquipmentPage() {
       <PageHeader
         eyebrow="Shop"
         title="Equipment & Accessories"
-        description="Quality racquetball equipment from RRA. Browse the catalog and sign in to place an order — our team will confirm availability and payment."
+        description="Official RRA equipment available to everyone. Signed-in members also see — and can order — their own district association’s equipment in their account."
       />
       <PageContent>
         {items.length === 0 ? (

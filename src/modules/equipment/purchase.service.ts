@@ -3,28 +3,51 @@ import prisma from "@/infrastructure/database/prisma";
 import { AppError } from "@/core/errors/app-error";
 import { createAuditLog } from "@/services/audit/audit-service";
 import { createModuleLogger } from "@/core/logger";
+import { sanitizeText, sanitizePhone, sanitizeEmail } from "@/security/sanitize";
+import { getMemberHome } from "@/modules/account/member-home.server";
+import { memberEquipmentWhere } from "@/modules/equipment/catalog";
 
 const log = createModuleLogger("equipment-purchase");
 
 /**
- * Payment model: orders are created PENDING_PAYMENT with stock *reserved*
- * (atomic conditional decrement — can never go negative). Payment is verified
- * server-side before an order becomes PAID; the browser never confirms
- * payment. Pending orders that are never paid release their reservation when
- * cancelled (explicitly by the user/admin, or via the cancel endpoint) —
- * there is no permanent stock lock.
+ * Order model.
+ *  - `paymentStatus` (PENDING / PAID / FAILED / CANCELLED / REFUNDED) records
+ *    payment and is set to PAID only by verifyAndMarkPaid(), after the payment
+ *    provider's server-side verification.
+ *  - `status` is the fulfilment lifecycle: PENDING_PAYMENT → (verified
+ *    payment) → PLACED → CONFIRMED → PROCESSING → SHIPPED → DELIVERED, or
+ *    CANCELLED while unpaid. Legacy rows may hold PAID (= PLACED) or
+ *    COMPLETED (= DELIVERED).
+ *  - Stock is reserved when the order is created (atomic conditional
+ *    decrement, never negative) and released if an unpaid order is cancelled.
+ *  - Names, SKUs and unit prices are snapshotted: later product edits never
+ *    change an existing order.
  */
 
+const lineSchema = z.object({
+  equipmentId: z.string().min(1),
+  quantity: z.number().int().min(1).max(10),
+});
+
+export const deliverySchema = z.object({
+  name: z.string().trim().min(2, "Enter the recipient's name").max(100),
+  phone: z.string().trim().regex(/^[6-9]\d{9}$/, "Enter a valid 10-digit mobile number"),
+  email: z.string().trim().email().max(254).optional().or(z.literal("")),
+  address: z.string().trim().min(10, "Enter the full delivery address").max(300),
+  city: z.string().trim().min(2, "Enter the city").max(100),
+  pincode: z.string().trim().regex(/^\d{6}$/, "Enter a valid 6-digit pincode"),
+});
+
+/** Legacy endpoint body (/api/equipment/purchase): delivery details optional. */
 export const purchaseSchema = z.object({
-  items: z
-    .array(
-      z.object({
-        equipmentId: z.string().min(1),
-        quantity: z.number().int().min(1).max(10),
-      })
-    )
-    .min(1)
-    .max(10),
+  items: z.array(lineSchema).min(1).max(10),
+  delivery: deliverySchema.optional(),
+});
+
+/** Member checkout body (/api/account/equipment/orders): delivery details required. */
+export const checkoutSchema = z.object({
+  items: z.array(lineSchema).min(1).max(10),
+  delivery: deliverySchema,
 });
 
 export type PurchaseInput = z.infer<typeof purchaseSchema>;
@@ -37,60 +60,53 @@ function generateOrderNumber(): string {
 
 /**
  * Creates an order inside one transaction:
- *  - every item is re-read server-side (client never supplies price/name),
- *  - each item's stock is reserved with a conditional atomic decrement
- *    (stock >= quantity or the whole purchase fails — never negative),
- *  - name and unit price are snapshotted onto the order items,
- *  - totals are computed from those snapshots,
- *  - the order belongs to the inventory (state/district) that fulfils it —
- *    derived from the items, never from the client. One order = one
- *    inventory: items from different districts must be ordered separately.
+ *  - every item must be in the buyer's catalog (their district, their state's
+ *    store or the central store) — anything else is "not found", whatever
+ *    id the client sends,
+ *  - each item's stock is reserved with a conditional atomic decrement,
+ *  - name, SKU and unit price are snapshotted; totals come from the snapshots,
+ *  - the order belongs to the store (state/district) that fulfils it — one
+ *    order per store,
+ *  - buyer and delivery details are snapshotted from the session user, the
+ *    member's home State/District and the submitted delivery form.
  */
 export async function createPurchaseOrder(userId: string, input: PurchaseInput) {
-  // Merge duplicate lines for the same product.
   const merged = new Map<string, number>();
   for (const line of input.items) {
     merged.set(line.equipmentId, (merged.get(line.equipmentId) ?? 0) + line.quantity);
   }
 
+  const [home, buyer] = await Promise.all([
+    getMemberHome(userId),
+    prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true, phone: true, profile: { select: { address: true, city: true, pincode: true } } } }),
+  ]);
+  const visible = memberEquipmentWhere(home);
+  const delivery = input.delivery;
+
   const order = await prisma.$transaction(async (tx) => {
     let subtotal = 0;
     let owner: { stateId: string | null; districtId: string | null } | undefined;
-    const itemRows: {
-      equipmentId: string;
-      productNameSnapshot: string;
-      unitPriceSnapshot: number;
-      quantity: number;
-      lineTotal: number;
-    }[] = [];
+    const itemRows: { equipmentId: string; productNameSnapshot: string; skuSnapshot: string | null; unitPriceSnapshot: number; quantity: number; lineTotal: number }[] = [];
 
     for (const [equipmentId, quantity] of merged) {
-      // Conditional atomic reservation: only succeeds while stock is sufficient.
-      // updateMany returns the count — 0 means insufficient stock (or gone).
-      const reserved = await tx.equipmentItem.updateMany({
-        where: { id: equipmentId, isActive: true, stockQuantity: { gte: quantity } },
-        data: { stockQuantity: { decrement: quantity } },
-      });
-      if (reserved.count === 0) {
-        throw AppError.conflict(
-          "An item in your order is no longer available in the requested quantity."
-        );
-      }
-
-      const product = await tx.equipmentItem.findUnique({ where: { id: equipmentId } });
-      if (!product) {
-        // Should be unreachable (reservation just succeeded) — roll back.
-        throw AppError.notFound("Equipment item not found");
-      }
+      // Visibility first: another district's item is indistinguishable from a missing one.
+      const product = await tx.equipmentItem.findFirst({ where: { id: equipmentId, ...visible } });
+      if (!product) throw AppError.notFound("Equipment not found");
 
       const productOwner = { stateId: product.stateId, districtId: product.districtId };
       if (!owner) {
         owner = productOwner;
       } else if (owner.stateId !== productOwner.stateId || owner.districtId !== productOwner.districtId) {
-        // Rolls back every reservation made so far in this transaction.
-        throw AppError.validation(
-          "Items from different district stores must be ordered separately. Please place one order per store."
-        );
+        throw AppError.validation("Items from different stores must be ordered separately. Please place one order per store.");
+      }
+
+      // Conditional atomic reservation: only succeeds while stock is sufficient.
+      const reserved = await tx.equipmentItem.updateMany({
+        where: { id: equipmentId, isActive: true, stockQuantity: { gte: quantity } },
+        data: { stockQuantity: { decrement: quantity } },
+      });
+      if (reserved.count === 0) {
+        throw AppError.conflict("An item in your order is no longer available in the requested quantity.");
       }
 
       const lineTotal = product.price * quantity;
@@ -98,6 +114,7 @@ export async function createPurchaseOrder(userId: string, input: PurchaseInput) 
       itemRows.push({
         equipmentId,
         productNameSnapshot: product.name,
+        skuSnapshot: product.sku,
         unitPriceSnapshot: product.price,
         quantity,
         lineTotal,
@@ -112,9 +129,17 @@ export async function createPurchaseOrder(userId: string, input: PurchaseInput) 
         paymentStatus: "PENDING",
         subtotal,
         total: subtotal,
-        // Seller-scope snapshot: stays with the order even if the item moves later.
         stateId: owner?.stateId ?? null,
         districtId: owner?.districtId ?? null,
+        buyerName: sanitizeText(delivery?.name ?? buyer?.name ?? "Member"),
+        buyerEmail: delivery?.email ? sanitizeEmail(delivery.email) : buyer?.email ?? null,
+        buyerPhone: delivery?.phone ? sanitizePhone(delivery.phone) : buyer?.phone ?? null,
+        buyerMemberId: home.memberId,
+        deliveryAddress: delivery ? sanitizeText(delivery.address) : buyer?.profile?.address ?? null,
+        deliveryCity: delivery ? sanitizeText(delivery.city) : buyer?.profile?.city ?? null,
+        deliveryPincode: delivery?.pincode ?? buyer?.profile?.pincode ?? null,
+        deliveryStateName: home.stateName,
+        deliveryDistrictName: home.districtName,
         items: { create: itemRows },
       },
       include: { items: true },
@@ -133,7 +158,7 @@ export async function createPurchaseOrder(userId: string, input: PurchaseInput) 
       total: order.total,
       stateId: order.stateId,
       districtId: order.districtId,
-      items: itemAuditSummary(order.items),
+      items: order.items.map((i) => ({ name: i.productNameSnapshot, qty: i.quantity, amount: i.lineTotal })),
     },
   });
 
@@ -141,93 +166,53 @@ export async function createPurchaseOrder(userId: string, input: PurchaseInput) 
   return order;
 }
 
-function itemAuditSummary(items: { productNameSnapshot: string; quantity: number; lineTotal: number }[]) {
-  return items.map((i) => ({ name: i.productNameSnapshot, qty: i.quantity, amount: i.lineTotal }));
-}
-
 /**
- * Server-side payment verification chokepoint for Phase-J-style gateway
- * integration. A browser claim of success can NEVER mark an order paid: this
- * is the single place that transitions PENDING_PAYMENT → PAID, and it only
- * proceeds when `isVerified` is true (i.e. the provider's server-side
- * signature/webhook check has passed). No provider is configured yet, so
- * callers currently cannot pass verification — the order stays PENDING_PAYMENT
- * and the visitor is told to contact RRA.
+ * The single place an order becomes paid: called only after the payment
+ * provider's server-side verification succeeded. Moves the order to
+ * Payment PAID / Order PLACED. Idempotent.
  */
-export async function verifyAndMarkPaid(
-  orderId: string,
-  paymentReference: string | null,
-  isVerified: boolean,
-  adminId?: string
-) {
-  const order = await prisma.equipmentPurchaseOrder.findUniqueOrThrow({
-    where: { id: orderId },
-    include: { items: true },
-  });
+export async function verifyAndMarkPaid(orderId: string, paymentReference: string | null, isVerified: boolean, actorId?: string) {
+  const order = await prisma.equipmentPurchaseOrder.findUniqueOrThrow({ where: { id: orderId } });
+  if (order.paymentStatus === "PAID") return { order, verified: true };
+  if (!isVerified) throw AppError.badRequest("Payment could not be verified.");
+  if (order.status !== "PENDING_PAYMENT") throw AppError.conflict("This order can no longer be paid.");
 
-  // Idempotency: already-paid orders stay paid, no double transition.
-  if (order.paymentStatus === "PAID") {
-    return { order, verified: true };
-  }
-
-  if (!isVerified) {
-    throw AppError.badRequest(
-      "Online payment is not available yet. Your order is saved as pending payment — contact RRA to complete it."
-    );
-  }
-
-  // Conditional update = idempotent guard against racing callbacks.
   const updated = await prisma.equipmentPurchaseOrder.update({
-    where: { id: orderId, paymentStatus: { not: "PAID" } },
-    data: { status: "PAID", paymentStatus: "PAID" },
+    where: { id: orderId, paymentStatus: { not: "PAID" }, status: "PENDING_PAYMENT" },
+    data: { status: "PLACED", paymentStatus: "PAID", paidAt: new Date() },
   });
 
   await createAuditLog({
-    userId: adminId,
+    userId: actorId,
     action: "UPDATE",
     module: "equipment",
     entityId: orderId,
     entityType: "EquipmentPurchaseOrder",
-    details: {
-      event: "EQUIPMENT_PAYMENT_VERIFIED",
-      orderNumber: order.orderNumber,
-      paymentReference,
-    },
+    details: { event: "EQUIPMENT_PAYMENT_VERIFIED", orderNumber: order.orderNumber, paymentReference, stateId: order.stateId, districtId: order.districtId },
   });
-
   return { order: updated, verified: true };
 }
 
-/**
- * Cancels a pending order and releases its stock reservation in one
- * transaction. Paid/completed orders cannot be cancelled this way.
- */
+/** Cancels an UNPAID order and releases its stock reservation in one transaction. */
 export async function cancelPendingOrder(orderId: string, actorId: string, isAdmin = false) {
-  const order = await prisma.equipmentPurchaseOrder.findUnique({
-    where: { id: orderId },
-    include: { items: true },
-  });
+  const order = await prisma.equipmentPurchaseOrder.findUnique({ where: { id: orderId }, include: { items: true } });
   if (!order) throw AppError.notFound("Order not found");
-  if (!isAdmin && order.userId !== actorId) {
-    // Ownership mismatch must not reveal the order's existence.
-    throw AppError.notFound("Order not found");
-  }
-  if (order.status !== "PENDING_PAYMENT") {
+  if (!isAdmin && order.userId !== actorId) throw AppError.notFound("Order not found");
+  if (order.status !== "PENDING_PAYMENT" || order.paymentStatus === "PAID") {
     throw AppError.conflict("Only unpaid orders can be cancelled.");
   }
 
   const updated = await prisma.$transaction(async (tx) => {
-    // Restock every reserved line.
-    for (const item of order.items) {
-      await tx.equipmentItem.update({
-        where: { id: item.equipmentId },
-        data: { stockQuantity: { increment: item.quantity } },
-      });
-    }
-    return tx.equipmentPurchaseOrder.update({
-      where: { id: orderId },
-      data: { status: "CANCELLED", paymentStatus: "FAILED" },
+    const guard = await tx.equipmentPurchaseOrder.updateMany({
+      where: { id: orderId, status: "PENDING_PAYMENT", paymentStatus: { not: "PAID" } },
+      data: { status: "CANCELLED", paymentStatus: "CANCELLED", cancelledAt: new Date() },
     });
+    if (guard.count === 0) throw AppError.conflict("Only unpaid orders can be cancelled.");
+    for (const item of order.items) {
+      await tx.equipmentItem.update({ where: { id: item.equipmentId }, data: { stockQuantity: { increment: item.quantity } } });
+    }
+    await tx.equipmentPayment.updateMany({ where: { orderId, status: "CREATED" }, data: { status: "CANCELLED" } });
+    return tx.equipmentPurchaseOrder.findUniqueOrThrow({ where: { id: orderId } });
   });
 
   await createAuditLog({
@@ -243,54 +228,75 @@ export async function cancelPendingOrder(orderId: string, actorId: string, isAdm
       districtId: order.districtId,
     },
   });
-
   return updated;
 }
 
-const ADMIN_ORDER_STATUSES = ["PENDING_PAYMENT", "PAID", "COMPLETED", "CANCELLED"] as const;
+/** Fulfilment steps an admin may set, in order. */
+export const FULFILMENT_STEPS = ["PLACED", "CONFIRMED", "PROCESSING", "SHIPPED", "DELIVERED"] as const;
+
+/** Allowed admin moves from each status (legacy PAID = PLACED, COMPLETED = DELIVERED). */
+const NEXT_STATUS: Record<string, string[]> = {
+  PENDING_PAYMENT: ["CANCELLED"],
+  PLACED: ["CONFIRMED"],
+  PAID: ["CONFIRMED"],
+  CONFIRMED: ["PROCESSING"],
+  PROCESSING: ["SHIPPED"],
+  SHIPPED: ["DELIVERED"],
+  DELIVERED: [],
+  COMPLETED: [],
+  CANCELLED: [],
+};
+
+export function allowedNextStatuses(status: string): string[] {
+  return NEXT_STATUS[status] ?? [];
+}
 
 export const adminOrderUpdateSchema = z.object({
-  status: z.enum(ADMIN_ORDER_STATUSES),
+  status: z.enum(["CONFIRMED", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"]),
+  courierName: z.string().trim().max(100).optional().or(z.literal("")),
+  trackingNumber: z.string().trim().max(100).optional().or(z.literal("")),
 });
 
+const STEP_TIMESTAMP: Record<string, "confirmedAt" | "processingAt" | "shippedAt" | "deliveredAt"> = {
+  CONFIRMED: "confirmedAt",
+  PROCESSING: "processingAt",
+  SHIPPED: "shippedAt",
+  DELIVERED: "deliveredAt",
+};
+
 /**
- * Admin fulfilment-status update. Deliberately does NOT touch paymentStatus —
- * an admin cannot mark an unpaid order as paid here; payment verification
- * stays with the provider flow (verifyAndMarkPaid).
+ * Admin fulfilment update. Moves one step forward at a time; every step needs
+ * a verified payment. Unpaid orders can only be cancelled (stock released);
+ * paid orders cannot be cancelled until refunds exist; cancelled is final.
+ * Never touches paymentStatus.
  */
-export async function adminUpdateOrderStatus(orderId: string, status: (typeof ADMIN_ORDER_STATUSES)[number], adminId: string) {
+export async function adminUpdateOrderStatus(orderId: string, input: z.infer<typeof adminOrderUpdateSchema>, adminId: string) {
   const existing = await prisma.equipmentPurchaseOrder.findUnique({ where: { id: orderId } });
   if (!existing) throw AppError.notFound("Order not found");
+  const { status } = input;
   if (existing.status === status) return existing;
 
-  // `status` is the fulfilment lifecycle; `paymentStatus` records payment and
-  // only verifyAndMarkPaid() sets it. Allowed admin moves:
-  //   PENDING_PAYMENT → CANCELLED (releases stock)
-  //   PAID ⇄ COMPLETED (fulfilled / undo) — both require a verified payment
-  // Cancelled orders are final (their stock is already released), nothing
-  // returns to PENDING_PAYMENT, and paid orders cannot be cancelled until a
-  // refund flow exists (Phase J).
-  if (existing.status === "CANCELLED") {
-    throw AppError.conflict("Cancelled orders cannot be reopened.");
-  }
+  if (existing.status === "CANCELLED") throw AppError.conflict("Cancelled orders cannot be reopened.");
   if (status === "CANCELLED") {
-    if (existing.status === "PENDING_PAYMENT") return cancelPendingOrder(orderId, adminId, true);
+    if (existing.status === "PENDING_PAYMENT" && existing.paymentStatus !== "PAID") return cancelPendingOrder(orderId, adminId, true);
     throw AppError.conflict("Paid orders cannot be cancelled — refunds are not supported yet.");
   }
-  if (status === "PENDING_PAYMENT") {
-    throw AppError.conflict("An order cannot be moved back to pending payment.");
-  }
   if (existing.paymentStatus !== "PAID") {
-    throw AppError.badRequest(
-      status === "PAID"
-        ? "Order payment must be verified server-side before it can be marked paid."
-        : "Order payment must be verified before the order can be completed."
-    );
+    throw AppError.badRequest("This order has not been paid — it cannot be fulfilled.");
+  }
+  if (!allowedNextStatuses(existing.status).includes(status)) {
+    throw AppError.conflict(`An order cannot move from ${existing.status.replace("_", " ").toLowerCase()} to ${status.toLowerCase()}.`);
   }
 
   const updated = await prisma.equipmentPurchaseOrder.update({
-    where: { id: orderId },
-    data: { status },
+    where: { id: orderId, status: existing.status },
+    data: {
+      status,
+      [STEP_TIMESTAMP[status]]: new Date(),
+      ...(status === "SHIPPED"
+        ? { courierName: input.courierName ? sanitizeText(input.courierName) : null, trackingNumber: input.trackingNumber ? sanitizeText(input.trackingNumber) : null }
+        : {}),
+    },
   });
 
   await createAuditLog({
@@ -308,6 +314,5 @@ export async function adminUpdateOrderStatus(orderId: string, status: (typeof AD
       newValue: status,
     },
   });
-
   return updated;
 }

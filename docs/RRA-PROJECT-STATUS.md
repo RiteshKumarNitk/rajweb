@@ -485,6 +485,7 @@ Technical / security:
 24. A district created before the hierarchy and not in the founding seed list stays **unassigned** (visible to Super Admin only, flagged on `/admin/states`) until a Super Admin sets its state.
 25. The admin application detail page for an out-of-scope record renders the not-found view with HTTP 200 (streamed response); no record data is included. APIs return a real 404.
 26. Findings of the 2026-09-29 verification audit and how each was resolved are in §16–§17; the remaining gaps are listed in §17.
+27. District membership, the district equipment shop, test payments and orders — and their remaining gaps — are in §19.
 
 ---
 
@@ -847,3 +848,35 @@ Reported: `https://rajweb-sage.vercel.app/login` answered "Invalid email or pass
 
 ### Regression after these changes
 Production build, `tsc` and lint (0 errors) pass; 360/360 HTTP/database checks and 15/15 browser checks on a throw-away database.
+
+## 19. District Membership, District Equipment & Orders (2026-10-01)
+
+Supersedes earlier statements that no payment exists, that "My Equipment" stays empty until Phase J, and that members may buy from another district's store (§15 business-decision table).
+
+### What is implemented
+| Area | Status | Notes |
+|---|---|---|
+| Google sign-in → onboarding | IMPLEMENTED | New members (no home district, no player/coach registration) are sent to `/account/onboarding`: name, mobile, member type (Player / Coach / Supporter-Parent), State → District (district list loaded per state from the server), optional address. Existing members are never asked again. Player/Coach members are then pointed to the existing registration forms |
+| District identity | IMPLEMENTED | Dashboard and profile show State, District, Member Type, Member ID and profile status; the district changes only through a District Change request |
+| District catalog | IMPLEMENTED | `/account/equipment` is the member's Equipment Shop: central + own state + own district stock only; item details (image, SKU, specifications, stock), one-store cart, checkout with delivery details and price breakdown; "My Equipment" tab lists paid purchases. Public `/equipment` shows the central store only |
+| District equipment management | IMPLEMENTED | `/admin/equipment`: image upload (stored in the database), SKU, specifications, sort order, active, stock, price; ownership forced to the admin's scope |
+| District requirements | IMPLEMENTED | `/admin/equipment/requirements`: districts raise needs (quantity, estimate, priority, required-by date, attachment); State Admin / Super Admin review (under review → approved/rejected → fulfilled) |
+| Test payments | IMPLEMENTED (TEST ONLY) | Dummy Razorpay-style gateway behind a `PaymentService` interface; success / failure / cancel; server-side signature verification; every screen labels it "TEST PAYMENT — NO REAL MONEY WILL BE CHARGED" |
+| Orders | IMPLEMENTED | Payment status separate from order status; member dashboard (summary cards, table, mobile cards), order details with timeline and tracking; admin list with search, status/payment/store/date filters and pagination; admin details with step-by-step transitions |
+
+### Production database
+The schema change is **additive** (new enum values, nullable columns, three new tables — reviewed with `prisma migrate diff`: no drops, no type changes). Applying it to the production database (`npx prisma db push`) was **not done by the assistant** — the action was blocked by the tool's permission policy — so it must be run before this code is deployed; otherwise the shop, order and account pages fail on the missing columns. Row counts were recorded beforehand for comparison.
+
+### Verification
+Prisma validation, `tsc --noEmit`, `npm run lint` (0 errors) and `next build --webpack` pass. Throw-away database, production build: 367/367 regression checks, 133/133 new-feature API/page checks, 15/15 + 22/22 real-browser checks, 15/15 pool/session checks, 6/6 error-reporting checks. Found and fixed during testing: an attachment id from another district answered differently from a missing one (probing) and a duplicate name (e.g. a role) returned 500 instead of 409 — unique-constraint violations are now 409 CONFLICT and logged as warnings.
+
+### Remaining gaps
+| Gap | Current behaviour | Next step |
+|---|---|---|
+| Real payments | Only the dummy test gateway exists and it is **on by default**; test-paid orders are labelled "Test payment" for admins and members | Phase J: add the real Razorpay provider (same interface), or set `PAYMENT_PROVIDER=disabled` before taking real orders |
+| Refunds / cancelling paid orders | Refused (409) | Phase J |
+| Delivery charges | Always free | Business decision |
+| District change for Supporter-only members | No request type exists for members without a player/coach registration | Extend the request workflow if needed |
+| Cart | Kept in the page only (lost on reload) | Optional |
+| Notifications | No e-mail for order or requirement updates | Optional |
+| Not-found pages | An out-of-scope order id shows the not-found page with HTTP 200 (streamed), no data — same as other admin detail pages | Known (§9 item 25) |

@@ -25,7 +25,7 @@ Architecture of the handler pipeline: [RRA-ARCHITECTURE.md → Backend](RRA-ARCH
 | `UNAUTHORIZED` | 401 | No/expired/inactive session on an authenticated route |
 | `FORBIDDEN` | 403 | Missing permission, wrong district, **missing/invalid CSRF token** |
 | `NOT_FOUND` | 404 | Record missing (or not owned by caller on owner routes) |
-| `CONFLICT` | 409 | Already processed, duplicate registration/request/application |
+| `CONFLICT` | 409 | Already processed, duplicate registration/request/application, or any unique-value clash such as a role/district name that already exists ("A record with these details already exists.") |
 | `RATE_LIMITED` | 429 | Per-route or global (120/min/IP on `/api/*`) limit |
 | `DATABASE_ERROR` | 503 | Database schema is behind the code (Prisma P2021 missing table / P2022 missing column): "Database schema is out of date (missing table X). Apply the current schema with `npm run db:push` and then `npm run db:seed`." Logged as an error and sent to Sentry |
 | `INTERNAL_ERROR` | 500 | Unexpected; message hidden in production. Logged at error level with the original exception and sent to Sentry |
@@ -531,6 +531,35 @@ See 4.3 (`/api/admin/players/{id}/certificate`). No coach issuance and no revoca
 
 The registration-certificate route (`POST /api/admin/players/{id}/certificate`) is unchanged except that it now ignores tournament certificates when enforcing "one active registration certificate", snapshots the player's state officials, and audits `REGISTRATION_CERTIFICATE_ISSUED` with state/district.
 
+## 13e. Member Onboarding, District Equipment, Test Payments & Requirements (2026-10-01)
+
+### Locations (public)
+- `GET /api/locations/states` — active states with at least one active district: `[{ id, name }]`. 120/min.
+- `GET /api/locations/districts?stateId=…` — active districts **of that state only**: `[{ id, name }]`. Missing `stateId` → 400; unknown/inactive state → 404.
+
+### Onboarding
+- `POST /api/account/onboarding` — Session, CSRF, 20/min. Body `{ name, phone (10-digit), memberType: "PLAYER"|"COACH"|"SUPPORTER", stateId, districtId, address?, city?, pincode? }`. The district must belong to the state (**400** "The selected district does not belong to the selected state"); inactive/unknown district → 400. Sets the member's home State/District on `UserProfile` once — if a home already exists (here or through a player/coach registration) → **409** (moves go through a District Change request). Response `{ stateName, districtName, next }` (`/account/player`, `/account/coach` or `/account/dashboard`). Audit `MEMBER_ONBOARDED`.
+- `PATCH /api/account/profile` never changes the home State/District (extra fields are dropped).
+
+### Member checkout
+- `POST /api/account/equipment/orders` — Session, CSRF, 20/min. Body `{ items: [{ equipmentId, quantity 1–10 }], delivery: { name, phone, email?, address (≥ 10), city, pincode (6 digits) } }`. Requires an onboarded member (400 otherwise). Items outside the member's catalog → 404; one store per order → 400; stock → 409. Creates Order `PENDING_PAYMENT` / Payment `PENDING` with snapshots: buyer name/email/phone, member ID, delivery address/city/pincode, home district/state names, item name, SKU, unit price, line totals. Response `{ id, orderNumber, status, paymentStatus, total }`.
+
+### Test payments (dummy Razorpay)
+All Session + CSRF, 20/min; another member's order or attempt → 404. `PAYMENT_PROVIDER=disabled` turns payments off (400 "Online payment is not available right now").
+- `POST /api/account/equipment/payment/create` — `{ orderId }` → a gateway order for an unpaid order: `{ provider: "dummy-razorpay", isTest: true, providerOrderId: "order_TEST…", amount, currency: "INR", orderNumber, checkout }`. Paid → 409; no longer payable → 409. Earlier unfinished attempts are superseded.
+- `POST /api/account/equipment/payment/simulate` — test gateway only: `{ providerOrderId, outcome: "success"|"failure" }`. Success returns `{ razorpay_order_id, razorpay_payment_id: "pay_TEST…", razorpay_signature }` (HMAC-SHA256 of `order_id|payment_id` with a server-only key) and records the payment id on the attempt. Failure marks the attempt FAILED and the order's Payment FAILED (order stays awaiting payment). A finished attempt → 409.
+- `POST /api/account/equipment/payment/verify` — `{ razorpay_order_id, razorpay_payment_id, razorpay_signature }`. Paid **only** when the signature verifies, the payment id is the one the gateway issued for that attempt, the amount equals the order total and the attempt belongs to the caller — otherwise 400 "Payment could not be verified" (audited). Success: attempt PAID, Order `PLACED` / Payment `PAID`, `paidAt`. Repeating is idempotent (`alreadyPaid: true`).
+- `POST /api/account/equipment/payment/cancel` — `{ providerOrderId }`: the member closed the checkout → attempt and Payment `CANCELLED`; the order stays and can be paid or cancelled later.
+
+### Uploads
+- `POST /api/admin/media` — `equipment:manage`, CSRF, 30/min, multipart `file` + `kind` (`equipment-image`: PNG/JPEG/WebP ≤ 2 MB; `requirement-attachment`: PNG/JPEG/WebP/PDF ≤ 4 MB). Type is detected from the file content (SVG, text and disguised files → 400). Owned by the uploader's scope. Response `{ id, url: "/api/media/{id}", mimeType, size, fileName }`.
+- `GET /api/media/{id}` — equipment images are public (`Cache-Control: public, immutable`, `nosniff`); requirement attachments need `equipment:read` and the owning district in scope (out of scope → 404, anonymous → 401), `Cache-Control: private, no-store`.
+
+### District requirements
+- `POST /api/admin/equipment/requirements` — `equipment:manage`, CSRF. Body `{ itemName, category, quantity ≥ 1, estimatedUnitPrice?, priority: LOW|MEDIUM|HIGH|URGENT, requiredBy? (YYYY-MM-DD), description?, notes?, attachmentId?, districtId? }`. District Admins always file for their own district (`districtId` ignored); State Admins for a district of their state (another state → 400; none → 400); Super Admin any district. An attachment must be a requirement upload within the caller's scope (400 otherwise — missing and out-of-scope look the same).
+- `PATCH /api/admin/equipment/requirements/{id}` — out of scope → 404. With `status` = review: State Admin (own state) or Super Admin only (District Admin → 403); moves `PENDING → UNDER_REVIEW | APPROVED | REJECTED`, `UNDER_REVIEW → APPROVED | REJECTED`, `APPROVED → FULFILLED` (others 409); `REJECTED` needs `reviewNote` (400). Without `status`: edit fields — pending requirements only (409 otherwise).
+- `DELETE /api/admin/equipment/requirements/{id}` — pending only (409 otherwise). Audit `EQUIPMENT_REQUIREMENT_CREATED/UPDATED/REVIEWED/DELETED`.
+
 ## 13a. Admin Gallery APIs
 
 ### 13a.1 Create gallery item
@@ -556,11 +585,11 @@ The registration-certificate route (`POST /api/admin/players/{id}/certificate`) 
 - Public `POST /api/contact` (existing) now also: sends a **New Contact Us Message - RRA** email to the configured Super Admin address (Setting `contact_email` → `SUPER_ADMIN_EMAIL` env → site default) with reply-to = the visitor, plus a best-effort visitor confirmation. Emails are sent **after** persistence; failures never lose the message and only set `emailSent=false`. Rate limit 10/min/IP unchanged.
 
 ### Equipment shop
-- `POST /api/equipment/purchase` — Session, CSRF, 20/min. Body `{ items: [{ equipmentId, quantity 1–10 }] }` (≤10 lines); any client price/total fields are ignored. **All lines must come from one store** (400 "Items from different district stores must be ordered separately…", nothing reserved); the order records that store's `stateId`/`districtId`. Server re-reads each product, reserves stock with a conditional atomic decrement (fails with 409 if insufficient — stock can never go negative), snapshots name + unit price onto order items, and creates the order `PENDING_PAYMENT`/payment `PENDING` in one transaction. Audit `EQUIPMENT_ORDER_CREATED`.
-- `POST /api/equipment/orders/{id}/cancel` — Session owner (404 otherwise), pending orders only; restocks reserved items and sets `CANCELLED`/`FAILED` in one transaction. Audit `EQUIPMENT_ORDER_CANCELLED`.
-- `POST/PATCH/DELETE /api/admin/equipment…` — `equipment:manage` **and scope**: body may carry `stateId`/`districtId` (district admins are forced to their district, state admins to their state, only GLOBAL may use the central store — omit both); items outside the caller's scope → 404. PATCH changes **only the fields sent** (fixed: previously a price-only PATCH reset stock/category/sort order/active). DELETE on an item referenced by orders **archives it** (deactivates) instead of destroying it. Audits `EQUIPMENT_ITEM_CREATED/UPDATED/ACTIVATED/DEACTIVATED/ARCHIVED/DELETED` + `EQUIPMENT_PRICE_CHANGED`/`EQUIPMENT_STOCK_CHANGED` details.
-- `PATCH /api/admin/equipment/orders/{id}` — `equipment:manage`; order must be in the caller's scope (404 otherwise). `status` is the fulfilment lifecycle, `paymentStatus` the payment record (never changed here). Admin status moves: `PENDING_PAYMENT → CANCELLED` (releases stock) and `PAID ⇄ COMPLETED` — both only when `paymentStatus` is `PAID`, which only server-side payment verification sets. Unpaid → PAID/COMPLETED → 400; a cancelled order cannot be reopened, nothing returns to `PENDING_PAYMENT`, and paid orders cannot be cancelled until refunds exist → 409. No payment provider is configured yet (Phase J), so no order can currently reach PAID or COMPLETED. Audit `EQUIPMENT_ORDER_STATUS_CHANGED`.
-- **Payment status:** no provider is selected/implemented yet (Phase J). `verifyAndMarkPaid()` in `purchase.service.ts` is the single server-side chokepoint (idempotent conditional update) and currently fails closed. Orders remain `PENDING_PAYMENT` until RRA completes payment offline or the gateway lands.
+- `POST /api/equipment/purchase` — Session, CSRF, 20/min. Older single-step endpoint, same rules as the member checkout below (delivery details optional — taken from the profile). Every item must be in the buyer's catalog (central store, own state store, own district store) — anything else is **404 "Equipment not found"**; one store per order (400); client price/total fields ignored; stock reserved atomically (409 when insufficient).
+- `POST /api/equipment/orders/{id}/cancel` — Session owner (404 otherwise); **unpaid** orders only (409 otherwise). Restocks reserved items and sets Order `CANCELLED` / Payment `CANCELLED` in one transaction. Audit `EQUIPMENT_ORDER_CANCELLED`.
+- `POST/PATCH/DELETE /api/admin/equipment…` — `equipment:manage` **and scope**: body may carry `stateId`/`districtId` (district admins are forced to their district, state admins to their state, only GLOBAL may use the central store — omit both); out-of-scope items → 404. Fields: `name`, `category`, `price` (whole ₹), `stockQuantity`, `sortOrder`, `isActive`, `shortDescription`, `description`, `sku` (≤ 60), `specifications` ("Label: value" lines, ≤ 3000), `image` (an uploaded `/api/media/{id}`, a `/images/…` path or an http(s) URL; anything else 400). Items with orders are archived (deactivated) on delete.
+- `PATCH /api/admin/equipment/orders/{id}` — `equipment:manage`, CSRF; order must be in the caller's scope (404 otherwise). Body `{ status: "CONFIRMED"|"PROCESSING"|"SHIPPED"|"DELIVERED"|"CANCELLED", courierName?, trackingNumber? }` (courier/tracking saved on SHIPPED). One step at a time: `PLACED → CONFIRMED → PROCESSING → SHIPPED → DELIVERED` (skipping or going back → 409); every step needs `paymentStatus = PAID` (400 otherwise); `CANCELLED` only for unpaid orders (releases stock) — paid orders 409 (no refunds yet); cancelled is final (409). Never changes `paymentStatus`. Audit `EQUIPMENT_ORDER_STATUS_CHANGED`.
+- **Payment status:** set to `PAID` only by `verifyAndMarkPaid()` after server-side verification by the payment provider (§13e). Today the provider is the dummy Razorpay-style **test** gateway (no real money).
 
 ### Media videos (YouTube)
 - `POST /api/admin/media/videos` and `PATCH/DELETE …/{id}` — `videos:manage`, CSRF.

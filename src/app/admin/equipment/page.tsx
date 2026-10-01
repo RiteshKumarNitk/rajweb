@@ -96,6 +96,8 @@ export default async function AdminEquipmentPage({ searchParams }: { searchParam
     isActive: item.isActive,
     sortOrder: item.sortOrder,
     image: item.image,
+    sku: item.sku,
+    specifications: item.specifications,
     shortDescription: item.shortDescription,
     description: item.description,
     updatedAt: item.updatedAt.toISOString(),

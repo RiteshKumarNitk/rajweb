@@ -23,6 +23,8 @@ import {
 } from "lucide-react";
 import prisma from "@/infrastructure/database/prisma";
 import { getCurrentUser } from "@/security/auth/session";
+import { getMemberHome } from "@/modules/account/member-home.server";
+import { MemberIdentityCard } from "@/shared/components/account/member-identity-card";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
 import { Button } from "@/shared/components/ui/button";
 import { StatusBadge } from "@/shared/components/ui/status-badge";
@@ -204,6 +206,7 @@ export default async function AccountDashboardPage() {
       })
     : [];
 
+  const home = await getMemberHome(authUser.id);
   const initial = user.name ? user.name.charAt(0).toUpperCase() : "U";
   const firstName = (user.name || "Member").split(" ")[0];
 
@@ -281,6 +284,9 @@ export default async function AccountDashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* District identity */}
+      <MemberIdentityCard home={home} />
 
       {/* Profile Completion Card */}
       {completion.percent < 100 ? (

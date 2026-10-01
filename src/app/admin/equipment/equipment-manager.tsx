@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, X, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Search, Upload, Loader2 } from "lucide-react";
 import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import { Label } from "@/shared/components/ui/label";
@@ -24,6 +24,8 @@ export interface EquipmentRow {
   isActive: boolean;
   sortOrder: number;
   image: string | null;
+  sku: string | null;
+  specifications: string | null;
   shortDescription: string | null;
   description: string | null;
   updatedAt: string;
@@ -72,6 +74,25 @@ function EquipmentFormModal({
   const [price, setPrice] = useState(String(item?.price ?? ""));
   const [stockQuantity, setStockQuantity] = useState(String(item?.stockQuantity ?? "0"));
   const [image, setImage] = useState(item?.image ?? "");
+  const [uploading, setUploading] = useState(false);
+  const [sku, setSku] = useState(item?.sku ?? "");
+  const [specifications, setSpecifications] = useState(item?.specifications ?? "");
+
+  async function handleUpload(file: File) {
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("kind", "equipment-image");
+      form.append("file", file);
+      const { data } = await handleApiFetch<{ url: string }>(await apiFetch("/api/admin/media", { method: "POST", body: form }));
+      setImage(data.url);
+      toast.success("Image uploaded");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
   const [shortDescription, setShortDescription] = useState(item?.shortDescription ?? "");
   const [description, setDescription] = useState(item?.description ?? "");
   const [sortOrder, setSortOrder] = useState(String(item?.sortOrder ?? 0));
@@ -112,6 +133,8 @@ function EquipmentFormModal({
         price: priceNum,
         stockQuantity: stockNum,
         image: image.trim() || null,
+        sku: sku.trim() || null,
+        specifications: specifications.trim() || null,
         shortDescription: shortDescription.trim() || null,
         description: description.trim() || null,
         sortOrder: Number(sortOrder) || 0,
@@ -204,13 +227,67 @@ function EquipmentFormModal({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="e-image">Image URL or path</Label>
+            <Label htmlFor="e-image-file">Image</Label>
+            <div className="flex items-center gap-3">
+              <div className="flex h-20 w-24 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-slate-50">
+                {image ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- live preview of an uploaded/pasted image
+                  <img src={image} alt="Equipment preview" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="text-[11px] text-slate-400">No image</span>
+                )}
+              </div>
+              <div className="space-y-2">
+                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-slate-200 px-3 py-1.5 text-sm font-medium hover:bg-slate-50">
+                  {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                  {uploading ? "Uploading…" : "Upload image"}
+                  <input
+                    id="e-image-file"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="sr-only"
+                    disabled={uploading}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) void handleUpload(file);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+                {image && (
+                  <button type="button" className="block text-xs text-red-600 hover:underline" onClick={() => setImage("")}>
+                    Remove image
+                  </button>
+                )}
+                <p className="text-[11px] text-slate-500">PNG, JPEG or WebP, up to 2 MB.</p>
+              </div>
+            </div>
             <Input
               id="e-image"
+              aria-label="Image URL or path"
               value={image}
               maxLength={500}
               onChange={(e) => setImage(e.target.value)}
-              placeholder="/images/equipment/racquet.jpg or https://…"
+              placeholder="…or paste an image URL / /images/… path"
+            />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="e-sku">SKU / code (optional)</Label>
+              <Input id="e-sku" value={sku} maxLength={60} onChange={(e) => setSku(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="e-specs">Specifications (optional)</Label>
+            <Textarea
+              id="e-specs"
+              value={specifications}
+              maxLength={3000}
+              rows={3}
+              onChange={(e) => setSpecifications(e.target.value)}
+              placeholder={"One per line, e.g.\nWeight: 170 g\nGrip size: 3 5/8"}
             />
           </div>
 
@@ -226,7 +303,7 @@ function EquipmentFormModal({
 
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
-            Active (visible in the public shop)
+            Active (visible to members of this store)
           </label>
         </div>
 

@@ -100,6 +100,7 @@ const navSections: NavGroup[] = [
     items: [
       { name: "Catalog", href: "/admin/equipment", icon: ShoppingBag, permission: PERMISSIONS.EQUIPMENT_READ },
       { name: "Orders", href: "/admin/equipment/orders", icon: ClipboardList, permission: PERMISSIONS.EQUIPMENT_READ },
+      { name: "District Requirements", href: "/admin/equipment/requirements", icon: ClipboardList, permission: PERMISSIONS.EQUIPMENT_READ },
     ],
   },
   {

@@ -15,41 +15,44 @@ enum AuthProvider {
 }
 
 model User {
-  id               String       @id @default(cuid())
-  email            String       @unique
-  passwordHash     String?
-  name             String
-  phone            String?
-  avatar           String?
-  emailVerified    DateTime?
-  isActive         Boolean      @default(true)
-  authProvider     AuthProvider @default(CREDENTIALS)
-  googleId         String?      @unique
-  lastLoginAt      DateTime?
-  isFederationWide Boolean      @default(false)
+  id                    String                   @id @default(cuid())
+  email                 String                   @unique
+  passwordHash          String?
+  name                  String
+  phone                 String?
+  avatar                String?
+  emailVerified         DateTime?
+  isActive              Boolean                  @default(true)
+  authProvider          AuthProvider             @default(CREDENTIALS)
+  googleId              String?                  @unique
+  lastLoginAt           DateTime?
+  isFederationWide      Boolean                  @default(false)
   // Organisational scope (see src/security/rbac/org-scope.ts):
   //   super-admin / isFederationWide -> GLOBAL
   //   districtId set                 -> DISTRICT (state inherited from the district)
   //   stateId set (no district)      -> STATE
   //   neither                        -> no data access
-  stateId          String?
-  state            State?       @relation(fields: [stateId], references: [id])
-  roleId           String
-  role             Role         @relation(fields: [roleId], references: [id])
-  districtId       String?
-  district         District?    @relation(fields: [districtId], references: [id])
-  refreshTokens    RefreshToken[]
-  auditLogs        AuditLog[]
-  profile          UserProfile?
-  player           Player?
-  coach            Coach?
-  clubMembership   ClubMembership?
-  schoolMembership SchoolMembership?
-  academyMembership AcademyMembership?
-  requests         Request[]
-  equipmentOrders  EquipmentPurchaseOrder[]
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  stateId               String?
+  state                 State?                   @relation(fields: [stateId], references: [id])
+  roleId                String
+  role                  Role                     @relation(fields: [roleId], references: [id])
+  districtId            String?
+  district              District?                @relation(fields: [districtId], references: [id])
+  refreshTokens         RefreshToken[]
+  auditLogs             AuditLog[]
+  profile               UserProfile?
+  player                Player?
+  coach                 Coach?
+  clubMembership        ClubMembership?
+  schoolMembership      SchoolMembership?
+  academyMembership     AcademyMembership?
+  requests              Request[]
+  equipmentOrders       EquipmentPurchaseOrder[]
+  equipmentRequirements EquipmentRequirement[]   @relation("RequirementRequestedBy")
+  reviewedRequirements  EquipmentRequirement[]   @relation("RequirementReviewedBy")
+  mediaAssets           MediaAsset[]
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
 
   @@index([roleId])
   @@index([districtId])
@@ -58,20 +61,36 @@ model User {
 }
 
 model UserProfile {
-  id          String    @id @default(cuid())
-  userId      String    @unique
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  dateOfBirth DateTime?
-  gender      Gender?
-  address     String?
-  city        String?
-  state       String?
-  country     String?   @default("India")
-  pincode     String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id           String      @id @default(cuid())
+  userId       String      @unique
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dateOfBirth  DateTime?
+  gender       Gender?
+  address      String?
+  city         String?
+  state        String?
+  country      String?     @default("India")
+  pincode      String?
+  // Member home State/District, set once at onboarding (later moves go through
+  // the district-change request). Drives the member equipment catalog. Separate
+  // from User.stateId/districtId, which are ADMIN scope.
+  stateId      String?
+  homeState    State?      @relation("MemberHomeState", fields: [stateId], references: [id])
+  districtId   String?
+  homeDistrict District?   @relation("MemberHomeDistrict", fields: [districtId], references: [id])
+  memberType   MemberType?
+  onboardedAt  DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
+  @@index([districtId])
   @@map("user_profiles")
+}
+
+enum MemberType {
+  PLAYER
+  COACH
+  SUPPORTER
 }
 
 model EmailOtp {
@@ -143,53 +162,57 @@ model RefreshToken {
 // their own so ownership can never disagree with the district.
 
 model State {
-  id          String       @id @default(cuid())
-  name        String       @unique
-  slug        String       @unique
-  code        String?      @unique
-  isActive    Boolean      @default(true)
-  sortOrder   Int          @default(0)
-  districts   District[]
-  users       User[]
-  tournaments Tournament[]
-  equipmentItems  EquipmentItem[]
-  equipmentOrders EquipmentPurchaseOrder[]
-  signatories     CertificateSignatory[]
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id                    String                   @id @default(cuid())
+  name                  String                   @unique
+  slug                  String                   @unique
+  code                  String?                  @unique
+  isActive              Boolean                  @default(true)
+  sortOrder             Int                      @default(0)
+  districts             District[]
+  users                 User[]
+  tournaments           Tournament[]
+  equipmentItems        EquipmentItem[]
+  equipmentOrders       EquipmentPurchaseOrder[]
+  signatories           CertificateSignatory[]
+  memberProfiles        UserProfile[]            @relation("MemberHomeState")
+  equipmentRequirements EquipmentRequirement[]
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
 
   @@index([isActive, sortOrder])
   @@map("states")
 }
 
 model District {
-  id               String              @id @default(cuid())
-  name             String
-  slug             String
+  id                    String                   @id @default(cuid())
+  name                  String
+  slug                  String
   // Nullable only so pre-existing rows survive the schema change; the seed
   // backfills them. A district with no state is visible to Super Admin only.
-  stateId          String?
-  state            State?              @relation(fields: [stateId], references: [id])
-  sortOrder        Int                 @default(0)
-  president        String?
-  secretary        String?
-  email            String?
-  phone            String?
-  address          String?
-  isActive         Boolean             @default(true)
-  users            User[]
-  players          Player[]
-  coaches          Coach[]
-  clubMemberships  ClubMembership[]
-  schoolMemberships SchoolMembership[]
-  academyMemberships AcademyMembership[]
-  tournaments      Tournament[]
-  requestedByRequests Request[]        @relation("RequestedDistrict")
-  equipmentItems   EquipmentItem[]
-  equipmentOrders  EquipmentPurchaseOrder[]
-  signatories      CertificateSignatory[]
-  createdAt        DateTime            @default(now())
-  updatedAt        DateTime            @updatedAt
+  stateId               String?
+  state                 State?                   @relation(fields: [stateId], references: [id])
+  sortOrder             Int                      @default(0)
+  president             String?
+  secretary             String?
+  email                 String?
+  phone                 String?
+  address               String?
+  isActive              Boolean                  @default(true)
+  users                 User[]
+  players               Player[]
+  coaches               Coach[]
+  clubMemberships       ClubMembership[]
+  schoolMemberships     SchoolMembership[]
+  academyMemberships    AcademyMembership[]
+  tournaments           Tournament[]
+  requestedByRequests   Request[]                @relation("RequestedDistrict")
+  equipmentItems        EquipmentItem[]
+  equipmentOrders       EquipmentPurchaseOrder[]
+  signatories           CertificateSignatory[]
+  memberProfiles        UserProfile[]            @relation("MemberHomeDistrict")
+  equipmentRequirements EquipmentRequirement[]
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
 
   // Names/slugs are unique within a state, not globally.
   @@unique([stateId, name])
@@ -214,30 +237,30 @@ enum ApprovalStatus {
 }
 
 model Player {
-  id           String            @id @default(cuid())
-  playerId     String            @unique
-  name         String
-  dateOfBirth  DateTime
-  gender       Gender
-  email        String
-  mobile       String
-  photo        String?
-  districtId   String
-  district     District          @relation(fields: [districtId], references: [id])
-  userId       String?           @unique
-  user         User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
-  state        String            @default("Rajasthan")
-  category     String?
-  status       ApprovalStatus    @default(PENDING)
-  approvedAt   DateTime?
-  approvedBy   String?
-  rejectionReason String?
-  expiresAt    DateTime?
-  certificates PlayerCertificate[]
+  id                      String                   @id @default(cuid())
+  playerId                String                   @unique
+  name                    String
+  dateOfBirth             DateTime
+  gender                  Gender
+  email                   String
+  mobile                  String
+  photo                   String?
+  districtId              String
+  district                District                 @relation(fields: [districtId], references: [id])
+  userId                  String?                  @unique
+  user                    User?                    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  state                   String                   @default("Rajasthan")
+  category                String?
+  status                  ApprovalStatus           @default(PENDING)
+  approvedAt              DateTime?
+  approvedBy              String?
+  rejectionReason         String?
+  expiresAt               DateTime?
+  certificates            PlayerCertificate[]
   tournamentRegistrations TournamentRegistration[]
-  requests     Request[]
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  requests                Request[]
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
 
   @@index([districtId])
   @@index([status])
@@ -252,17 +275,17 @@ model Player {
 // Everything printed on the certificate is snapshotted at issue time so a
 // later rename/re-designation never changes an issued certificate.
 model PlayerCertificate {
-  id                String   @id @default(cuid())
-  certificateNumber String   @unique
+  id                String      @id @default(cuid())
+  certificateNumber String      @unique
   playerId          String
-  player            Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  player            Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
   tournamentId      String?
   tournament        Tournament? @relation(fields: [tournamentId], references: [id], onDelete: Restrict)
-  qrCode            String   @unique
-  issuedAt          DateTime @default(now())
+  qrCode            String      @unique
+  issuedAt          DateTime    @default(now())
   expiresAt         DateTime?
   pdfPath           String?
-  isRevoked         Boolean  @default(false)
+  isRevoked         Boolean     @default(false)
   revokedAt         DateTime?
   revokedReason     String?
   // Issue-time snapshots (null on certificates issued before these existed).
@@ -295,27 +318,27 @@ enum CertificationLevel {
 }
 
 model Coach {
-  id              String            @id @default(cuid())
-  coachId         String            @unique
-  name            String
-  email           String
-  mobile          String
-  photo           String?
-  qualification   String
+  id                 String             @id @default(cuid())
+  coachId            String             @unique
+  name               String
+  email              String
+  mobile             String
+  photo              String?
+  qualification      String
   certificationLevel CertificationLevel
-  districtId      String
-  district        District          @relation(fields: [districtId], references: [id])
-  userId          String?           @unique
-  user            User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
-  status          ApprovalStatus    @default(PENDING)
-  approvedAt      DateTime?
-  approvedBy      String?
-  rejectionReason String?
-  expiresAt       DateTime?
-  certificates    CoachCertificate[]
-  requests        Request[]
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  districtId         String
+  district           District           @relation(fields: [districtId], references: [id])
+  userId             String?            @unique
+  user               User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  status             ApprovalStatus     @default(PENDING)
+  approvedAt         DateTime?
+  approvedBy         String?
+  rejectionReason    String?
+  expiresAt          DateTime?
+  certificates       CoachCertificate[]
+  requests           Request[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   @@index([districtId])
   @@index([status])
@@ -323,15 +346,15 @@ model Coach {
 }
 
 model CoachCertificate {
-  id                String   @id @default(cuid())
-  certificateNumber String   @unique
+  id                String    @id @default(cuid())
+  certificateNumber String    @unique
   coachId           String
-  coach             Coach    @relation(fields: [coachId], references: [id], onDelete: Cascade)
-  qrCode            String   @unique
-  issuedAt          DateTime @default(now())
+  coach             Coach     @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  qrCode            String    @unique
+  issuedAt          DateTime  @default(now())
   expiresAt         DateTime?
   pdfPath           String?
-  isRevoked         Boolean  @default(false)
+  isRevoked         Boolean   @default(false)
   revokedAt         DateTime?
   revokedReason     String?
 
@@ -464,21 +487,21 @@ enum RequestStatus {
 }
 
 model Request {
-  id             String        @id @default(cuid())
-  requestNumber  String        @unique
-  userId         String
-  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  playerId       String?
-  player         Player?       @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  coachId        String?
-  coach          Coach?        @relation(fields: [coachId], references: [id], onDelete: Cascade)
-  type           RequestType
-  status         RequestStatus @default(PENDING)
-  reason         String
+  id                  String        @id @default(cuid())
+  requestNumber       String        @unique
+  userId              String
+  user                User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  playerId            String?
+  player              Player?       @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  coachId             String?
+  coach               Coach?        @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  type                RequestType
+  status              RequestStatus @default(PENDING)
+  reason              String
   // Freeform "before/after" pair, used by request types with no dedicated
   // structured field below (PROFILE_CORRECTION, CERTIFICATE_*, DOCUMENT_UPDATE, OTHER).
-  currentValue   String?
-  requestedValue String?
+  currentValue        String?
+  requestedValue      String?
   // Structured fields for the request types whose approval can safely apply
   // itself to the underlying record — see request.service.ts for exactly
   // which types are auto-applied vs. informational-only.
@@ -486,13 +509,13 @@ model Request {
   requestedEmail      String?
   requestedAddress    String?
   requestedDistrictId String?
-  requestedDistrict   District? @relation("RequestedDistrict", fields: [requestedDistrictId], references: [id])
-  adminRemarks    String?
-  rejectionReason String?
-  resolvedAt      DateTime?
-  resolvedBy      String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  requestedDistrict   District?     @relation("RequestedDistrict", fields: [requestedDistrictId], references: [id])
+  adminRemarks        String?
+  rejectionReason     String?
+  resolvedAt          DateTime?
+  resolvedBy          String?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 
   @@index([userId])
   @@index([playerId])
@@ -520,45 +543,45 @@ enum TournamentStatus {
 }
 
 model Tournament {
-  id              String             @id @default(cuid())
-  name            String
-  slug            String             @unique
-  description     String?
-  category        TournamentCategory
-  status          TournamentStatus   @default(DRAFT)
+  id                     String                           @id @default(cuid())
+  name                   String
+  slug                   String                           @unique
+  description            String?
+  category               TournamentCategory
+  status                 TournamentStatus                 @default(DRAFT)
   // Owning state. Always set for new tournaments; for district tournaments
   // it must equal district.stateId. A tournament with no district is
   // state-wide for this state.
-  stateId         String?
-  state           State?             @relation(fields: [stateId], references: [id])
-  districtId      String?
-  district        District?          @relation(fields: [districtId], references: [id])
-  venue           String?
-  city            String?
-  startDate       DateTime
-  endDate         DateTime
-  registrationStart    DateTime?
-  registrationDeadline DateTime?
-  maxParticipants Int?
+  stateId                String?
+  state                  State?                           @relation(fields: [stateId], references: [id])
+  districtId             String?
+  district               District?                        @relation(fields: [districtId], references: [id])
+  venue                  String?
+  city                   String?
+  startDate              DateTime
+  endDate                DateTime
+  registrationStart      DateTime?
+  registrationDeadline   DateTime?
+  maxParticipants        Int?
   // Google Drive poster link, per the client's approved requirement — not a
   // file upload. Reuses the pre-existing (previously unused) `banner` column
   // rather than adding a second field for the same concept.
-  banner          String?
-  contactName     String?
-  contactPhone    String?
-  contactEmail    String?
-  requiresApprovedPlayer Boolean     @default(true)
+  banner                 String?
+  contactName            String?
+  contactPhone           String?
+  contactEmail           String?
+  requiresApprovedPlayer Boolean                          @default(true)
   // Tournament-specific certificate settings (certificates snapshot them).
-  certificateTitle   String?
-  certificateLogoUrl String?
-  signatories     TournamentSignatory[]
-  certificates    PlayerCertificate[]
+  certificateTitle       String?
+  certificateLogoUrl     String?
+  signatories            TournamentSignatory[]
+  certificates           PlayerCertificate[]
   registrationCategories TournamentRegistrationCategory[]
-  registrations   TournamentRegistration[]
-  fixtures        Fixture[]
-  matches         Match[]
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
+  registrations          TournamentRegistration[]
+  fixtures               Fixture[]
+  matches                Match[]
+  createdAt              DateTime                         @default(now())
+  updatedAt              DateTime                         @updatedAt
 
   @@index([status])
   @@index([districtId])
@@ -576,27 +599,27 @@ enum TournamentEventType {
 // which is a single whole-tournament classification (Open/Junior/Senior/Pro)
 // unrelated to which purchasable event types a player can register for.
 model TournamentRegistrationCategory {
-  id           String              @id @default(cuid())
-  tournamentId String
-  tournament   Tournament          @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  name         String
-  type         TournamentEventType
-  fee          Int
-  isActive     Boolean             @default(true)
+  id            String                   @id @default(cuid())
+  tournamentId  String
+  tournament    Tournament               @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  name          String
+  type          TournamentEventType
+  fee           Int
+  isActive      Boolean                  @default(true)
   registrations TournamentRegistration[]
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
 
   @@index([tournamentId])
   @@map("tournament_registration_categories")
 }
 
 model TournamentRegistration {
-  id           String     @id @default(cuid())
+  id           String                          @id @default(cuid())
   tournamentId String
-  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  tournament   Tournament                      @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
   playerId     String
-  player       Player     @relation(fields: [playerId], references: [id])
+  player       Player                          @relation(fields: [playerId], references: [id])
   categoryId   String?
   category     TournamentRegistrationCategory? @relation(fields: [categoryId], references: [id])
   // Snapshot of the category fee at the moment of registration — Phase I
@@ -604,8 +627,8 @@ model TournamentRegistration {
   // fee, so a later Super Admin price change never alters a past registration.
   amount       Int?
   seed         Int?
-  status       ApprovalStatus @default(PENDING)
-  registeredAt DateTime   @default(now())
+  status       ApprovalStatus                  @default(PENDING)
+  registeredAt DateTime                        @default(now())
 
   @@unique([tournamentId, playerId])
   @@map("tournament_registrations")
@@ -649,48 +672,48 @@ model Match {
 // ─── Media CMS ─────────────────────────────────────────────────
 
 model News {
-  id          String   @id @default(cuid())
-  title       String
-  slug        String   @unique
-  excerpt     String?
-  content     String
-  coverImage  String?
-  author      String?
-  category    String?
-  tags        String[]
-  isPublished Boolean  @default(false)
-  publishedAt DateTime?
-  metaTitle   String?
+  id              String    @id @default(cuid())
+  title           String
+  slug            String    @unique
+  excerpt         String?
+  content         String
+  coverImage      String?
+  author          String?
+  category        String?
+  tags            String[]
+  isPublished     Boolean   @default(false)
+  publishedAt     DateTime?
+  metaTitle       String?
   metaDescription String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([isPublished])
   @@map("news")
 }
 
 model Video {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   title       String
-  slug        String   @unique
+  slug        String    @unique
   description String?
   url         String
   thumbnail   String?
   category    String?
   tags        String[]
-  isPublished Boolean  @default(false)
+  isPublished Boolean   @default(false)
   publishedAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([isPublished])
   @@map("videos")
 }
 
 model Gallery {
-  id          String        @id @default(cuid())
+  id          String         @id @default(cuid())
   title       String
-  slug        String        @unique
+  slug        String         @unique
   description String?
   category    String?
   // Public page item image. Existing seeded galleries use static /images/...
@@ -701,12 +724,12 @@ model Gallery {
   // Optional external Google Drive gallery link opened from the item modal.
   // Stored as-is; never fetched or proxied server-side.
   driveUrl    String?
-  sortOrder   Int           @default(0)
-  isPublished Boolean       @default(false)
+  sortOrder   Int            @default(0)
+  isPublished Boolean        @default(false)
   publishedAt DateTime?
   images      GalleryImage[]
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 
   @@index([isPublished])
   @@index([sortOrder])
@@ -729,14 +752,14 @@ model GalleryImage {
 // ─── Donations ─────────────────────────────────────────────────
 
 model Donation {
-  id        String   @id @default(cuid())
-  name      String
-  email     String?
-  mobile    String?
-  amount    Float
-  message   String?
-  isAnonymous Boolean @default(false)
-  createdAt DateTime @default(now())
+  id          String   @id @default(cuid())
+  name        String
+  email       String?
+  mobile      String?
+  amount      Float
+  message     String?
+  isAnonymous Boolean  @default(false)
+  createdAt   DateTime @default(now())
 
   @@map("donations")
 }
@@ -788,28 +811,31 @@ enum EquipmentCategory {
 // going negative) and only permanently consumed when the payment is verified
 // server-side. Cancelled/failed orders release their reservation.
 model EquipmentItem {
-  id            String            @id @default(cuid())
-  name          String
-  slug          String            @unique
-  description   String?
+  id               String                       @id @default(cuid())
+  name             String
+  slug             String                       @unique
+  description      String?
   shortDescription String?
-  image         String?
-  category      EquipmentCategory @default(OTHER)
+  image            String?
+  sku              String?
+  // Free-form "Label: value" lines shown on the product page.
+  specifications   String?
+  category         EquipmentCategory            @default(OTHER)
   // Whole rupees — integer money, no floats.
-  price         Int
-  stockQuantity Int               @default(0)
-  isActive      Boolean           @default(true)
-  sortOrder     Int               @default(0)
+  price            Int
+  stockQuantity    Int                          @default(0)
+  isActive         Boolean                      @default(true)
+  sortOrder        Int                          @default(0)
   // Owning inventory: districtId set = that district's stock (stateId = its
   // state); stateId only = state-level stock; both null = RRA central store
   // (Super Admin only). Items created before ownership existed are central.
-  stateId       String?
-  state         State?            @relation(fields: [stateId], references: [id])
-  districtId    String?
-  district      District?         @relation(fields: [districtId], references: [id])
-  purchaseItems EquipmentPurchaseOrderItem[]
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  stateId          String?
+  state            State?                       @relation(fields: [stateId], references: [id])
+  districtId       String?
+  district         District?                    @relation(fields: [districtId], references: [id])
+  purchaseItems    EquipmentPurchaseOrderItem[]
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
 
   @@index([isActive, sortOrder])
   @@index([category])
@@ -818,11 +844,20 @@ model EquipmentItem {
   @@map("equipment_items")
 }
 
+// Fulfilment lifecycle. New orders: PENDING_PAYMENT -> (verified payment) ->
+// PLACED -> CONFIRMED -> PROCESSING -> SHIPPED -> DELIVERED, or CANCELLED while
+// unpaid. PAID and COMPLETED are legacy values kept for existing rows (read as
+// PLACED and DELIVERED).
 enum PurchaseStatus {
   PENDING_PAYMENT
   PAID
   CANCELLED
   COMPLETED
+  PLACED
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  DELIVERED
 }
 
 enum PaymentStatus {
@@ -830,30 +865,51 @@ enum PaymentStatus {
   PAID
   FAILED
   REFUNDED
+  CANCELLED
 }
 
 // An authenticated member's equipment purchase. Amounts are whole-rupee
 // integers. Item rows snapshot name + unit price at purchase time; later
 // price changes never affect existing orders.
 model EquipmentPurchaseOrder {
-  id            String          @id @default(cuid())
-  orderNumber   String          @unique
-  userId        String
-  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  status        PurchaseStatus  @default(PENDING_PAYMENT)
-  paymentStatus PaymentStatus   @default(PENDING)
-  subtotal      Int
-  total         Int
+  id                   String                       @id @default(cuid())
+  orderNumber          String                       @unique
+  userId               String
+  user                 User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status               PurchaseStatus               @default(PENDING_PAYMENT)
+  paymentStatus        PaymentStatus                @default(PENDING)
+  subtotal             Int
+  total                Int
   // Seller scope snapshot, copied from the items' inventory at order time
   // (every line of one order comes from the same inventory). Kept even if
   // the item is later moved, so historical orders never change hands.
-  stateId       String?
-  state         State?          @relation(fields: [stateId], references: [id])
-  districtId    String?
-  district      District?       @relation(fields: [districtId], references: [id])
-  items         EquipmentPurchaseOrderItem[]
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  stateId              String?
+  state                State?                       @relation(fields: [stateId], references: [id])
+  districtId           String?
+  district             District?                    @relation(fields: [districtId], references: [id])
+  // Buyer / delivery snapshot taken at order time (null on legacy orders).
+  buyerName            String?
+  buyerEmail           String?
+  buyerPhone           String?
+  buyerMemberId        String?
+  deliveryAddress      String?
+  deliveryCity         String?
+  deliveryPincode      String?
+  deliveryStateName    String?
+  deliveryDistrictName String?
+  // Fulfilment timeline.
+  paidAt               DateTime?
+  confirmedAt          DateTime?
+  processingAt         DateTime?
+  shippedAt            DateTime?
+  deliveredAt          DateTime?
+  cancelledAt          DateTime?
+  courierName          String?
+  trackingNumber       String?
+  items                EquipmentPurchaseOrderItem[]
+  payments             EquipmentPayment[]
+  createdAt            DateTime                     @default(now())
+  updatedAt            DateTime                     @updatedAt
 
   @@index([userId])
   @@index([status])
@@ -869,6 +925,7 @@ model EquipmentPurchaseOrderItem {
   equipmentId         String
   equipment           EquipmentItem          @relation(fields: [equipmentId], references: [id])
   productNameSnapshot String
+  skuSnapshot         String?
   // Snapshot of EquipmentItem.price (whole rupees) at purchase time — never
   // recomputed from the product's current price.
   unitPriceSnapshot   Int
@@ -886,18 +943,18 @@ model EquipmentPurchaseOrderItem {
 // by any route) is intentionally left untouched; this model is the managed,
 // YouTube-specific listing.
 model MediaVideo {
-  id              String   @id @default(cuid())
-  title           String
-  description     String?
+  id             String   @id @default(cuid())
+  title          String
+  description    String?
   // Normalized 11-character YouTube video ID extracted server-side.
-  youtubeVideoId  String   @unique
+  youtubeVideoId String   @unique
   // Original URL as entered by the admin (watch/youtu.be/shorts forms).
-  youtubeUrl      String
-  category        String?
-  isActive        Boolean  @default(true)
-  sortOrder       Int      @default(0)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  youtubeUrl     String
+  category       String?
+  isActive       Boolean  @default(true)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@index([isActive, sortOrder])
   @@map("media_videos")
@@ -931,17 +988,17 @@ model WebsiteContent {
 }
 
 model ExecutiveMember {
-  id        String   @id @default(cuid())
-  name      String
+  id          String   @id @default(cuid())
+  name        String
   designation String
-  photo     String?
-  bio       String?
-  email     String?
-  phone     String?
-  order     Int      @default(0)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  photo       String?
+  bio         String?
+  email       String?
+  phone       String?
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@map("executive_members")
 }
@@ -1010,20 +1067,20 @@ model Setting {
 // signatories (TournamentSignatory, ordered); issued certificates snapshot
 // name/designation, so later edits never alter issued certificates.
 model CertificateSignatory {
-  id                String    @id @default(cuid())
+  id                String                @id @default(cuid())
   name              String
   designation       String
   organization      String?
   signatureImageUrl String?
   stateId           String?
-  state             State?    @relation(fields: [stateId], references: [id])
+  state             State?                @relation(fields: [stateId], references: [id])
   districtId        String?
-  district          District? @relation(fields: [districtId], references: [id])
-  isActive          Boolean   @default(true)
-  sortOrder         Int       @default(0)
+  district          District?             @relation(fields: [districtId], references: [id])
+  isActive          Boolean               @default(true)
+  sortOrder         Int                   @default(0)
   tournaments       TournamentSignatory[]
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
 
   @@index([stateId])
   @@index([districtId])
@@ -1040,4 +1097,109 @@ model TournamentSignatory {
   @@id([tournamentId, signatoryId])
   @@index([signatoryId])
   @@map("tournament_signatories")
+}
+
+// One payment attempt for an equipment order. Today the only provider is the
+// dummy Razorpay-style test gateway (isTest = true, no real money); the row
+// shape matches what a real gateway integration needs.
+model EquipmentPayment {
+  id                String                 @id @default(cuid())
+  orderId           String
+  order             EquipmentPurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  provider          String
+  isTest            Boolean                @default(true)
+  providerOrderId   String                 @unique
+  providerPaymentId String?                @unique
+  amount            Int
+  currency          String                 @default("INR")
+  status            PaymentAttemptStatus   @default(CREATED)
+  failureReason     String?
+  verifiedAt        DateTime?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  @@index([orderId])
+  @@map("equipment_payments")
+}
+
+enum PaymentAttemptStatus {
+  CREATED
+  PAID
+  FAILED
+  CANCELLED
+}
+
+// Equipment requirement raised for one district (by its admin, or by the
+// State/Super Admin on its behalf) and reviewed by the State Admin or Super Admin.
+model EquipmentRequirement {
+  id                 String              @id @default(cuid())
+  requirementNumber  String              @unique
+  stateId            String
+  state              State               @relation(fields: [stateId], references: [id])
+  districtId         String
+  district           District            @relation(fields: [districtId], references: [id])
+  requestedById      String
+  requestedBy        User                @relation("RequirementRequestedBy", fields: [requestedById], references: [id])
+  itemName           String
+  category           EquipmentCategory   @default(OTHER)
+  description        String?
+  quantity           Int
+  // Whole rupees, optional estimate.
+  estimatedUnitPrice Int?
+  priority           RequirementPriority @default(MEDIUM)
+  notes              String?
+  attachmentId       String?
+  requiredBy         DateTime?
+  status             RequirementStatus   @default(PENDING)
+  reviewNote         String?
+  reviewedById       String?
+  reviewedBy         User?               @relation("RequirementReviewedBy", fields: [reviewedById], references: [id])
+  reviewedAt         DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@index([stateId])
+  @@index([districtId])
+  @@index([status])
+  @@map("equipment_requirements")
+}
+
+enum RequirementStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  FULFILLED
+}
+
+enum RequirementPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+// Uploaded files kept in the database (works on serverless hosts without a
+// file store). Equipment images are public; requirement attachments are
+// served only to admins in the owning district scope.
+model MediaAsset {
+  id           String         @id @default(cuid())
+  kind         MediaAssetKind
+  mimeType     String
+  size         Int
+  fileName     String?
+  data         Bytes
+  stateId      String?
+  districtId   String?
+  uploadedById String?
+  uploadedBy   User?          @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime       @default(now())
+
+  @@index([kind])
+  @@map("media_assets")
+}
+
+enum MediaAssetKind {
+  EQUIPMENT_IMAGE
+  REQUIREMENT_ATTACHMENT
 }

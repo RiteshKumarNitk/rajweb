@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { ZodError } from "zod";
-import { AppError, fromUnknownError, isAppError } from "@/core/errors/app-error";
+import { AppError, fromUnknownError } from "@/core/errors/app-error";
 import { ErrorCodes } from "@/core/errors/error-codes";
 import { apiError, apiSuccess } from "@/core/api/api-response";
 import { generateRequestId, getClientIp } from "@/core/api/request-context";
@@ -89,10 +89,10 @@ export function withApiHandler(handler: ApiHandler, options: ApiHandlerOptions =
         );
       }
 
-      // Judge the error as thrown, not after conversion: fromUnknownError()
-      // wraps unexpected exceptions in an operational AppError.internal(),
-      // which would otherwise hide real 500s (no stack, no Sentry).
-      if (isAppError(error) && error.isOperational && error.statusCode < 500) {
+      // Decide on the status actually returned: client errors (4xx — including
+      // converted ones such as a unique-constraint 409) are warnings; every
+      // 5xx is logged with the original exception and sent to Sentry.
+      if (appError.statusCode < 500) {
         logger.warn({
           requestId,
           module: moduleName,

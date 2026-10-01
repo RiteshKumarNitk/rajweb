@@ -576,6 +576,28 @@ Certificate PDFs cannot be stored on Vercel (no storage adapter for it). Docs th
 
 ---
 
+## District Membership, Equipment Shop & Test Payments — 2026-10-01
+
+### Summary
+Google/new members choose their State and District at onboarding; the account Equipment Shop shows only their district's (plus state and central) stock; checkout snapshots buyer and delivery details and pays through a dummy Razorpay-style **test** gateway; orders separate payment status from fulfilment; districts raise equipment requirements for state/super review. Details: [RRA-PROJECT-STATUS.md §19](RRA-PROJECT-STATUS.md#19-district-membership-district-equipment--orders-2026-10-01).
+
+### Features Added
+Member onboarding and district identity; locations API; member Equipment Shop (cart, checkout, test payment); My Orders dashboard and order details; admin order search/filters/pagination/details/step transitions; district requirements; equipment image upload, SKU, specifications.
+
+### Database Changes (additive)
+`UserProfile`: home `stateId`, `districtId`, `memberType`, `onboardedAt`. `EquipmentItem`: `sku`, `specifications`. `EquipmentPurchaseOrder`: buyer/delivery snapshots, timeline timestamps, courier/tracking. `EquipmentPurchaseOrderItem`: `skuSnapshot`. Enums: order status PLACED/CONFIRMED/PROCESSING/SHIPPED/DELIVERED, payment status CANCELLED, MemberType, PaymentAttemptStatus, RequirementStatus/Priority, MediaAssetKind. New tables `equipment_payments`, `equipment_requirements`, `media_assets`. **Must be applied to production (`npx prisma db push`) before deploying this code.**
+
+### API Changes
+New: `/api/locations/states`, `/api/locations/districts`, `/api/account/onboarding`, `/api/account/equipment/orders`, `/api/account/equipment/payment/{create,simulate,verify,cancel}`, `/api/admin/media`, `/api/media/{id}`, `/api/admin/equipment/requirements(/{id})`. Changed: `PATCH /api/admin/equipment/orders/{id}` (new statuses and rules), `/api/equipment/purchase` (catalog visibility), equipment create/update (`sku`, `specifications`, uploaded images).
+
+### Security
+Catalog, checkout, payments, orders, requirements and uploads are scope-checked on the server (another district's ids → 404); payment success requires a gateway-issued, signature-verified payment; upload types detected from content; attachment probing closed.
+
+### Known Limitations
+Test gateway only (on by default — disable or replace before real sales); no refunds; see Project Status §19.
+
+---
+
 ## Upcoming (not started)
 
 Phases J–U are PLANNED — see [RRA-PROJECT-STATUS.md §10](RRA-PROJECT-STATUS.md#10-remaining-roadmap). Add an entry here using the template below when each lands:
