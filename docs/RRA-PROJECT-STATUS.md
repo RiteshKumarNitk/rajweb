@@ -856,8 +856,8 @@ Supersedes earlier statements that no payment exists, that "My Equipment" stays 
 ### What is implemented
 | Area | Status | Notes |
 |---|---|---|
-| Google sign-in → onboarding | IMPLEMENTED | New members (no home district, no player/coach registration) are sent to `/account/onboarding`: name, mobile, member type (Player / Coach / Supporter-Parent), State → District (district list loaded per state from the server), optional address. Existing members are never asked again. Player/Coach members are then pointed to the existing registration forms |
-| District identity | IMPLEMENTED | Dashboard and profile show State, District, Member Type, Member ID and profile status; the district changes only through a District Change request |
+| Google sign-in → onboarding | REPLACED (§20) | The forced `/account/onboarding` step was removed on 2026-10-02: sign-in goes straight to the dashboard and the State/District is chosen on the Player or Coach application |
+| District identity | IMPLEMENTED (updated §20) | Dashboard and profile show the State/District taken from the Player/Coach application, the Member ID and each application's status; the district changes only through a District Change request |
 | District catalog | IMPLEMENTED | `/account/equipment` is the member's Equipment Shop: central + own state + own district stock only; item details (image, SKU, specifications, stock), one-store cart, checkout with delivery details and price breakdown; "My Equipment" tab lists paid purchases. Public `/equipment` shows the central store only |
 | District equipment management | IMPLEMENTED | `/admin/equipment`: image upload (stored in the database), SKU, specifications, sort order, active, stock, price; ownership forced to the admin's scope |
 | District requirements | IMPLEMENTED | `/admin/equipment/requirements`: districts raise needs (quantity, estimate, priority, required-by date, attachment); State Admin / Super Admin review (under review → approved/rejected → fulfilled) |
@@ -880,3 +880,23 @@ Prisma validation, `tsc --noEmit`, `npm run lint` (0 errors) and `next build --w
 | Cart | Kept in the page only (lost on reload) | Optional |
 | Notifications | No e-mail for order or requirement updates | Optional |
 | Not-found pages | An out-of-scope order id shows the not-found page with HTTP 200 (streamed), no data — same as other admin detail pages | Known (§9 item 25) |
+
+## 20. Member Application Flow (2026-10-02)
+
+Supersedes the §19 onboarding step. Google sign-in → basic account (name, email, avatar) → Member Dashboard → the member chooses Player Portal or Coach Portal → application form with State → District → district review → approved or returned.
+
+| Area | Status | Notes |
+|---|---|---|
+| Sign-in | IMPLEMENTED | No onboarding redirect. A new member lands on the dashboard, which asks "What would you like to apply for?" with Apply as Player / Apply as Coach / Memberships. No Player/Coach row and no new role are created at sign-in. `/account/onboarding` now redirects to the dashboard; `POST /api/account/onboarding` was removed |
+| Player / Coach application | IMPLEMENTED | The forms use the server-filtered State → District picker and send `stateId` + `districtId`. The API checks that the district exists, is active and belongs to the state (400 "The selected district does not belong to the selected state"); the owning state comes from the district. Public forms (by name) still work |
+| Pending | IMPLEMENTED | The portal shows "Your … application is under review." with status Pending Approval, submitted date, State and District; no form. A second application → 409 "Your … application is already under review." |
+| Returned (rejected) | IMPLEMENTED | Unchanged resubmission flow: reason + Correct & Resubmit, form prefilled with the existing State/District, same record back to PENDING. A new application instead → 409 |
+| Approved | IMPLEMENTED | Read-only Player/Coach workspace. Applying again (form, old tab or direct API) → 409 "You are already a registered …"; resubmitting an approved record → 409 |
+| Sidebar | IMPLEMENTED | Registrations follow the status: Player Portal → "Player Application — Pending/Rejected/Expired" → once approved it leaves Registrations and appears as "Player Profile" under Overview. Same for Coach. Memberships always stays |
+| Home district | IMPLEMENTED | Taken from the Player application, else the Coach application, else a home saved by the old onboarding step (kept for the members who completed it). Members with none see and can order from the central equipment store only — the checkout no longer requires onboarding |
+| Scope | Unchanged | Applications are reviewed only by the district's admin, its State Admin or the Super Admin; the profile API cannot change the district; moves go through District Change requests |
+
+No database change: existing columns (`UserProfile` home fields) are kept, no data is deleted, and no application is removed.
+
+### Verification
+Prisma validation, `tsc --noEmit`, ESLint (0 errors) and `next build --webpack` pass. Throw-away database, production build: 371/371 regression checks, 166/166 shop and application checks, 15/15 + 49/49 real-browser checks (the 49 include the A–I application walk-through), no server errors logged.

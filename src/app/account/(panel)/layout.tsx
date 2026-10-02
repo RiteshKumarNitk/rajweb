@@ -4,7 +4,6 @@ import prisma from "@/infrastructure/database/prisma";
 import { PanelNavbar } from "./panel-navbar";
 import { getRegistrationLocations } from "@/modules/districts/registration-locations.server";
 import { RegistrationLocationsProvider } from "@/shared/components/forms/registration-locations-context";
-import { needsOnboarding } from "@/modules/account/member-home.server";
 
 export const dynamic = "force-dynamic";
 
@@ -12,17 +11,20 @@ export default async function AccountPanelLayout({ children }: { children: React
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/account/login");
 
-  // New members (e.g. first Google sign-in) choose their State/District first.
-  // Not a security boundary — the APIs enforce the home district themselves.
-  const mustOnboard = await needsOnboarding(authUser).catch(() => false);
-  if (mustOnboard) redirect("/account/onboarding");
-
+  // No onboarding step: a new member lands on the dashboard and applies as a
+  // Player or Coach only from those portals. The sidebar follows the status.
   let dbUser = null;
   try {
     if (authUser.id) {
       dbUser = await prisma.user.findUnique({
         where: { id: authUser.id },
-        select: { name: true, email: true, avatar: true },
+        select: {
+          name: true,
+          email: true,
+          avatar: true,
+          player: { select: { status: true } },
+          coach: { select: { status: true } },
+        },
       });
     }
   } catch (err) {
@@ -37,7 +39,13 @@ export default async function AccountPanelLayout({ children }: { children: React
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <PanelNavbar name={name} email={email} avatar={avatar} />
+      <PanelNavbar
+        name={name}
+        email={email}
+        avatar={avatar}
+        playerStatus={dbUser?.player?.status ?? null}
+        coachStatus={dbUser?.coach?.status ?? null}
+      />
       <main className="lg:pl-64">
         <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
           <RegistrationLocationsProvider locations={locations}>{children}</RegistrationLocationsProvider>

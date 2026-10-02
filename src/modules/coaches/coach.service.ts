@@ -3,7 +3,7 @@ import { AppError } from "@/core/errors/app-error";
 import { sanitizeEmail, sanitizePhone, sanitizeText } from "@/security/sanitize";
 import { createModuleLogger } from "@/core/logger";
 import type { CertificationLevel } from "@prisma/client";
-import { resolveRegistrationDistrict } from "@/modules/districts/registration-locations.server";
+import { resolveApplicationDistrict } from "@/modules/districts/registration-locations.server";
 
 const log = createModuleLogger("coaches");
 
@@ -37,12 +37,14 @@ export interface ResubmitCoachInput {
   mobile: string;
   qualification: string;
   certificationLevel: CertificationLevel;
-  district: string;
+  stateId?: string;
+  districtId?: string;
+  district?: string;
   state?: string;
 }
 
 export async function resubmitCoach(coachId: string, input: ResubmitCoachInput) {
-  const { districtId } = await resolveRegistrationDistrict({ district: input.district, state: input.state });
+  const { districtId } = await resolveApplicationDistrict(input);
 
   const result = await prisma.coach.updateMany({
     where: { id: coachId, status: "REJECTED" },

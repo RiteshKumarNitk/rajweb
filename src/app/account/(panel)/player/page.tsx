@@ -29,6 +29,7 @@ import { formatDate } from "@/lib/utils";
 import { PlayerRegistrationFlow } from "./player-registration-flow";
 import { PlayerResubmitActions } from "./player-resubmit-actions";
 import { RequestsPanel, type RequestRow } from "@/shared/components/requests/requests-panel";
+import { ApplicationPendingNotice } from "@/shared/components/account/application-pending-notice";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +69,7 @@ export default async function AccountPlayerPage() {
           .findFirst({
             where: playerWhere,
             include: {
-              district: true,
+              district: { include: { state: { select: { name: true } } } },
               certificates: { where: { isRevoked: false, tournamentId: null }, orderBy: { issuedAt: "desc" }, take: 1 },
               tournamentRegistrations: { include: { tournament: true, category: true }, orderBy: { registeredAt: "desc" } },
             },
@@ -119,7 +120,9 @@ export default async function AccountPlayerPage() {
         {/* Top Header */}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-primary sm:text-3xl">Player Workspace</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-primary sm:text-3xl">
+              {player.status === "APPROVED" ? "Player Workspace" : "Player Application"}
+            </h1>
             <p className="text-sm text-slate-500">
               Your official athlete registration, state ranking ID, license status, and championship records.
             </p>
@@ -146,7 +149,7 @@ export default async function AccountPlayerPage() {
                     <StatusBadge status={player.status} />
                   </div>
                   <p className="flex items-center gap-1.5 text-xs text-slate-300">
-                    <MapPin className="h-3.5 w-3.5 text-amber-400" /> {player.district.name} District · State of Rajasthan
+                    <MapPin className="h-3.5 w-3.5 text-amber-400" /> {player.district.name} District{player.district.state ? ` · ${player.district.state.name}` : ""}
                   </p>
                   <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-slate-400">
                     <span className="font-mono bg-slate-800 px-2 py-0.5 rounded text-amber-300 font-bold border border-slate-700">
@@ -171,6 +174,15 @@ export default async function AccountPlayerPage() {
           </CardContent>
         </Card>
 
+        {player.status === "PENDING" && (
+          <ApplicationPendingNotice
+            kind="player"
+            submittedAt={player.createdAt}
+            stateName={player.district.state?.name ?? null}
+            districtName={player.district.name}
+          />
+        )}
+
         {/* Rejection notice if any */}
         {player.status === "REJECTED" && (
           <Card className="border-red-200 bg-red-50">
@@ -191,7 +203,8 @@ export default async function AccountPlayerPage() {
                   id: player.id,
                   dateOfBirth: player.dateOfBirth.toISOString().slice(0, 10),
                   gender: player.gender,
-                  district: player.district.name,
+                  stateId: player.district.stateId ?? "",
+                  districtId: player.districtId,
                   category: player.category ?? "",
                 }}
               />

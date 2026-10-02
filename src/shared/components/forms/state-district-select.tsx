@@ -22,18 +22,22 @@ async function load(url: string): Promise<LocationOption[]> {
 /**
  * State → District picker. Districts are fetched from the server for the
  * chosen state (`/api/locations/districts?stateId=`), so the list can only
- * ever contain that state's districts. Changing the state clears the district.
+ * ever contain that state's districts. Changing the state clears the district,
+ * and a single active state is selected automatically. The server re-checks
+ * that the district belongs to the state on submit.
  */
 export function StateDistrictSelect({
   stateId,
   districtId,
   onChange,
   disabled,
+  errors,
 }: {
   stateId: string;
   districtId: string;
   onChange: (value: { stateId: string; districtId: string; districtName?: string; stateName?: string }) => void;
   disabled?: boolean;
+  errors?: { stateId?: string; districtId?: string };
 }) {
   const [states, setStates] = useState<LocationOption[] | null>(null);
   const [districts, setDistricts] = useState<{ stateId: string; items: LocationOption[] } | null>(null);
@@ -60,15 +64,22 @@ export function StateDistrictSelect({
     };
   }, [stateId]);
 
+  // Only one active state: nothing to choose, so pick it for the member.
+  const onlyState = states?.length === 1 ? states[0] : null;
+  useEffect(() => {
+    if (onlyState && !stateId && !disabled) onChange({ stateId: onlyState.id, districtId: "", stateName: onlyState.name });
+  }, [onlyState, stateId, disabled, onChange]);
+
   const districtOptions = districts && districts.stateId === stateId ? districts.items : null;
   const loadingDistricts = !!stateId && !districtOptions && !error;
 
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       <div className="space-y-1.5">
-        <Label htmlFor="home-state">State</Label>
+        <Label htmlFor="stateId">State</Label>
         <select
-          id="home-state"
+          id="stateId"
+          name="stateId"
           className={SELECT_CLASS}
           value={stateId}
           disabled={disabled || !states}
@@ -84,13 +95,15 @@ export function StateDistrictSelect({
             </option>
           ))}
         </select>
+        {errors?.stateId && <p className="text-sm text-secondary">{errors.stateId}</p>}
       </div>
       <div className="space-y-1.5">
-        <Label htmlFor="home-district" className="flex items-center gap-2">
+        <Label htmlFor="districtId" className="flex items-center gap-2">
           District {loadingDistricts && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
         </Label>
         <select
-          id="home-district"
+          id="districtId"
+          name="districtId"
           className={SELECT_CLASS}
           value={districtOptions?.some((d) => d.id === districtId) ? districtId : ""}
           disabled={disabled || !stateId || !districtOptions}
@@ -106,6 +119,7 @@ export function StateDistrictSelect({
             </option>
           ))}
         </select>
+        {errors?.districtId && <p className="text-sm text-secondary">{errors.districtId}</p>}
       </div>
       {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
     </div>

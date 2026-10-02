@@ -537,12 +537,12 @@ The registration-certificate route (`POST /api/admin/players/{id}/certificate`) 
 - `GET /api/locations/states` — active states with at least one active district: `[{ id, name }]`. 120/min.
 - `GET /api/locations/districts?stateId=…` — active districts **of that state only**: `[{ id, name }]`. Missing `stateId` → 400; unknown/inactive state → 404.
 
-### Onboarding
-- `POST /api/account/onboarding` — Session, CSRF, 20/min. Body `{ name, phone (10-digit), memberType: "PLAYER"|"COACH"|"SUPPORTER", stateId, districtId, address?, city?, pincode? }`. The district must belong to the state (**400** "The selected district does not belong to the selected state"); inactive/unknown district → 400. Sets the member's home State/District on `UserProfile` once — if a home already exists (here or through a player/coach registration) → **409** (moves go through a District Change request). Response `{ stateName, districtName, next }` (`/account/player`, `/account/coach` or `/account/dashboard`). Audit `MEMBER_ONBOARDED`.
+### Onboarding (removed 2026-10-02 — see §13f)
+- ~~`POST /api/account/onboarding`~~ — removed; now 404. Was: Session, CSRF, 20/min. Body `{ name, phone (10-digit), memberType: "PLAYER"|"COACH"|"SUPPORTER", stateId, districtId, address?, city?, pincode? }`. The district must belong to the state (**400** "The selected district does not belong to the selected state"); inactive/unknown district → 400. Sets the member's home State/District on `UserProfile` once — if a home already exists (here or through a player/coach registration) → **409** (moves go through a District Change request). Response `{ stateName, districtName, next }` (`/account/player`, `/account/coach` or `/account/dashboard`). Audit `MEMBER_ONBOARDED`.
 - `PATCH /api/account/profile` never changes the home State/District (extra fields are dropped).
 
 ### Member checkout
-- `POST /api/account/equipment/orders` — Session, CSRF, 20/min. Body `{ items: [{ equipmentId, quantity 1–10 }], delivery: { name, phone, email?, address (≥ 10), city, pincode (6 digits) } }`. Requires an onboarded member (400 otherwise). Items outside the member's catalog → 404; one store per order → 400; stock → 409. Creates Order `PENDING_PAYMENT` / Payment `PENDING` with snapshots: buyer name/email/phone, member ID, delivery address/city/pincode, home district/state names, item name, SKU, unit price, line totals. Response `{ id, orderNumber, status, paymentStatus, total }`.
+- `POST /api/account/equipment/orders` — Session, CSRF, 20/min. Body `{ items: [{ equipmentId, quantity 1–10 }], delivery: { name, phone, email?, address (≥ 10), city, pincode (6 digits) } }`. A member without a home district sees and can order from the central store only (the onboarding requirement was removed on 2026-10-02). Items outside the member's catalog → 404; one store per order → 400; stock → 409. Creates Order `PENDING_PAYMENT` / Payment `PENDING` with snapshots: buyer name/email/phone, member ID, delivery address/city/pincode, home district/state names, item name, SKU, unit price, line totals. Response `{ id, orderNumber, status, paymentStatus, total }`.
 
 ### Test payments (dummy Razorpay)
 All Session + CSRF, 20/min; another member's order or attempt → 404. `PAYMENT_PROVIDER=disabled` turns payments off (400 "Online payment is not available right now").
@@ -559,6 +559,14 @@ All Session + CSRF, 20/min; another member's order or attempt → 404. `PAYMENT_
 - `POST /api/admin/equipment/requirements` — `equipment:manage`, CSRF. Body `{ itemName, category, quantity ≥ 1, estimatedUnitPrice?, priority: LOW|MEDIUM|HIGH|URGENT, requiredBy? (YYYY-MM-DD), description?, notes?, attachmentId?, districtId? }`. District Admins always file for their own district (`districtId` ignored); State Admins for a district of their state (another state → 400; none → 400); Super Admin any district. An attachment must be a requirement upload within the caller's scope (400 otherwise — missing and out-of-scope look the same).
 - `PATCH /api/admin/equipment/requirements/{id}` — out of scope → 404. With `status` = review: State Admin (own state) or Super Admin only (District Admin → 403); moves `PENDING → UNDER_REVIEW | APPROVED | REJECTED`, `UNDER_REVIEW → APPROVED | REJECTED`, `APPROVED → FULFILLED` (others 409); `REJECTED` needs `reviewNote` (400). Without `status`: edit fields — pending requirements only (409 otherwise).
 - `DELETE /api/admin/equipment/requirements/{id}` — pending only (409 otherwise). Audit `EQUIPMENT_REQUIREMENT_CREATED/UPDATED/REVIEWED/DELETED`.
+
+## 13f. Player & Coach Applications (2026-10-02)
+
+- `POST /api/players/register`, `POST /api/players/{id}/resubmit`, `POST /api/coaches/register`, `POST /api/coaches/{id}/resubmit` accept the location either as ids — `stateId` + `districtId` (account forms) — or as names — `district` + optional `state` (public forms). One of `districtId` / `district` is required (400).
+- With ids: `districtId` without `stateId` → **400** "Select your state"; unknown or inactive district/state → **400** "Invalid district selected"; district of another state → **400** "The selected district does not belong to the selected state". The owning state is always the district's.
+- One application per account and type. A second `register` call → **409** with the current status: "Your player application is already under review." / "You are already a registered player." / "Your player application was returned — correct and resubmit it from the Player Portal." (coach likewise). The unique `userId` column backs this against races (409).
+- `resubmit` works only on the owner's REJECTED record (another member's → 404; pending or approved → 409) and updates the same record.
+- Registering never changes the account's role.
 
 ## 13a. Admin Gallery APIs
 

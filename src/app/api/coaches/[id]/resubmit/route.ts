@@ -2,6 +2,7 @@ import { z } from "zod";
 import { withApiHandler, jsonSuccess, AppError } from "@/core/api/with-api-handler";
 import { requireAuth } from "@/security/auth/session";
 import { resubmitCoach } from "@/modules/coaches/coach.service";
+import { applicationLocationFields, hasApplicationDistrict } from "@/modules/districts/registration-locations.server";
 import { createAuditLog } from "@/services/audit/audit-service";
 import prisma from "@/infrastructure/database/prisma";
 
@@ -11,9 +12,8 @@ const coachSchema = z.object({
   mobile: z.string().min(10).max(20),
   qualification: z.string().min(2).max(500),
   certificationLevel: z.enum(["LEVEL_1", "LEVEL_2", "LEVEL_3", "INTERNATIONAL"]),
-  district: z.string().min(1).max(100),
-  state: z.string().max(100).optional(),
-});
+  ...applicationLocationFields,
+}).refine(hasApplicationDistrict, { message: "Select your district", path: ["districtId"] });
 
 export const POST = withApiHandler(
   async (request, { requestId, params }) => {

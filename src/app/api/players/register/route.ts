@@ -2,6 +2,7 @@ import { z } from "zod";
 import { withApiHandler, jsonSuccess } from "@/core/api/with-api-handler";
 import { registerPlayer } from "@/modules/players/player.service";
 import { getCurrentUser } from "@/security/auth/session";
+import { applicationLocationFields, hasApplicationDistrict } from "@/modules/districts/registration-locations.server";
 
 const playerSchema = z.object({
   name: z.string().min(2).max(100),
@@ -9,10 +10,9 @@ const playerSchema = z.object({
   gender: z.enum(["MALE", "FEMALE", "OTHER"]),
   email: z.string().email().max(254),
   mobile: z.string().min(10).max(20),
-  district: z.string().min(1).max(100),
-  state: z.string().max(100).optional(),
+  ...applicationLocationFields,
   category: z.string().max(50).optional(),
-});
+}).refine(hasApplicationDistrict, { message: "Select your district", path: ["districtId"] });
 
 export const POST = withApiHandler(
   async (request, { requestId }) => {

@@ -1,16 +1,15 @@
-import { withApiHandler, jsonSuccess, AppError } from "@/core/api/with-api-handler";
+import { withApiHandler, jsonSuccess } from "@/core/api/with-api-handler";
 import { requireAuth } from "@/security/auth/session";
 import { checkoutSchema, createPurchaseOrder } from "@/modules/equipment/purchase.service";
-import { getMemberHome } from "@/modules/account/member-home.server";
 
-/** Member checkout: creates an unpaid order from the member's own district catalog. */
+/**
+ * Member checkout: creates an unpaid order from the catalog the member can
+ * see — their district's when they have one, otherwise the central catalog.
+ */
 export const POST = withApiHandler(
   async (request, { requestId }) => {
     const user = await requireAuth();
     const input = checkoutSchema.parse(await request.json());
-    if (!(await getMemberHome(user.id)).onboarded) {
-      throw AppError.badRequest("Complete your registration (State and District) before ordering equipment.");
-    }
 
     const order = await createPurchaseOrder(user.id, input);
     return jsonSuccess(

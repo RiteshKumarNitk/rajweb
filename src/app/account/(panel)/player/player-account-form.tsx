@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -7,7 +8,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Button } from "@/shared/components/ui/button";
 import { FormBuilder } from "@/shared/components/ui/form-builder";
-import { useRegistrationLocations } from "@/shared/components/forms/registration-locations-context";
+import { StateDistrictSelect } from "@/shared/components/forms/state-district-select";
 import { apiPost, handleApiFetch } from "@/lib/api-client";
 
 const playerSchema = z.object({
@@ -16,9 +17,9 @@ const playerSchema = z.object({
   mobile: z.string().min(10, "Enter a valid phone number"),
   dateOfBirth: z.string().min(1, "Date of birth is required"),
   gender: z.enum(["MALE", "FEMALE", "OTHER"]),
-  district: z.string().min(1, "Select a district"),
-  // State slug; auto-filled when only one state is active.
-  state: z.string().optional(),
+  // Ids from the server-filtered picker; the API re-checks the district is in the state.
+  stateId: z.string().min(1, "Select your state"),
+  districtId: z.string().min(1, "Select your district"),
   category: z.string().min(1, "Select a playing category"),
 });
 
@@ -28,7 +29,8 @@ export interface PlayerResubmitData {
   id: string;
   dateOfBirth: string;
   gender: "MALE" | "FEMALE" | "OTHER";
-  district: string;
+  stateId: string;
+  districtId: string;
   category: string;
 }
 
@@ -40,11 +42,11 @@ export function PlayerAccountForm({
   resubmit?: PlayerResubmitData;
 }) {
   const router = useRouter();
-  const loc = useRegistrationLocations();
   const {
     register,
     handleSubmit,
     watch,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<PlayerFormData>({
     resolver: zodResolver(playerSchema),
@@ -54,12 +56,20 @@ export function PlayerAccountForm({
       mobile: prefill.phone,
       gender: resubmit?.gender ?? "MALE",
       dateOfBirth: resubmit?.dateOfBirth ?? "",
-      district: resubmit?.district ?? "",
-      state: loc.initialState(resubmit?.district),
+      stateId: resubmit?.stateId ?? "",
+      districtId: resubmit?.districtId ?? "",
       category: resubmit?.category ?? "",
     },
-  });  const districtOptions = loc.districtsFor(watch("state"));
-
+  });
+  const stateId = watch("stateId");
+  const districtId = watch("districtId");
+  const onLocationChange = useCallback(
+    (v: { stateId: string; districtId: string }) => {
+      setValue("stateId", v.stateId, { shouldValidate: Boolean(v.stateId) });
+      setValue("districtId", v.districtId, { shouldValidate: Boolean(v.districtId) });
+    },
+    [setValue]
+  );
 
   async function onSubmit(data: PlayerFormData) {
     try {
@@ -94,28 +104,19 @@ export function PlayerAccountForm({
               { label: "Other", value: "OTHER" },
             ],
           },
-          ...(loc.multiState
-            ? [
-                {
-                  name: "state" as const,
-                  label: "State",
-                  type: "select" as const,
-                  options: [
-                    { label: "Select state", value: "" },
-                    ...loc.locations.map((l) => ({ label: l.name, value: l.slug })),
-                  ],
-                },
-              ]
-            : []),
-          {
-            name: "district",
-            label: "District",
-            type: "select",
-            options: [
-              { label: "Select district", value: "" },
-              ...districtOptions.map((d) => ({ label: d, value: d })),
-            ],
-          },
+        ]}
+      />
+      <StateDistrictSelect
+        stateId={stateId}
+        districtId={districtId}
+        onChange={onLocationChange}
+        disabled={isSubmitting}
+        errors={{ stateId: errors.stateId?.message, districtId: errors.districtId?.message }}
+      />
+      <FormBuilder
+        register={register}
+        errors={errors}
+        fields={[
           {
             name: "category",
             label: "Playing Category",

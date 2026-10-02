@@ -1,5 +1,4 @@
 import prisma from "@/infrastructure/database/prisma";
-import { ROLES, type SessionUser } from "@/security/rbac/permissions";
 
 export type MemberTypeValue = "PLAYER" | "COACH" | "SUPPORTER";
 
@@ -16,19 +15,21 @@ export interface MemberHome {
   districtId: string | null;
   districtName: string | null;
   memberType: MemberTypeValue | null;
-  /** Where the home district comes from: onboarding, or an existing player/coach registration. */
+  /** Where the home district comes from: the Player or Coach application, or a legacy profile home. */
   source: "profile" | "player" | "coach" | null;
   /** Player/Coach ID when the member has one. */
   memberId: string | null;
   playerStatus: string | null;
   coachStatus: string | null;
-  onboarded: boolean;
+  /** True once a home district is known; without one the member sees the central catalog only. */
+  hasDistrict: boolean;
 }
 
 /**
- * Resolves the member's home scope server-side. Onboarding sets it on the
- * profile; members who registered as a player or coach before onboarding
- * existed take it from that registration, so they are never asked again.
+ * Resolves the member's home scope server-side. Sign-in never asks for it:
+ * the State/District comes from the member's Player application, else their
+ * Coach application (both validated server-side when submitted), else a home
+ * saved on the profile by the earlier onboarding step.
  */
 export async function getMemberHome(userId?: string | null): Promise<MemberHome> {
   const emptyHome: MemberHome = {
@@ -41,7 +42,7 @@ export async function getMemberHome(userId?: string | null): Promise<MemberHome>
     districtName: null,
     memberType: null,
     source: null,
-    onboarded: false,
+    hasDistrict: false,
   };
 
   if (!userId) return emptyHome;
@@ -73,19 +74,6 @@ export async function getMemberHome(userId?: string | null): Promise<MemberHome>
       coachStatus: coach?.status ?? null,
     };
 
-    if (profile?.homeDistrict) {
-      return {
-        ...base,
-        stateId: profile.homeState?.id ?? null,
-        stateName: profile.homeState?.name ?? null,
-        districtId: profile.homeDistrict.id,
-        districtName: profile.homeDistrict.name,
-        memberType: (profile.memberType as MemberTypeValue | null) ?? (player ? "PLAYER" : coach ? "COACH" : null),
-        source: "profile",
-        onboarded: true,
-      };
-    }
-
     const registration = player?.district
       ? { kind: "player" as const, district: player.district }
       : coach?.district
@@ -101,34 +89,26 @@ export async function getMemberHome(userId?: string | null): Promise<MemberHome>
         districtName: registration.district.name,
         memberType: registration.kind === "player" ? "PLAYER" : "COACH",
         source: registration.kind,
-        onboarded: true,
+        hasDistrict: true,
       };
     }
 
-    return {
-      ...base,
-      stateId: null,
-      stateName: null,
-      districtId: null,
-      districtName: null,
-      memberType: (profile?.memberType as MemberTypeValue | null) ?? null,
-      source: null,
-      onboarded: false,
-    };
+    if (profile?.homeDistrict) {
+      return {
+        ...base,
+        stateId: profile.homeState?.id ?? null,
+        stateName: profile.homeState?.name ?? null,
+        districtId: profile.homeDistrict.id,
+        districtName: profile.homeDistrict.name,
+        memberType: (profile.memberType as MemberTypeValue | null) ?? null,
+        source: "profile",
+        hasDistrict: true,
+      };
+    }
+
+    return { ...emptyHome, ...base, memberType: (profile?.memberType as MemberTypeValue | null) ?? null };
   } catch (err) {
     console.error("[getMemberHome] error loading member home:", err);
     return emptyHome;
-  }
-}
-
-/** Members (public-user role) must pick their State/District before using the account panel. */
-export async function needsOnboarding(user?: SessionUser | null): Promise<boolean> {
-  if (!user || !user.id) return false;
-  if (user.role !== ROLES.PUBLIC_USER) return false;
-  try {
-    const home = await getMemberHome(user.id);
-    return !home.onboarded;
-  } catch {
-    return false;
   }
 }

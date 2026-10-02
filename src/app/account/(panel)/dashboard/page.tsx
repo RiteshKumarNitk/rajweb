@@ -417,7 +417,7 @@ export default async function AccountDashboardPage() {
                   <StatusBadge status={player.status} />
                   <span className="font-mono text-xs font-semibold text-slate-600">{player.playerId}</span>
                 </div>
-                <p className="text-xs text-slate-400">Registered {formatDate(player.createdAt)}</p>
+                <p className="text-xs text-slate-400">Submitted {formatDate(player.createdAt)}</p>
                 {player.status === "REJECTED" && player.rejectionReason && (
                   <p className="text-xs text-red-600 bg-red-50 p-2 rounded-md border border-red-100">
                     Reason: {player.rejectionReason}
@@ -426,16 +426,20 @@ export default async function AccountDashboardPage() {
                 <div className="pt-2">
                   <Button variant="outline" size="sm" asChild className="w-full text-xs">
                     <Link href="/account/player">
-                      {player.status === "REJECTED" ? "Correct & Resubmit" : "Open Player Portal"}
+                      {player.status === "REJECTED"
+                        ? "Correct & Resubmit"
+                        : player.status === "APPROVED"
+                          ? "View Player Profile"
+                          : "View Application"}
                     </Link>
                   </Button>
                 </div>
               </div>
             ) : (
               <div className="space-y-3">
-                <p className="text-xs text-slate-500">No active player registration</p>
+                <p className="text-xs text-slate-500">No player application yet</p>
                 <Button size="sm" asChild className="w-full text-xs bg-primary text-white hover:bg-slate-800">
-                  <Link href="/account/player">Register as Player</Link>
+                  <Link href="/account/player">Apply as Player</Link>
                 </Button>
               </div>
             )}
@@ -466,16 +470,20 @@ export default async function AccountDashboardPage() {
                 <div className="pt-2">
                   <Button variant="outline" size="sm" asChild className="w-full text-xs">
                     <Link href="/account/coach">
-                      {coach.status === "REJECTED" ? "Correct & Resubmit" : "Open Coach Portal"}
+                      {coach.status === "REJECTED"
+                        ? "Correct & Resubmit"
+                        : coach.status === "APPROVED"
+                          ? "View Coach Profile"
+                          : "View Application"}
                     </Link>
                   </Button>
                 </div>
               </div>
             ) : (
               <div className="space-y-3">
-                <p className="text-xs text-slate-500">No active coach registration</p>
+                <p className="text-xs text-slate-500">No coach application yet</p>
                 <Button size="sm" variant="outline" asChild className="w-full text-xs">
-                  <Link href="/account/coach">Register as Coach</Link>
+                  <Link href="/account/coach">Apply as Coach</Link>
                 </Button>
               </div>
             )}

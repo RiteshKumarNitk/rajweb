@@ -26,7 +26,7 @@ export function PlayerRegistrationFlow({
         Register as an official RRA player to take part in sanctioned state tournaments, ranking events, and
         selection trials. Your application will be reviewed by your district association before approval.
       </p>
-      <Button onClick={() => setShowForm(true)}>Apply for Player Registration</Button>
+      <Button onClick={() => setShowForm(true)}>Apply as Player</Button>
     </div>
   );
 }

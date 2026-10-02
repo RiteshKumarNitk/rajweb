@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -7,7 +8,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Button } from "@/shared/components/ui/button";
 import { FormBuilder } from "@/shared/components/ui/form-builder";
-import { useRegistrationLocations } from "@/shared/components/forms/registration-locations-context";
+import { StateDistrictSelect } from "@/shared/components/forms/state-district-select";
 import { apiPost, handleApiFetch } from "@/lib/api-client";
 
 const coachSchema = z.object({
@@ -16,9 +17,9 @@ const coachSchema = z.object({
   mobile: z.string().min(10, "Enter a valid phone number"),
   qualification: z.string().min(2, "Qualification is required"),
   certificationLevel: z.enum(["LEVEL_1", "LEVEL_2", "LEVEL_3", "INTERNATIONAL"]),
-  district: z.string().min(1, "Select a district"),
-  // State slug; auto-filled when only one state is active.
-  state: z.string().optional(),
+  // Ids from the server-filtered picker; the API re-checks the district is in the state.
+  stateId: z.string().min(1, "Select your state"),
+  districtId: z.string().min(1, "Select your district"),
 });
 
 type CoachFormData = z.infer<typeof coachSchema>;
@@ -27,7 +28,8 @@ export interface CoachResubmitData {
   id: string;
   qualification: string;
   certificationLevel: "LEVEL_1" | "LEVEL_2" | "LEVEL_3" | "INTERNATIONAL";
-  district: string;
+  stateId: string;
+  districtId: string;
 }
 
 export function CoachAccountForm({
@@ -38,11 +40,11 @@ export function CoachAccountForm({
   resubmit?: CoachResubmitData;
 }) {
   const router = useRouter();
-  const loc = useRegistrationLocations();
   const {
     register,
     handleSubmit,
     watch,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<CoachFormData>({
     resolver: zodResolver(coachSchema),
@@ -52,11 +54,19 @@ export function CoachAccountForm({
       mobile: prefill.phone,
       qualification: resubmit?.qualification ?? "",
       certificationLevel: resubmit?.certificationLevel ?? "LEVEL_1",
-      district: resubmit?.district ?? "",
-      state: loc.initialState(resubmit?.district),
+      stateId: resubmit?.stateId ?? "",
+      districtId: resubmit?.districtId ?? "",
     },
-  });  const districtOptions = loc.districtsFor(watch("state"));
-
+  });
+  const stateId = watch("stateId");
+  const districtId = watch("districtId");
+  const onLocationChange = useCallback(
+    (v: { stateId: string; districtId: string }) => {
+      setValue("stateId", v.stateId, { shouldValidate: Boolean(v.stateId) });
+      setValue("districtId", v.districtId, { shouldValidate: Boolean(v.districtId) });
+    },
+    [setValue]
+  );
 
   async function onSubmit(data: CoachFormData) {
     try {
@@ -92,29 +102,14 @@ export function CoachAccountForm({
               { label: "International", value: "INTERNATIONAL" },
             ],
           },
-          ...(loc.multiState
-            ? [
-                {
-                  name: "state" as const,
-                  label: "State",
-                  type: "select" as const,
-                  options: [
-                    { label: "Select state", value: "" },
-                    ...loc.locations.map((l) => ({ label: l.name, value: l.slug })),
-                  ],
-                },
-              ]
-            : []),
-          {
-            name: "district",
-            label: "District",
-            type: "select",
-            options: [
-              { label: "Select district", value: "" },
-              ...districtOptions.map((d) => ({ label: d, value: d })),
-            ],
-          },
         ]}
+      />
+      <StateDistrictSelect
+        stateId={stateId}
+        districtId={districtId}
+        onChange={onLocationChange}
+        disabled={isSubmitting}
+        errors={{ stateId: errors.stateId?.message, districtId: errors.districtId?.message }}
       />
       <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? "Submitting..." : resubmit ? "Resubmit Application" : "Submit Coach Registration"}

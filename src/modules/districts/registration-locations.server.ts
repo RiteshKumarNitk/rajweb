@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { unstable_cache } from "next/cache";
 import prisma from "@/infrastructure/database/prisma";
 import { AppError } from "@/core/errors/app-error";
@@ -59,4 +60,47 @@ export async function resolveRegistrationDistrict(input: {
   if (matches.length === 0) throw AppError.validation("Invalid district selected");
   if (matches.length > 1) throw AppError.validation("Select your state — this district name exists in more than one state");
   return { districtId: matches[0].id, stateId: matches[0].stateId! };
+}
+
+/** Location fields of a Player/Coach application: ids (account forms) or names (public forms). */
+export const applicationLocationFields = {
+  stateId: z.string().min(1).max(64).optional(),
+  districtId: z.string().min(1).max(64).optional(),
+  district: z.string().min(1).max(100).optional(),
+  state: z.string().max(100).optional(),
+};
+
+/** Use with `.refine(hasApplicationDistrict, …)` on schemas built from applicationLocationFields. */
+export function hasApplicationDistrict(d: { districtId?: string; district?: string }): boolean {
+  return Boolean(d.districtId || d.district);
+}
+
+/**
+ * District of a Player/Coach application. With ids (the account forms) the
+ * district must exist, be active and belong to the chosen state — otherwise
+ * 400; client ids are never trusted as given. Without ids (public forms,
+ * older clients) it is resolved by name within the state, as before.
+ */
+export async function resolveApplicationDistrict(input: {
+  stateId?: string | null;
+  districtId?: string | null;
+  district?: string | null;
+  state?: string | null;
+}): Promise<{ districtId: string; stateId: string }> {
+  if (input.districtId) {
+    if (!input.stateId) throw AppError.validation("Select your state");
+    const district = await prisma.district.findUnique({
+      where: { id: input.districtId },
+      select: { id: true, stateId: true, isActive: true, state: { select: { isActive: true } } },
+    });
+    if (!district || !district.isActive || !district.stateId || !district.state?.isActive) {
+      throw AppError.validation("Invalid district selected");
+    }
+    if (district.stateId !== input.stateId) {
+      throw AppError.validation("The selected district does not belong to the selected state");
+    }
+    return { districtId: district.id, stateId: district.stateId };
+  }
+  if (!input.district) throw AppError.validation("Select your district");
+  return resolveRegistrationDistrict({ district: input.district, state: input.state });
 }

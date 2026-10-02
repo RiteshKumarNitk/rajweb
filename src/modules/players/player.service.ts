@@ -4,7 +4,8 @@ import { generateId } from "@/lib/utils";
 import { sanitizeEmail, sanitizePhone, sanitizeText } from "@/security/sanitize";
 import { createModuleLogger } from "@/core/logger";
 import type { Gender } from "@prisma/client";
-import { resolveRegistrationDistrict } from "@/modules/districts/registration-locations.server";
+import { resolveApplicationDistrict } from "@/modules/districts/registration-locations.server";
+import { duplicateApplicationError } from "@/modules/applications/duplicate-application";
 
 const log = createModuleLogger("players");
 
@@ -14,7 +15,10 @@ export interface RegisterPlayerInput {
   gender: Gender;
   email: string;
   mobile: string;
-  district: string;
+  /** Account forms send ids (validated: the district must be in the state); public forms send names. */
+  stateId?: string;
+  districtId?: string;
+  district?: string;
   /** State slug/id chosen on the form; required only when the district name is ambiguous. */
   state?: string;
   category?: string;
@@ -24,13 +28,11 @@ export interface RegisterPlayerInput {
 
 export async function registerPlayer(input: RegisterPlayerInput) {
   if (input.userId) {
-    const existing = await prisma.player.findUnique({ where: { userId: input.userId } });
-    if (existing) {
-      throw AppError.conflict("You already have a player registration.");
-    }
+    const existing = await prisma.player.findUnique({ where: { userId: input.userId }, select: { status: true } });
+    if (existing) throw duplicateApplicationError("player", existing.status);
   }
 
-  const { districtId } = await resolveRegistrationDistrict({ district: input.district, state: input.state });
+  const { districtId } = await resolveApplicationDistrict(input);
 
   const player = await prisma.player.create({
     data: {
@@ -72,7 +74,9 @@ export interface ResubmitPlayerInput {
   gender: Gender;
   email: string;
   mobile: string;
-  district: string;
+  stateId?: string;
+  districtId?: string;
+  district?: string;
   state?: string;
   category?: string;
 }
@@ -85,7 +89,7 @@ export interface ResubmitPlayerInput {
  * reviving an already-approved application.
  */
 export async function resubmitPlayer(playerId: string, input: ResubmitPlayerInput) {
-  const { districtId } = await resolveRegistrationDistrict({ district: input.district, state: input.state });
+  const { districtId } = await resolveApplicationDistrict(input);
 
   const result = await prisma.player.updateMany({
     where: { id: playerId, status: "REJECTED" },

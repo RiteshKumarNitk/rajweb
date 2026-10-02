@@ -1,12 +1,16 @@
 import { z } from "zod";
 import { withApiHandler, jsonSuccess } from "@/core/api/with-api-handler";
-import { AppError } from "@/core/errors/app-error";
 import { generateId } from "@/lib/utils";
 import { sanitizeEmail, sanitizePhone, sanitizeText } from "@/security/sanitize";
 import prisma from "@/infrastructure/database/prisma";
 import { getCurrentUser } from "@/security/auth/session";
 import type { CertificationLevel } from "@prisma/client";
-import { resolveRegistrationDistrict } from "@/modules/districts/registration-locations.server";
+import {
+  applicationLocationFields,
+  hasApplicationDistrict,
+  resolveApplicationDistrict,
+} from "@/modules/districts/registration-locations.server";
+import { duplicateApplicationError } from "@/modules/applications/duplicate-application";
 
 const coachSchema = z.object({
   name: z.string().min(2).max(100),
@@ -14,9 +18,8 @@ const coachSchema = z.object({
   mobile: z.string().min(10).max(20),
   qualification: z.string().min(2).max(500),
   certificationLevel: z.enum(["LEVEL_1", "LEVEL_2", "LEVEL_3", "INTERNATIONAL"]),
-  district: z.string().min(1).max(100),
-  state: z.string().max(100).optional(),
-});
+  ...applicationLocationFields,
+}).refine(hasApplicationDistrict, { message: "Select your district", path: ["districtId"] });
 
 export const POST = withApiHandler(
   async (request, { requestId }) => {
@@ -25,14 +28,12 @@ export const POST = withApiHandler(
 
     const authUser = await getCurrentUser();
     if (authUser) {
-      const existing = await prisma.coach.findUnique({ where: { userId: authUser.id } });
-      if (existing) {
-        throw AppError.conflict("You already have a coach registration.");
-      }
+      const existing = await prisma.coach.findUnique({ where: { userId: authUser.id }, select: { status: true } });
+      if (existing) throw duplicateApplicationError("coach", existing.status);
     }
 
-    // Owning state is decided by the district, resolved server-side within the submitted state.
-    const { districtId } = await resolveRegistrationDistrict({ district: data.district, state: data.state });
+    // Owning state is decided by the district, validated server-side against the submitted state.
+    const { districtId } = await resolveApplicationDistrict(data);
 
     const coach = await prisma.coach.create({
       data: {

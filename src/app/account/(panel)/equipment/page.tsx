@@ -68,7 +68,7 @@ export default async function AccountEquipmentPage() {
     <EquipmentShop
       items={shopItems}
       owned={ownedItems}
-      home={{ onboarded: home.onboarded, stateName: home.stateName, districtName: home.districtName }}
+      home={{ hasDistrict: home.hasDistrict, stateName: home.stateName, districtName: home.districtName }}
       buyer={{
         name: buyer?.name ?? "",
         email: buyer?.email ?? "",

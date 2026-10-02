@@ -24,6 +24,7 @@ import { CoachRegistrationFlow } from "./coach-registration-flow";
 import { CoachResubmitActions } from "./coach-resubmit-actions";
 import { getApplicationHistory } from "@/modules/applications/application-history.server";
 import { RequestsPanel, type RequestRow } from "@/shared/components/requests/requests-panel";
+import { ApplicationPendingNotice } from "@/shared/components/account/application-pending-notice";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +64,7 @@ export default async function AccountCoachPage() {
           .findFirst({
             where: coachWhere,
             include: {
-              district: true,
+              district: { include: { state: { select: { name: true } } } },
               certificates: { where: { isRevoked: false }, orderBy: { issuedAt: "desc" }, take: 1 },
             },
           })
@@ -113,7 +114,9 @@ export default async function AccountCoachPage() {
         {/* Header */}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-primary sm:text-3xl">Coach Workspace</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-primary sm:text-3xl">
+              {coach.status === "APPROVED" ? "Coach Workspace" : "Coach Application"}
+            </h1>
             <p className="text-sm text-slate-500">
               Manage your certified coaching credentials, state licenses, and district affiliations.
             </p>
@@ -140,7 +143,7 @@ export default async function AccountCoachPage() {
                     <StatusBadge status={coach.status} />
                   </div>
                   <p className="flex items-center gap-1.5 text-xs text-slate-300">
-                    <MapPin className="h-3.5 w-3.5 text-amber-400" /> {coach.district.name} District · Certified State Coach
+                    <MapPin className="h-3.5 w-3.5 text-amber-400" /> {coach.district.name} District{coach.district.state ? ` · ${coach.district.state.name}` : ""}
                   </p>
                   <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-slate-400">
                     <span className="font-mono bg-slate-800 px-2 py-0.5 rounded text-amber-300 font-bold border border-slate-700">
@@ -163,6 +166,15 @@ export default async function AccountCoachPage() {
           </CardContent>
         </Card>
 
+        {coach.status === "PENDING" && (
+          <ApplicationPendingNotice
+            kind="coach"
+            submittedAt={coach.createdAt}
+            stateName={coach.district.state?.name ?? null}
+            districtName={coach.district.name}
+          />
+        )}
+
         {/* Rejection Notice if any */}
         {coach.status === "REJECTED" && (
           <Card className="border-red-200 bg-red-50">
@@ -181,7 +193,8 @@ export default async function AccountCoachPage() {
                 prefill={{ name: user.name, email: user.email, phone: user.phone ?? "" }}
                 resubmit={{
                   id: coach.id,
-                  district: coach.district.name,
+                  stateId: coach.district.stateId ?? "",
+                  districtId: coach.districtId,
                   qualification: coach.qualification,
                   certificationLevel: coach.certificationLevel,
                 }}

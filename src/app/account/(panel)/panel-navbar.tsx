@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { signOut } from "next-auth/react";
 import {
   LayoutDashboard,
@@ -26,28 +26,63 @@ import {
   User as UserIcon,
   ChevronDown,
   Sparkles,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { siteConfig, siteImages } from "@/shared/config/site";
 import { LogoImage } from "@/shared/components/ui/media-image";
 import { NotificationsBell } from "./notifications-bell";
 
-const navSections = [
-  {
-    title: "Overview",
-    items: [
-      { name: "Dashboard", href: "/account/dashboard", icon: LayoutDashboard },
-      { name: "My Applications", href: "/account/applications", icon: ClipboardList },
-    ],
-  },
-  {
-    title: "Registrations",
-    items: [
-      { name: "Player Portal", href: "/account/player", icon: UserCheck },
-      { name: "Coach Portal", href: "/account/coach", icon: GraduationCap },
-      { name: "Memberships", href: "/account/memberships", icon: Building2 },
-    ],
-  },
+type NavItem = { name: string; href: string; icon: LucideIcon };
+
+const APPLICATION_STATUS_LABELS: Record<string, string> = {
+  PENDING: "Pending",
+  REJECTED: "Rejected",
+  EXPIRED: "Expired",
+};
+
+/**
+ * Registrations follow the member's application status: no application →
+ * "Player Portal"; submitted → "Player Application — Pending" (or Rejected /
+ * Expired); approved → no longer a registration, shown as "Player Profile"
+ * under Overview. Same for Coach. Memberships always stays.
+ */
+function buildNavSections(playerStatus: string | null, coachStatus: string | null): { title: string; items: NavItem[] }[] {
+  const portals = [
+    { kind: "Player", href: "/account/player", icon: UserCheck, status: playerStatus },
+    { kind: "Coach", href: "/account/coach", icon: GraduationCap, status: coachStatus },
+  ];
+  const profiles = portals
+    .filter((p) => p.status === "APPROVED")
+    .map((p) => ({ name: `${p.kind} Profile`, href: p.href, icon: p.icon }));
+  const registrations = portals
+    .filter((p) => p.status !== "APPROVED")
+    .map((p) => ({
+      name: p.status
+        ? `${p.kind} Application — ${APPLICATION_STATUS_LABELS[p.status] ?? "Submitted"}`
+        : `${p.kind} Portal`,
+      href: p.href,
+      icon: p.icon,
+    }));
+
+  return [
+    {
+      title: "Overview",
+      items: [
+        { name: "Dashboard", href: "/account/dashboard", icon: LayoutDashboard },
+        { name: "My Applications", href: "/account/applications", icon: ClipboardList },
+        ...profiles,
+      ],
+    },
+    {
+      title: "Registrations",
+      items: [...registrations, { name: "Memberships", href: "/account/memberships", icon: Building2 }],
+    },
+    ...staticNavSections,
+  ];
+}
+
+const staticNavSections: { title: string; items: NavItem[] }[] = [
   {
     title: "Events & Records",
     items: [
@@ -77,12 +112,17 @@ export function PanelNavbar({
   name,
   email,
   avatar,
+  playerStatus,
+  coachStatus,
 }: {
   name: string;
   email: string;
   avatar: string | null;
+  playerStatus: string | null;
+  coachStatus: string | null;
 }) {
   const pathname = usePathname();
+  const navSections = useMemo(() => buildNavSections(playerStatus, coachStatus), [playerStatus, coachStatus]);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 

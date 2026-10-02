@@ -598,6 +598,25 @@ Test gateway only (on by default — disable or replace before real sales); no r
 
 ---
 
+## Member Application Flow — 2026-10-02
+
+### Summary
+Google sign-in no longer forces an onboarding step: members land on the dashboard and apply as a Player or Coach only when they choose to, picking State → District on that application. Details: [RRA-PROJECT-STATUS.md §20](RRA-PROJECT-STATUS.md#20-member-application-flow-2026-10-02).
+
+### Features Changed
+Onboarding page/form/API removed (old URL → dashboard); Player and Coach forms use the server-filtered State/District picker; pending view with status, date, State and District; sidebar follows each application's status (Portal → Application — Pending/Rejected → Profile); dashboard/profile card shows the application district or an "apply" prompt; equipment checkout no longer requires onboarding (central store only without a district).
+
+### Database Changes
+None. Existing `UserProfile` home fields are kept and still read as a fallback.
+
+### API Changes
+Removed: `POST /api/account/onboarding`. Changed: player/coach register and resubmit accept `stateId` + `districtId` (validated together) besides names; duplicate applications return 409 with a status-specific message; `POST /api/account/equipment/orders` no longer requires a home district.
+
+### Security
+District ids from the client are checked against the chosen state on the server (400 on mismatch); one application per account and type (409, backed by the unique column); approved records cannot be resubmitted; no role is granted on registration.
+
+---
+
 ## Upcoming (not started)
 
 Phases J–U are PLANNED — see [RRA-PROJECT-STATUS.md §10](RRA-PROJECT-STATUS.md#10-remaining-roadmap). Add an entry here using the template below when each lands:

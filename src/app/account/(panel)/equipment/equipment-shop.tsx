@@ -109,7 +109,7 @@ export function EquipmentShop({
 }: {
   items: ShopItem[];
   owned: OwnedItem[];
-  home: { onboarded: boolean; stateName: string | null; districtName: string | null };
+  home: { hasDistrict: boolean; stateName: string | null; districtName: string | null };
   buyer: Buyer;
   paymentsEnabled: boolean;
 }) {
@@ -209,7 +209,7 @@ export function EquipmentShop({
           <h1 className="text-2xl font-bold tracking-tight text-primary sm:text-3xl">Equipment Shop</h1>
           <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
             <MapPin className="h-4 w-4" />
-            {home.onboarded && home.districtName
+            {home.hasDistrict && home.districtName
               ? `Equipment available to members of ${home.districtName}, ${home.stateName}`
               : "Showing the common RRA catalog"}
           </p>
