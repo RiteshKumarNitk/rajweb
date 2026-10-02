@@ -16,9 +16,14 @@ export default async function OnboardingPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/account/login?callbackUrl=/account/onboarding");
   // Existing members (and admins) never see this step.
-  if (!(await needsOnboarding(user))) redirect("/account/dashboard");
+  const needsOnboard = await needsOnboarding(user).catch(() => false);
+  if (!needsOnboard) redirect("/account/dashboard");
 
-  const dbUser = await prisma.user.findUnique({ where: { id: user.id }, select: { name: true, phone: true, email: true } });
+  const dbUser = user.id
+    ? await prisma.user
+        .findUnique({ where: { id: user.id }, select: { name: true, phone: true, email: true } })
+        .catch(() => null)
+    : null;
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-10">

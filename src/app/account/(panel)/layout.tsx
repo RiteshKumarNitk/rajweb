@@ -19,10 +19,12 @@ export default async function AccountPanelLayout({ children }: { children: React
 
   let dbUser = null;
   try {
-    dbUser = await prisma.user.findUnique({
-      where: { id: authUser.id },
-      select: { name: true, email: true, avatar: true },
-    });
+    if (authUser.id) {
+      dbUser = await prisma.user.findUnique({
+        where: { id: authUser.id },
+        select: { name: true, email: true, avatar: true },
+      });
+    }
   } catch (err) {
     console.error("[AccountPanelLayout] Error loading DB user profile:", err);
   }

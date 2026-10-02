@@ -119,11 +119,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     // a database round trip on every navigation.
     async jwt({ token, user, account }) {
       if (user?.email) {
-        token.email = user.email;
+        token.email = user.email.trim().toLowerCase();
       }
 
-      const email = token.email as string | undefined;
+      const email = typeof token.email === "string" ? token.email.trim().toLowerCase() : undefined;
       if (!email) return token;
+      token.email = email;
 
       // Repeat navigations were opening two Neon queries on every session read.
       // Refresh role, permissions, and active status at least every 60 seconds
@@ -134,69 +135,93 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         !user && token.id && token.isActive !== false && Date.now() - checkedAt < 60_000;
       if (sessionIsFresh) return token;
 
-      const dbUser = await prisma.user.findUnique({
-        where: { email },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          isActive: true,
-          districtId: true,
-          stateId: true,
-          district: { select: { stateId: true } },
-          isFederationWide: true,
-          roleId: true,
-          role: { select: { slug: true } },
-        },
-      });
+      try {
+        let dbUser = await prisma.user.findUnique({
+          where: { email },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            isActive: true,
+            districtId: true,
+            stateId: true,
+            district: { select: { stateId: true } },
+            isFederationWide: true,
+            roleId: true,
+            role: { select: { slug: true } },
+          },
+        });
 
-      if (!dbUser || !dbUser.isActive) {
-        token.isActive = false;
-        return token;
-      }
-
-      const permissions = await getPermissionsForRole(dbUser.roleId);
-
-      token.id = dbUser.id;
-      token.name = dbUser.name;
-      token.role = dbUser.role.slug as RoleSlug;
-      token.permissions = permissions;
-      token.districtId = dbUser.districtId;
-      // A district user's state is always the district's state.
-      token.stateId = dbUser.district?.stateId ?? dbUser.stateId;
-      token.isFederationWide = dbUser.isFederationWide;
-      token.isActive = true;
-      token.authCheckedAt = Date.now();
-
-      if (user) {
-        // This is the initial sign-in for this token — record it once.
-        try {
-          await prisma.user.update({
-            where: { id: dbUser.id },
-            data: { lastLoginAt: new Date() },
+        if (!dbUser && user) {
+          dbUser = await prisma.user.findFirst({
+            where: { email: { equals: email, mode: "insensitive" } },
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              isActive: true,
+              districtId: true,
+              stateId: true,
+              district: { select: { stateId: true } },
+              isFederationWide: true,
+              roleId: true,
+              role: { select: { slug: true } },
+            },
           });
-          await createAuditLog({
-            userId: dbUser.id,
-            action: "LOGIN",
-            module: "auth",
-            details: { email: dbUser.email, provider: account?.provider ?? "credentials" },
-          });
-        } catch {
-          // DB may be briefly unavailable — never block login on this
         }
+
+        if (!dbUser || !dbUser.isActive) {
+          token.isActive = false;
+          return token;
+        }
+
+        const permissions = dbUser.roleId
+          ? await getPermissionsForRole(dbUser.roleId).catch(() => [])
+          : [];
+
+        token.id = dbUser.id;
+        token.name = dbUser.name;
+        token.role = (dbUser.role?.slug as RoleSlug) || "public-user";
+        token.permissions = permissions;
+        token.districtId = dbUser.districtId;
+        // A district user's state is always the district's state.
+        token.stateId = dbUser.district?.stateId ?? dbUser.stateId;
+        token.isFederationWide = Boolean(dbUser.isFederationWide);
+        token.isActive = true;
+        token.authCheckedAt = Date.now();
+
+        if (user) {
+          // This is the initial sign-in for this token — record it once.
+          try {
+            await prisma.user.update({
+              where: { id: dbUser.id },
+              data: { lastLoginAt: new Date() },
+            });
+            await createAuditLog({
+              userId: dbUser.id,
+              action: "LOGIN",
+              module: "auth",
+              details: { email: dbUser.email, provider: account?.provider ?? "credentials" },
+            });
+          } catch {
+            // DB may be briefly unavailable — never block login on this
+          }
+        }
+      } catch (err) {
+        console.error("[NextAuth jwt callback] Error refreshing session:", err);
       }
 
       return token;
     },
     async session({ session, token }) {
-      if (session.user) {
-        session.user.id = token.id as string;
-        session.user.role = token.role as RoleSlug;
-        session.user.permissions = token.permissions as string[];
-        session.user.districtId = token.districtId as string | null;
+      if (session?.user) {
+        session.user.id = (token.id as string) ?? "";
+        session.user.role = (token.role as RoleSlug) ?? "public-user";
+        session.user.permissions = Array.isArray(token.permissions) ? (token.permissions as string[]) : [];
+        session.user.districtId = (token.districtId as string | null) ?? null;
         session.user.stateId = (token.stateId as string | null | undefined) ?? null;
-        session.user.isFederationWide = token.isFederationWide as boolean;
-        session.user.isActive = token.isActive as boolean;
+        session.user.isFederationWide = Boolean(token.isFederationWide);
+        session.user.isActive = token.isActive !== false;
       }
       return session;
     },

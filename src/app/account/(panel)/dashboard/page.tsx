@@ -98,63 +98,102 @@ export default async function AccountDashboardPage() {
 
   const userWhere = authUser.id
     ? { id: authUser.id }
-    : { email: authUser.email ?? "" };
+    : authUser.email
+      ? { email: authUser.email }
+      : undefined;
+
+  const entityConditions = [
+    authUser.id ? { userId: authUser.id } : null,
+    authUser.email ? { user: { email: authUser.email } } : null,
+  ].filter(Boolean) as Array<{ userId: string } | { user: { email: string } }>;
+
+  const entityWhere = entityConditions.length > 0 ? { OR: entityConditions } : undefined;
 
   const [dbUser, player, coach, club, school, academy, upcomingTournaments, requests] = await Promise.all([
-    prisma.user.findFirst({
-      where: userWhere,
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        avatar: true,
-        createdAt: true,
-        role: { select: { name: true } },
-        profile: { select: { address: true, city: true, state: true, pincode: true } },
-      },
-    }),
-    prisma.player.findFirst({
-      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
-      select: {
-        id: true,
-        status: true,
-        playerId: true,
-        createdAt: true,
-        rejectionReason: true,
-        _count: { select: { certificates: { where: { isRevoked: false } } } },
-      },
-    }),
-    prisma.coach.findFirst({
-      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
-      select: {
-        id: true,
-        status: true,
-        coachId: true,
-        createdAt: true,
-        rejectionReason: true,
-        _count: { select: { certificates: { where: { isRevoked: false } } } },
-      },
-    }),
-    prisma.clubMembership.findFirst({
-      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
-      select: { id: true, status: true, rejectionReason: true, clubName: true },
-    }),
-    prisma.schoolMembership.findFirst({
-      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
-      select: { id: true, status: true, rejectionReason: true, schoolName: true },
-    }),
-    prisma.academyMembership.findFirst({
-      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
-      select: { id: true, status: true, rejectionReason: true, academyName: true },
-    }),
-    prisma.tournament.count({ where: { status: { in: ["REGISTRATION_OPEN", "IN_PROGRESS"] } } }),
-    prisma.request.findMany({
-      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
-      select: { id: true, status: true, type: true, reason: true, createdAt: true },
-      orderBy: { createdAt: "desc" },
-      take: 3,
-    }),
+    userWhere
+      ? prisma.user
+          .findFirst({
+            where: userWhere,
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              avatar: true,
+              createdAt: true,
+              role: { select: { name: true } },
+              profile: { select: { address: true, city: true, state: true, pincode: true } },
+            },
+          })
+          .catch(() => null)
+      : null,
+    entityWhere
+      ? prisma.player
+          .findFirst({
+            where: entityWhere,
+            select: {
+              id: true,
+              status: true,
+              playerId: true,
+              createdAt: true,
+              rejectionReason: true,
+              _count: { select: { certificates: { where: { isRevoked: false } } } },
+            },
+          })
+          .catch(() => null)
+      : null,
+    entityWhere
+      ? prisma.coach
+          .findFirst({
+            where: entityWhere,
+            select: {
+              id: true,
+              status: true,
+              coachId: true,
+              createdAt: true,
+              rejectionReason: true,
+              _count: { select: { certificates: { where: { isRevoked: false } } } },
+            },
+          })
+          .catch(() => null)
+      : null,
+    entityWhere
+      ? prisma.clubMembership
+          .findFirst({
+            where: entityWhere,
+            select: { id: true, status: true, rejectionReason: true, clubName: true },
+          })
+          .catch(() => null)
+      : null,
+    entityWhere
+      ? prisma.schoolMembership
+          .findFirst({
+            where: entityWhere,
+            select: { id: true, status: true, rejectionReason: true, schoolName: true },
+          })
+          .catch(() => null)
+      : null,
+    entityWhere
+      ? prisma.academyMembership
+          .findFirst({
+            where: entityWhere,
+            select: { id: true, status: true, rejectionReason: true, academyName: true },
+          })
+          .catch(() => null)
+      : null,
+    prisma.tournament
+      .count({ where: { status: { in: ["REGISTRATION_OPEN", "IN_PROGRESS"] } } })
+      .catch(() => 0),
+    entityWhere
+      ? prisma.request
+          .findMany({
+            where: entityWhere,
+            select: { id: true, status: true, type: true, reason: true, createdAt: true },
+            orderBy: { createdAt: "desc" },
+            take: 3,
+          })
+          .catch(() => [])
+      : [],
   ]);
 
   const user = dbUser ?? {
@@ -182,28 +221,30 @@ export default async function AccountDashboardPage() {
     rejectionReason: string | null;
   }>;
   const activeMemberships = memberships.filter((m) => m.status === "APPROVED" || m.status === "ACTIVE").length;
-  const certificateCount = (player?._count.certificates ?? 0) + (coach?._count.certificates ?? 0);
+  const certificateCount = (player?._count?.certificates ?? 0) + (coach?._count?.certificates ?? 0);
   const pendingCount = [player, coach, club, school, academy].filter(
     (r) => r && r.status === "PENDING"
   ).length;
 
   // Recent Activity audit logs
   const ownedEntities = [
-    player && { module: "players", entityId: player.id },
-    coach && { module: "coaches", entityId: coach.id },
-    club && { module: "memberships", entityId: club.id },
-    school && { module: "memberships", entityId: school.id },
-    academy && { module: "memberships", entityId: academy.id },
-    ...requests.map((r) => ({ module: "requests", entityId: r.id })),
+    player?.id ? { module: "players", entityId: player.id } : null,
+    coach?.id ? { module: "coaches", entityId: coach.id } : null,
+    club?.id ? { module: "memberships", entityId: club.id } : null,
+    school?.id ? { module: "memberships", entityId: school.id } : null,
+    academy?.id ? { module: "memberships", entityId: academy.id } : null,
+    ...requests.filter((r) => Boolean(r?.id)).map((r) => ({ module: "requests", entityId: r.id })),
   ].filter(Boolean) as Array<{ module: string; entityId: string }>;
 
   const recentActivity = ownedEntities.length
-    ? await prisma.auditLog.findMany({
-        where: { OR: ownedEntities },
-        orderBy: { createdAt: "desc" },
-        take: 5,
-        select: { id: true, action: true, module: true, createdAt: true },
-      })
+    ? await prisma.auditLog
+        .findMany({
+          where: { OR: ownedEntities },
+          orderBy: { createdAt: "desc" },
+          take: 5,
+          select: { id: true, action: true, module: true, createdAt: true },
+        })
+        .catch(() => [])
     : [];
 
   const home = await getMemberHome(authUser.id);
@@ -224,9 +265,10 @@ export default async function AccountDashboardPage() {
               {user.avatar ? (
                 <Image
                   src={user.avatar}
-                  alt={user.name}
+                  alt={user.name || "User"}
                   width={68}
                   height={68}
+                  unoptimized={Boolean(user.avatar.startsWith("http"))}
                   className="h-16 w-16 rounded-2xl border-2 border-amber-400/60 object-cover shadow-md sm:h-18 sm:w-18"
                 />
               ) : (

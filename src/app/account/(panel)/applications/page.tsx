@@ -31,22 +31,29 @@ export default async function AccountApplicationsPage() {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/account/login");
 
+  const entityConditions = [
+    authUser.id ? { userId: authUser.id } : null,
+    authUser.email ? { user: { email: authUser.email } } : null,
+  ].filter(Boolean) as Array<{ userId: string } | { user: { email: string } }>;
+
+  const entityWhere = entityConditions.length > 0 ? { OR: entityConditions } : undefined;
+
   const [player, coach, club, school, academy] = await Promise.all([
-    prisma.player.findFirst({
-      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
-    }),
-    prisma.coach.findFirst({
-      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
-    }),
-    prisma.clubMembership.findFirst({
-      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
-    }),
-    prisma.schoolMembership.findFirst({
-      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
-    }),
-    prisma.academyMembership.findFirst({
-      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
-    }),
+    entityWhere
+      ? prisma.player.findFirst({ where: entityWhere }).catch(() => null)
+      : null,
+    entityWhere
+      ? prisma.coach.findFirst({ where: entityWhere }).catch(() => null)
+      : null,
+    entityWhere
+      ? prisma.clubMembership.findFirst({ where: entityWhere }).catch(() => null)
+      : null,
+    entityWhere
+      ? prisma.schoolMembership.findFirst({ where: entityWhere }).catch(() => null)
+      : null,
+    entityWhere
+      ? prisma.academyMembership.findFirst({ where: entityWhere }).catch(() => null)
+      : null,
   ]);
 
   const rows: ApplicationRow[] = [];

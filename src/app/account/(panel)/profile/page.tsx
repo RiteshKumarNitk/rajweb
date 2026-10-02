@@ -21,10 +21,20 @@ export default async function AccountProfilePage() {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/account/login");
 
-  const dbUser = await prisma.user.findFirst({
-    where: { OR: [{ id: authUser.id }, { email: authUser.email ?? "" }] },
-    include: { profile: true, role: { select: { name: true } } },
-  });
+  const userWhere = authUser.id
+    ? { id: authUser.id }
+    : authUser.email
+      ? { email: authUser.email }
+      : undefined;
+
+  const dbUser = userWhere
+    ? await prisma.user
+        .findFirst({
+          where: userWhere,
+          include: { profile: true, role: { select: { name: true } } },
+        })
+        .catch(() => null)
+    : null;
 
   const user = dbUser ?? {
     id: authUser.id,
@@ -70,6 +80,7 @@ export default async function AccountProfilePage() {
                     alt={user.name}
                     width={64}
                     height={64}
+                    unoptimized={user.avatar.startsWith("http")}
                     className="h-16 w-16 rounded-full border-2 border-amber-400/60 object-cover shadow-md"
                   />
                 ) : (

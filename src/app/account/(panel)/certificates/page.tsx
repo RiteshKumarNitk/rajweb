@@ -21,15 +21,30 @@ export default async function AccountCertificatesPage() {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/account/login");
 
+  const entityConditions = [
+    authUser.id ? { userId: authUser.id } : null,
+    authUser.email ? { user: { email: authUser.email } } : null,
+  ].filter(Boolean) as Array<{ userId: string } | { user: { email: string } }>;
+
+  const entityWhere = entityConditions.length > 0 ? { OR: entityConditions } : undefined;
+
   const [player, coach] = await Promise.all([
-    prisma.player.findFirst({
-      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
-      include: { certificates: { where: { isRevoked: false }, orderBy: { issuedAt: "desc" } } },
-    }),
-    prisma.coach.findFirst({
-      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
-      include: { certificates: { where: { isRevoked: false }, orderBy: { issuedAt: "desc" } } },
-    }),
+    entityWhere
+      ? prisma.player
+          .findFirst({
+            where: entityWhere,
+            include: { certificates: { where: { isRevoked: false }, orderBy: { issuedAt: "desc" } } },
+          })
+          .catch(() => null)
+      : null,
+    entityWhere
+      ? prisma.coach
+          .findFirst({
+            where: entityWhere,
+            include: { certificates: { where: { isRevoked: false }, orderBy: { issuedAt: "desc" } } },
+          })
+          .catch(() => null)
+      : null,
   ]);
 
   const storage = getStorage();

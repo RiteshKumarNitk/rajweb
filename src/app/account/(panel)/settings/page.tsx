@@ -53,22 +53,32 @@ export default async function AccountSettingsPage() {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/account/login");
 
-  const dbUser = await prisma.user.findFirst({
-    where: { OR: [{ id: authUser.id }, { email: authUser.email ?? "" }] },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      phone: true,
-      avatar: true,
-      authProvider: true,
-      isActive: true,
-      emailVerified: true,
-      lastLoginAt: true,
-      createdAt: true,
-      role: { select: { name: true, description: true } },
-    },
-  });
+  const userWhere = authUser.id
+    ? { id: authUser.id }
+    : authUser.email
+      ? { email: authUser.email }
+      : undefined;
+
+  const dbUser = userWhere
+    ? await prisma.user
+        .findFirst({
+          where: userWhere,
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            avatar: true,
+            authProvider: true,
+            isActive: true,
+            emailVerified: true,
+            lastLoginAt: true,
+            createdAt: true,
+            role: { select: { name: true, description: true } },
+          },
+        })
+        .catch(() => null)
+    : null;
 
   const user = dbUser ?? {
     id: authUser.id,
@@ -123,6 +133,7 @@ export default async function AccountSettingsPage() {
                     alt={user.name}
                     width={72}
                     height={72}
+                    unoptimized={user.avatar.startsWith("http")}
                     className="h-16 w-16 rounded-full border-2 border-amber-400/60 object-cover shadow-md sm:h-20 sm:w-20"
                   />
                 ) : (

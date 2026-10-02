@@ -19,16 +19,23 @@ export default async function AccountMembershipsIndexPage() {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/account/login");
 
+  const membershipConditions = [
+    authUser.id ? { userId: authUser.id } : null,
+    authUser.email ? { user: { email: authUser.email } } : null,
+  ].filter(Boolean) as Array<{ userId: string } | { user: { email: string } }>;
+
+  const membershipWhere = membershipConditions.length > 0 ? { OR: membershipConditions } : undefined;
+
   const [club, school, academy] = await Promise.all([
-    prisma.clubMembership.findFirst({
-      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
-    }),
-    prisma.schoolMembership.findFirst({
-      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
-    }),
-    prisma.academyMembership.findFirst({
-      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
-    }),
+    membershipWhere
+      ? prisma.clubMembership.findFirst({ where: membershipWhere }).catch(() => null)
+      : null,
+    membershipWhere
+      ? prisma.schoolMembership.findFirst({ where: membershipWhere }).catch(() => null)
+      : null,
+    membershipWhere
+      ? prisma.academyMembership.findFirst({ where: membershipWhere }).catch(() => null)
+      : null,
   ]);
 
   const items = [

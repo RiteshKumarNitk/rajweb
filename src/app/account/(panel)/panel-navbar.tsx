@@ -137,7 +137,7 @@ export function PanelNavbar({
                 className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50/80 p-1 pr-2.5 transition-all hover:border-primary hover:bg-white shadow-xs"
               >
                 {avatar ? (
-                  <Image src={avatar} alt={name} width={30} height={30} className="h-7 w-7 rounded-full object-cover" />
+                  <Image src={avatar} alt={name} width={30} height={30} unoptimized={avatar.startsWith("http")} className="h-7 w-7 rounded-full object-cover" />
                 ) : (
                   <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-xs font-bold text-white uppercase">
                     {initial}
@@ -231,7 +231,7 @@ export function PanelNavbar({
         <div className="border-t border-slate-100 bg-slate-50/50 p-3">
           <div className="flex items-center gap-2.5 rounded-xl border border-slate-200/80 bg-white p-2.5 shadow-2xs">
             {avatar ? (
-              <Image src={avatar} alt={name} width={32} height={32} className="h-8 w-8 rounded-full object-cover" />
+              <Image src={avatar} alt={name} width={32} height={32} unoptimized={avatar.startsWith("http")} className="h-8 w-8 rounded-full object-cover" />
             ) : (
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-bold text-white uppercase">
                 {initial}

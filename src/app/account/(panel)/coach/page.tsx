@@ -36,18 +36,39 @@ export default async function AccountCoachPage() {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/account/login");
 
+  const userWhere = authUser.id
+    ? { id: authUser.id }
+    : authUser.email
+      ? { email: authUser.email }
+      : undefined;
+
+  const coachConditions = [
+    authUser.id ? { userId: authUser.id } : null,
+    authUser.email ? { user: { email: authUser.email } } : null,
+  ].filter(Boolean) as Array<{ userId: string } | { user: { email: string } }>;
+
+  const coachWhere = coachConditions.length > 0 ? { OR: coachConditions } : undefined;
+
   const [dbUser, coach] = await Promise.all([
-    prisma.user.findFirst({
-      where: { OR: [{ id: authUser.id }, { email: authUser.email ?? "" }] },
-      select: { name: true, email: true, phone: true },
-    }),
-    prisma.coach.findFirst({
-      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
-      include: {
-        district: true,
-        certificates: { where: { isRevoked: false }, orderBy: { issuedAt: "desc" }, take: 1 },
-      },
-    }),
+    userWhere
+      ? prisma.user
+          .findFirst({
+            where: userWhere,
+            select: { name: true, email: true, phone: true },
+          })
+          .catch(() => null)
+      : null,
+    coachWhere
+      ? prisma.coach
+          .findFirst({
+            where: coachWhere,
+            include: {
+              district: true,
+              certificates: { where: { isRevoked: false }, orderBy: { issuedAt: "desc" }, take: 1 },
+            },
+          })
+          .catch(() => null)
+      : null,
   ]);
 
   const user = dbUser ?? {

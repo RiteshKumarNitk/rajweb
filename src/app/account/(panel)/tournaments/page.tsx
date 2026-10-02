@@ -27,16 +27,29 @@ export default async function AccountTournamentsPage() {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/account/login");
 
+  const playerConditions = [
+    authUser.id ? { userId: authUser.id } : null,
+    authUser.email ? { user: { email: authUser.email } } : null,
+  ].filter(Boolean) as Array<{ userId: string } | { user: { email: string } }>;
+
+  const playerWhere = playerConditions.length > 0 ? { OR: playerConditions } : undefined;
+
   const [tournaments, player] = await Promise.all([
-    prisma.tournament.findMany({
-      where: { status: { in: [...ACCOUNT_TOURNAMENT_STATUSES] } },
-      include: { district: true, registrationCategories: { where: { isActive: true } } },
-      orderBy: { startDate: "asc" },
-    }),
-    prisma.player.findFirst({
-      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
-      include: { tournamentRegistrations: { include: { tournament: true, category: true } } },
-    }),
+    prisma.tournament
+      .findMany({
+        where: { status: { in: [...ACCOUNT_TOURNAMENT_STATUSES] } },
+        include: { district: true, registrationCategories: { where: { isActive: true } } },
+        orderBy: { startDate: "asc" },
+      })
+      .catch(() => []),
+    playerWhere
+      ? prisma.player
+          .findFirst({
+            where: playerWhere,
+            include: { tournamentRegistrations: { include: { tournament: true, category: true } } },
+          })
+          .catch(() => null)
+      : null,
   ]);
 
   const registrations = player?.tournamentRegistrations ?? [];

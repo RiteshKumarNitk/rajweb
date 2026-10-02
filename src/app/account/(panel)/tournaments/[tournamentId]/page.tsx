@@ -48,15 +48,19 @@ export default async function AccountTournamentDetailPage({
   });
   if (!tournament || tournament.status === "DRAFT" || tournament.status === "CANCELLED") notFound();
 
-  const player = await prisma.player.findUnique({
-    where: { userId: authUser.id },
-    include: {
-      tournamentRegistrations: {
-        where: { tournamentId },
-        include: { category: true },
-      },
-    },
-  });
+  const player = authUser.id
+    ? await prisma.player
+        .findFirst({
+          where: { OR: [{ userId: authUser.id }, ...(authUser.email ? [{ user: { email: authUser.email } }] : [])] },
+          include: {
+            tournamentRegistrations: {
+              where: { tournamentId },
+              include: { category: true },
+            },
+          },
+        })
+        .catch(() => null)
+    : null;
   const registration = player?.tournamentRegistrations[0];
   const place = [tournament.venue, tournament.city, tournament.district?.name ?? "State-wide"].filter(Boolean).join(" · ");
 

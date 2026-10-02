@@ -189,7 +189,7 @@ export function hasPermission(
 ): boolean {
   if (!user) return false;
   if (user.role === ROLES.SUPER_ADMIN) return true;
-  return user.permissions.includes(permission);
+  return Array.isArray(user.permissions) ? user.permissions.includes(permission) : false;
 }
 
 export function hasAnyPermission(

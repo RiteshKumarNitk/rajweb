@@ -41,19 +41,40 @@ export default async function AccountPlayerPage() {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/account/login");
 
+  const userWhere = authUser.id
+    ? { id: authUser.id }
+    : authUser.email
+      ? { email: authUser.email }
+      : undefined;
+
+  const playerConditions = [
+    authUser.id ? { userId: authUser.id } : null,
+    authUser.email ? { user: { email: authUser.email } } : null,
+  ].filter(Boolean) as Array<{ userId: string } | { user: { email: string } }>;
+
+  const playerWhere = playerConditions.length > 0 ? { OR: playerConditions } : undefined;
+
   const [dbUser, player] = await Promise.all([
-    prisma.user.findFirst({
-      where: { OR: [{ id: authUser.id }, { email: authUser.email ?? "" }] },
-      select: { name: true, email: true, phone: true },
-    }),
-    prisma.player.findFirst({
-      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
-      include: {
-        district: true,
-        certificates: { where: { isRevoked: false, tournamentId: null }, orderBy: { issuedAt: "desc" }, take: 1 },
-        tournamentRegistrations: { include: { tournament: true, category: true }, orderBy: { registeredAt: "desc" } },
-      },
-    }),
+    userWhere
+      ? prisma.user
+          .findFirst({
+            where: userWhere,
+            select: { name: true, email: true, phone: true },
+          })
+          .catch(() => null)
+      : null,
+    playerWhere
+      ? prisma.player
+          .findFirst({
+            where: playerWhere,
+            include: {
+              district: true,
+              certificates: { where: { isRevoked: false, tournamentId: null }, orderBy: { issuedAt: "desc" }, take: 1 },
+              tournamentRegistrations: { include: { tournament: true, category: true }, orderBy: { registeredAt: "desc" } },
+            },
+          })
+          .catch(() => null)
+      : null,
   ]);
 
   const user = dbUser ?? {
