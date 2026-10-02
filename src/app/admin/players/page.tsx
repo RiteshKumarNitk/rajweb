@@ -4,7 +4,6 @@ import { districtOwnedWhere, type OrgScope } from "@/security/rbac/org-scope";
 import { getStateView } from "@/modules/states/state-view.server";
 import { StateFilter } from "@/shared/components/admin/state-filter";
 import { PERMISSIONS } from "@/security/rbac/permissions";
-import { getStorage } from "@/infrastructure/storage/storage-adapter";
 import { Users, UserCheck, Clock, Award, ShieldAlert, Sparkles, Filter } from "lucide-react";
 import { PlayersTable, type PlayerRow } from "./players-table";
 import { governmentIdCell } from "@/modules/applications/government-id";
@@ -14,7 +13,6 @@ export const dynamic = "force-dynamic";
 async function getPlayers(scope: OrgScope): Promise<PlayerRow[]> {
   try {
     const { default: prisma } = await import("@/infrastructure/database/prisma");
-    const storage = getStorage();
     const rows = await prisma.player.findMany({
       where: districtOwnedWhere(scope),
       include: {
@@ -46,7 +44,7 @@ async function getPlayers(scope: OrgScope): Promise<PlayerRow[]> {
               qrCode: cert.qrCode,
               issuedAt: cert.issuedAt.toISOString(),
               expiresAt: cert.expiresAt?.toISOString() ?? null,
-              pdfUrl: cert.pdfPath ? storage.getUrl(cert.pdfPath) : undefined,
+              pdfUrl: `/api/certificates/${cert.id}/pdf`,
             }
           : null,
       };

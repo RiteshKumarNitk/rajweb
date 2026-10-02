@@ -7,7 +7,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui
 import { StatusBadge } from "@/shared/components/ui/status-badge";
 import { EmptyState } from "@/shared/components/ui/empty-state";
 import { formatDate } from "@/lib/utils";
-import { REQUEST_TYPE_LABELS, type RequestTypeValue } from "@/modules/requests/request-types";
+import {
+  GENDER_LABELS,
+  PROFILE_FIELD_LABELS,
+  REQUEST_TYPE_LABELS,
+  type ProfileFieldValue,
+  type RequestTypeValue,
+} from "@/modules/requests/request-types";
 import { NewRequestForm, type CurrentProfileValues } from "./new-request-form";
 
 export interface RequestRow {
@@ -17,6 +23,10 @@ export interface RequestRow {
   status: string;
   reason: string;
   requestedValue: string | null;
+  /** PROFILE_CORRECTION field, when one was named. */
+  requestedField?: string | null;
+  /** What was on file when the request was made (recorded by the server). */
+  currentValue?: string | null;
   requestedMobile: string | null;
   requestedEmail: string | null;
   requestedAddress: string | null;
@@ -27,13 +37,24 @@ export interface RequestRow {
   resolvedAt: string | null;
 }
 
+function fieldValue(field: string, value: string | null | undefined): string {
+  if (!value) return "—";
+  return field === "GENDER" ? (GENDER_LABELS[value] ?? value) : value;
+}
+
 function requestDetail(r: RequestRow): string | null {
+  if (r.requestedField) {
+    const label = PROFILE_FIELD_LABELS[r.requestedField as ProfileFieldValue] ?? r.requestedField;
+    return `${label}: ${fieldValue(r.requestedField, r.currentValue)} → ${fieldValue(r.requestedField, r.requestedValue)}`;
+  }
   if (r.type === "CONTACT_UPDATE") {
     const parts = [r.requestedMobile ? `Mobile: ${r.requestedMobile}` : null, r.requestedEmail ? `Email: ${r.requestedEmail}` : null].filter(Boolean);
     return parts.length ? parts.join(", ") : null;
   }
   if (r.type === "ADDRESS_UPDATE") return r.requestedAddress;
-  if (r.type === "DISTRICT_CHANGE") return r.requestedDistrict ? `Requested district: ${r.requestedDistrict}` : null;
+  if (r.type === "DISTRICT_CHANGE") {
+    return r.requestedDistrict ? `District: ${r.currentValue ?? "—"} → ${r.requestedDistrict}` : null;
+  }
   return r.requestedValue;
 }
 
@@ -41,12 +62,15 @@ export function RequestsPanel({
   profileType,
   current,
   requests,
+  startOpen = false,
 }: {
   profileType: "player" | "coach";
   current: CurrentProfileValues;
   requests: RequestRow[];
+  /** Open the new-request form straight away (e.g. from "Request Change"). */
+  startOpen?: boolean;
 }) {
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(startOpen);
   const pending = requests.filter((r) => r.status === "PENDING");
 
   return (
@@ -85,7 +109,10 @@ export function RequestsPanel({
                     </div>
                     <StatusBadge status={r.status} />
                   </div>
-                  <p className="text-xs text-slate-500">Submitted {formatDate(r.createdAt)}</p>
+                  <p className="text-xs text-slate-500">
+                    Submitted {formatDate(r.createdAt)}
+                    {r.resolvedAt ? ` · Processed ${formatDate(r.resolvedAt)}` : ""}
+                  </p>
                   {detail && <p className="mt-1 text-sm text-slate-600">{detail}</p>}
                   <p className="mt-1 text-sm text-slate-600">
                     <span className="text-slate-400">Reason: </span>{r.reason}

@@ -22,6 +22,9 @@ import { Button } from "@/shared/components/ui/button";
 import { formatInr } from "@/modules/account/membership-pricing";
 import { formatTournamentSchedule, formatTournamentStatus } from "@/modules/tournaments/tournament-dates";
 import { TournamentRegisterForm } from "./register-form";
+import { getOwnPlayer } from "@/modules/players/own-player.server";
+import { registrationStatesFor } from "@/modules/tournaments/registration-eligibility.server";
+import { effectiveRegistrationLabel, registrationWindow } from "@/modules/tournaments/registration-eligibility";
 
 export const dynamic = "force-dynamic";
 
@@ -48,34 +51,25 @@ export default async function AccountTournamentDetailPage({
   });
   if (!tournament || tournament.status === "DRAFT" || tournament.status === "CANCELLED") notFound();
 
-  const player = authUser.id
-    ? await prisma.player
-        .findFirst({
-          where: { OR: [{ userId: authUser.id }, ...(authUser.email ? [{ user: { email: authUser.email } }] : [])] },
-          include: {
-            tournamentRegistrations: {
-              where: { tournamentId },
-              include: { category: true },
-            },
-          },
-        })
-        .catch(() => null)
+  // The session user's own player; the registration is looked up for that player only.
+  const player = await getOwnPlayer(authUser.id);
+  const registration = player
+    ? await prisma.tournamentRegistration.findUnique({
+        where: { tournamentId_playerId: { tournamentId, playerId: player.id } },
+        include: { category: { select: { name: true } } },
+      })
     : null;
-  const registration = player?.tournamentRegistrations[0];
   const place = [tournament.venue, tournament.city, tournament.district?.name ?? "State-wide"].filter(Boolean).join(" · ");
 
-  let disabledReason: string | undefined;
-  if (!player) {
-    disabledReason = "You must register as a player before registering for a tournament.";
-  } else if (tournament.requiresApprovedPlayer && player.status !== "APPROVED") {
-    disabledReason = "An approved player registration is required for this tournament.";
-  } else if (tournament.status !== "REGISTRATION_OPEN") {
-    disabledReason = "Registration is not open for this tournament.";
-  } else if (tournament.registrationStart && new Date() < tournament.registrationStart) {
-    disabledReason = "Registration has not started yet.";
-  } else if (tournament.registrationDeadline && new Date() > tournament.registrationDeadline) {
-    disabledReason = "Registration is closed.";
-  }
+  // Same rules as the registration API: status, IST window, categories, capacity, player.
+  const states = await registrationStatesFor(
+    [{ ...tournament, activeCategories: tournament.registrationCategories.length }],
+    player
+  );
+  const state = states.get(tournament.id)!;
+  const disabledReason = state.player.open ? undefined : (state.player.message ?? "Registration is not available.");
+  const correctedLabel = effectiveRegistrationLabel(state.tournament, tournament.status);
+  const { closesAt } = registrationWindow(tournament);
 
   return (
     <div className="space-y-6">
@@ -100,7 +94,10 @@ export default async function AccountTournamentDetailPage({
               <div className="space-y-1.5">
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="text-xl font-bold sm:text-2xl">{tournament.name}</h1>
-                  <StatusBadge status={tournament.status} label={formatTournamentStatus(tournament.status)} />
+                  <StatusBadge
+                    status={correctedLabel ? "REGISTRATION_CLOSED" : tournament.status}
+                    label={correctedLabel ?? formatTournamentStatus(tournament.status)}
+                  />
                 </div>
                 <p className="flex items-center gap-1.5 text-xs text-slate-300">
                   <MapPin className="h-3.5 w-3.5 text-red-400" /> {place}
@@ -164,8 +161,8 @@ export default async function AccountTournamentDetailPage({
                   <p className="font-semibold text-slate-800 text-sm flex items-center gap-1.5">
                     <Clock className="h-4 w-4 text-amber-500" />
                     {tournament.registrationDeadline
-                      ? `Closes ${formatTournamentSchedule(tournament.registrationDeadline)}`
-                      : "Open for entries"}
+                      ? `${closesAt && closesAt <= new Date() ? "Closed" : "Closes"} ${formatTournamentSchedule(tournament.registrationDeadline)}`
+                      : "No closing date set"}
                   </p>
                 </div>
 
@@ -226,12 +223,19 @@ export default async function AccountTournamentDetailPage({
                       <Ticket className="h-4 w-4" />
                     </div>
                     <div>
-                      <CardTitle className="text-base text-emerald-950">Official Entry Pass</CardTitle>
-                      <CardDescription className="text-xs text-emerald-700">Entry Confirmed</CardDescription>
+                      <CardTitle className="text-base text-emerald-950">Your Registration</CardTitle>
+                      <CardDescription className="text-xs text-emerald-700">
+                        {registration.status === "APPROVED"
+                          ? "Entry confirmed"
+                          : registration.status === "REJECTED"
+                            ? "Entry not accepted"
+                            : "Registered — awaiting confirmation"}
+                      </CardDescription>
                     </div>
                   </div>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-800 border border-emerald-300">
-                    <CheckCircle2 className="h-3 w-3" /> Confirmed
+                  <span className="inline-flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                    <StatusBadge status={registration.status} />
                   </span>
                 </div>
               </CardHeader>
@@ -250,9 +254,9 @@ export default async function AccountTournamentDetailPage({
                     <span className="font-mono font-bold text-slate-700 text-[11px]">{registration.id}</span>
                   </div>
                   <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                    <span className="text-slate-400">Registration Fee:</span>
+                    <span className="text-slate-400">Registration Amount:</span>
                     <span className="font-bold text-emerald-700">
-                      {registration.amount != null ? formatInr(registration.amount) : "Paid"}
+                      {registration.amount != null ? formatInr(registration.amount) : "Not on record"}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
@@ -267,6 +271,10 @@ export default async function AccountTournamentDetailPage({
                     Please present this official registration ID or your Player digital certificate at the tournament check-in desk.
                   </p>
                 </div>
+
+                <Button variant="outline" size="sm" asChild className="w-full text-xs">
+                  <Link href={`/account/player/tournaments/${registration.id}`}>View in My Tournaments</Link>
+                </Button>
               </CardContent>
             </Card>
           ) : (

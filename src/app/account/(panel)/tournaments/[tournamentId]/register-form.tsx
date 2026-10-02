@@ -76,7 +76,11 @@ export function TournamentRegisterForm({
   }
 
   if (disabledReason) {
-    return <p className="text-sm text-slate-600">{disabledReason}</p>;
+    return (
+      <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900" data-testid="registration-reason">
+        {disabledReason}
+      </p>
+    );
   }
 
   if (categories.length === 0) {
@@ -111,7 +115,7 @@ export function TournamentRegisterForm({
         </div>
       )}
       <Button type="button" onClick={onRegister} disabled={busy || !selected}>
-        {busy ? "Registering..." : "Confirm registration"}
+        {busy ? "Registering..." : "Register Now"}
       </Button>
     </div>
   );

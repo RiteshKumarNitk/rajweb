@@ -44,7 +44,7 @@ export const POST = withApiHandler(
         // no body — remarks are optional
       }
 
-      await approveRequest(id, user.id, body.remarks);
+      const { changes } = await approveRequest(id, user.id, body.remarks);
       await createAuditLog({
         userId: user.id,
         action: "APPROVE",
@@ -53,6 +53,9 @@ export const POST = withApiHandler(
         details: {
           event: "REQUEST_APPROVED",
           type: serviceRequest.type,
+          requestedBy: serviceRequest.userId,
+          // Field-level before/after of what the approval applied (empty when informational).
+          changes: changes.map((c) => ({ field: c.field, previousValue: c.previousValue, newValue: c.newValue })),
           stateId: owner?.district?.stateId ?? null,
           districtId: owner?.districtId ?? null,
         },

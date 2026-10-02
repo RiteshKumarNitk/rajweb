@@ -268,11 +268,9 @@ export default async function AdminCertificatesPage({ searchParams }: { searchPa
       header: "Actions",
       cell: (c) => (
         <div className="flex items-center gap-2">
-          {c.pdfPath && (
-            <a href={storage.getUrl(c.pdfPath)} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-primary hover:underline">
-              PDF
-            </a>
-          )}
+          <a href={`/api/certificates/${c.id}/pdf`} className="text-xs font-semibold text-primary hover:underline">
+            PDF
+          </a>
           <Link href={verifyLink(c.certificateNumber)} target="_blank" className="flex items-center gap-0.5 text-xs font-semibold text-accent hover:underline">
             Verify & Preview <ExternalLink className="h-3 w-3" />
           </Link>

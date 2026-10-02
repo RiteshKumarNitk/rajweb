@@ -4,7 +4,7 @@ import { requireAuth } from "@/security/auth/session";
 import prisma from "@/infrastructure/database/prisma";
 import { createRequest } from "@/modules/requests/request.service";
 import { createAuditLog } from "@/services/audit/audit-service";
-import { REQUEST_TYPES } from "@/modules/requests/request-types";
+import { PROFILE_FIELDS, REQUEST_TYPES } from "@/modules/requests/request-types";
 
 const requestSchema = z.object({
   profileType: z.enum(["player", "coach"]),
@@ -16,6 +16,7 @@ const requestSchema = z.object({
   requestedEmail: z.string().email().max(254).optional(),
   requestedAddress: z.string().max(500).optional(),
   requestedDistrict: z.string().max(100).optional(),
+  requestedField: z.enum(PROFILE_FIELDS).optional(),
 });
 
 export const POST = withApiHandler(
@@ -29,8 +30,8 @@ export const POST = withApiHandler(
     // *their own* Player or Coach profile.
     const profile =
       data.profileType === "player"
-        ? await prisma.player.findUnique({ where: { userId: authUser.id } })
-        : await prisma.coach.findUnique({ where: { userId: authUser.id } });
+        ? await prisma.player.findUnique({ where: { userId: authUser.id }, select: { id: true, status: true } })
+        : await prisma.coach.findUnique({ where: { userId: authUser.id }, select: { id: true, status: true } });
 
     if (!profile) {
       throw AppError.notFound(
@@ -52,6 +53,7 @@ export const POST = withApiHandler(
       requestedEmail: data.requestedEmail,
       requestedAddress: data.requestedAddress,
       requestedDistrictName: data.requestedDistrict,
+      requestedField: data.requestedField,
     });
 
     await createAuditLog({
@@ -59,7 +61,7 @@ export const POST = withApiHandler(
       action: "CREATE",
       module: "requests",
       entityId: created.id,
-      details: { event: "REQUEST_CREATED", type: data.type, profileType: data.profileType },
+      details: { event: "REQUEST_CREATED", type: data.type, profileType: data.profileType, field: created.requestedField ?? undefined },
     });
 
     return jsonSuccess(

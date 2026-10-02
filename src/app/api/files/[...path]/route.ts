@@ -5,6 +5,7 @@ import prisma from "@/infrastructure/database/prisma";
 import { requireAuth } from "@/security/auth/session";
 import { hasPermission, PERMISSIONS, type SessionUser } from "@/security/rbac/permissions";
 import { getOrgScope, isInScope } from "@/security/rbac/org-scope";
+import { getStorage } from "@/infrastructure/storage/storage-adapter";
 
 /**
  * A stored file is only served when it is referenced by a record the caller
@@ -79,42 +80,12 @@ export const GET = withApiHandler(
       "X-Content-Type-Options": "nosniff",
     };
 
-    const storageType = process.env.STORAGE_TYPE || (process.env.NETLIFY ? "netlify" : "local");
-
-    if (storageType === "netlify") {
-      const { getStore } = await import("@netlify/blobs");
-      const store = getStore({
-        name: process.env.NETLIFY_BLOBS_STORE || "rra-uploads",
-        consistency: "strong",
-      });
-      const blob = await store.get(filePath, { type: "blob" });
-
-      if (!blob) {
-        throw AppError.notFound("File not found");
-      }
-
-      const buffer = Buffer.from(await blob.arrayBuffer());
-      return new NextResponse(buffer, {
-        headers: { ...headers, "Content-Type": blob.type || "application/pdf" },
-      });
-    }
-
-    const fs = await import("fs/promises");
-    const path = await import("path");
-    const basePath = path.resolve(process.env.STORAGE_LOCAL_PATH || "./uploads");
-    const fullPath = path.resolve(basePath, filePath);
-    if (!fullPath.startsWith(basePath + path.sep)) {
-      throw AppError.badRequest("Invalid file path");
-    }
-
-    try {
-      const buffer = await fs.readFile(fullPath);
-      return new NextResponse(buffer, {
-        headers: { ...headers, "Content-Type": "application/pdf" },
-      });
-    } catch {
-      throw AppError.notFound("File not found");
-    }
+    // Same adapter the file was written with (local disk, Netlify Blobs or database).
+    const file = await getStorage().read(filePath);
+    if (!file) throw AppError.notFound("File not found");
+    return new NextResponse(new Uint8Array(file.data), {
+      headers: { ...headers, "Content-Type": file.contentType },
+    });
   },
   { module: "files" }
 );

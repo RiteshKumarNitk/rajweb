@@ -15,6 +15,9 @@ import {
   formatTournamentSchedule,
   formatTournamentStatus,
 } from "@/modules/tournaments/tournament-dates";
+import { getOwnPlayer } from "@/modules/players/own-player.server";
+import { registrationStatesFor } from "@/modules/tournaments/registration-eligibility.server";
+import { effectiveRegistrationLabel } from "@/modules/tournaments/registration-eligibility";
 
 export const dynamic = "force-dynamic";
 
@@ -27,13 +30,6 @@ export default async function AccountTournamentsPage() {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/account/login");
 
-  const playerConditions = [
-    authUser.id ? { userId: authUser.id } : null,
-    authUser.email ? { user: { email: authUser.email } } : null,
-  ].filter(Boolean) as Array<{ userId: string } | { user: { email: string } }>;
-
-  const playerWhere = playerConditions.length > 0 ? { OR: playerConditions } : undefined;
-
   const [tournaments, player] = await Promise.all([
     prisma.tournament
       .findMany({
@@ -42,18 +38,31 @@ export default async function AccountTournamentsPage() {
         orderBy: { startDate: "asc" },
       })
       .catch(() => []),
-    playerWhere
-      ? prisma.player
-          .findFirst({
-            where: playerWhere,
-            include: { tournamentRegistrations: { include: { tournament: true, category: true } } },
-          })
-          .catch(() => null)
-      : null,
+    getOwnPlayer(authUser.id).catch(() => null),
   ]);
 
-  const registrations = player?.tournamentRegistrations ?? [];
+  const registrations = player
+    ? await prisma.tournamentRegistration
+        .findMany({
+          where: { playerId: player.id },
+          select: {
+            id: true,
+            tournamentId: true,
+            amount: true,
+            status: true,
+            registeredAt: true,
+            tournament: { select: { name: true } },
+            category: { select: { name: true } },
+          },
+          orderBy: { registeredAt: "desc" },
+        })
+        .catch(() => [])
+    : [];
   const registeredTournamentIds = new Set(registrations.map((registration) => registration.tournamentId));
+  const states = await registrationStatesFor(
+    tournaments.map((t) => ({ ...t, activeCategories: t.registrationCategories.length })),
+    player
+  ).catch(() => new Map());
 
   return (
     <div className="space-y-8">
@@ -87,6 +96,9 @@ export default async function AccountTournamentsPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             {tournaments.map((t) => {
               const isRegistered = registeredTournamentIds.has(t.id);
+              const state = states.get(t.id);
+              const correctedLabel = state ? effectiveRegistrationLabel(state.tournament, t.status) : null;
+              const canRegister = Boolean(state?.player.open);
               return (
                 <Card
                   key={t.id}
@@ -102,7 +114,10 @@ export default async function AccountTournamentsPage() {
                           {t.venue ?? "Venue TBA"} · {t.district?.name ?? "State-wide"}
                         </p>
                       </div>
-                      <StatusBadge status={t.status} label={formatTournamentStatus(t.status)} />
+                      <StatusBadge
+                        status={correctedLabel ? "REGISTRATION_CLOSED" : t.status}
+                        label={correctedLabel ?? formatTournamentStatus(t.status)}
+                      />
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3 text-xs text-slate-600">
@@ -137,6 +152,11 @@ export default async function AccountTournamentsPage() {
                       </div>
                     )}
 
+                    {!isRegistered && !canRegister && state?.player.message && (
+                      <p className="rounded-md bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-600" data-testid="registration-reason">
+                        {state.player.message}
+                      </p>
+                    )}
                     <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                       <Link
                         href={`/tournaments/${t.slug}`}
@@ -152,7 +172,7 @@ export default async function AccountTournamentsPage() {
                       ) : (
                         <Button size="sm" asChild className="h-8 text-xs bg-primary text-white hover:bg-slate-800">
                           <Link href={`/account/tournaments/${t.id}`}>
-                            {t.status === "REGISTRATION_OPEN" ? "Register Now" : "View Details"}
+                            {canRegister ? "Register Now" : "View Details"}
                           </Link>
                         </Button>
                       )}
@@ -191,8 +211,11 @@ export default async function AccountTournamentsPage() {
                         </span>
                       </div>
                     </div>
-                    <div className="self-start sm:self-center">
+                    <div className="flex items-center gap-3 self-start sm:self-center">
                       <StatusBadge status={reg.status} />
+                      <Link href={`/account/player/tournaments/${reg.id}`} className="text-xs font-semibold text-secondary hover:underline">
+                        View
+                      </Link>
                     </div>
                   </li>
                 ))}

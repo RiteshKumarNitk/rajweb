@@ -34,6 +34,17 @@ const playerShape = {
 
 type PlayerFormData = z.infer<z.ZodObject<typeof playerShape>>;
 
+/** Values already on the account, offered as defaults (the server re-validates them). */
+export interface PlayerPrefill {
+  name: string;
+  email: string;
+  phone: string;
+  dateOfBirth?: string;
+  gender?: "MALE" | "FEMALE" | "OTHER";
+  stateId?: string;
+  districtId?: string;
+}
+
 export interface PlayerResubmitData {
   id: string;
   dateOfBirth: string;
@@ -48,12 +59,12 @@ export function PlayerAccountForm({
   prefill,
   resubmit,
 }: {
-  prefill: { name: string; email: string; phone: string };
+  prefill: PlayerPrefill;
   resubmit?: PlayerResubmitData;
 }) {
   const router = useRouter();
   const schema = useMemo(
-    () => z.object(playerShape).superRefine(checkGovernmentId(resubmit?.governmentId)),
+    () => z.object(playerShape).superRefine(checkGovernmentId(resubmit?.governmentId, { optional: true })),
     [resubmit?.governmentId]
   );
   const {
@@ -68,10 +79,10 @@ export function PlayerAccountForm({
       name: prefill.name,
       email: prefill.email,
       mobile: prefill.phone,
-      gender: resubmit?.gender ?? "MALE",
-      dateOfBirth: resubmit?.dateOfBirth ?? "",
-      stateId: resubmit?.stateId ?? "",
-      districtId: resubmit?.districtId ?? "",
+      gender: resubmit?.gender ?? prefill.gender ?? "MALE",
+      dateOfBirth: resubmit?.dateOfBirth ?? prefill.dateOfBirth ?? "",
+      stateId: resubmit?.stateId ?? prefill.stateId ?? "",
+      districtId: resubmit?.districtId ?? prefill.districtId ?? "",
       category: resubmit?.category ?? "",
       governmentIdType: resubmit?.governmentId?.type ?? "",
       governmentIdNumber: "",
@@ -168,6 +179,7 @@ export function PlayerAccountForm({
         }}
         onFile={resubmit?.governmentId}
         disabled={isSubmitting}
+        optional
       />
       <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? "Submitting..." : resubmit ? "Resubmit Application" : "Submit Player Registration"}

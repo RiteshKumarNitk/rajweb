@@ -14,7 +14,6 @@ import { TournamentEditForm } from "./tournament-edit-form";
 import { CategoriesManager } from "./categories-manager";
 import { CertificatesPanel } from "./certificates-panel";
 import { applicableSignatoryWhere } from "@/modules/certificates/signatory.service";
-import { getStorage } from "@/infrastructure/storage/storage-adapter";
 
 export default async function AdminTournamentDetailPage({
   params,
@@ -39,7 +38,7 @@ export default async function AdminTournamentDetailPage({
         district: true,
         registrationCategories: { orderBy: { createdAt: "asc" } },
         signatories: { orderBy: { sortOrder: "asc" }, select: { signatoryId: true } },
-        certificates: { select: { playerId: true, certificateNumber: true, pdfPath: true } },
+        certificates: { select: { id: true, playerId: true, certificateNumber: true, pdfPath: true } },
         registrations: {
           orderBy: { registeredAt: "desc" },
           include: {
@@ -63,7 +62,6 @@ export default async function AdminTournamentDetailPage({
     include: { state: { select: { name: true } }, district: { select: { name: true } } },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
-  const storage = getStorage();
   const certByPlayer = new Map(tournament.certificates.map((c) => [c.playerId, c]));
 
   return (
@@ -246,7 +244,7 @@ export default async function AdminTournamentDetailPage({
                 categoryName: r.category?.name ?? null,
                 registrationStatus: r.status,
                 certificateNumber: cert?.certificateNumber ?? null,
-                pdfUrl: cert?.pdfPath ? storage.getUrl(cert.pdfPath) : null,
+                pdfUrl: cert ? `/api/certificates/${cert.id}/pdf` : null,
               };
             })}
             canManageSettings={canManage}

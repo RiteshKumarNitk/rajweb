@@ -8,7 +8,7 @@ import { resolveApplicationDistrict } from "@/modules/districts/registration-loc
 import { duplicateApplicationError } from "@/modules/applications/duplicate-application";
 import { withRegistrationChoice } from "@/modules/applications/registration-choice.server";
 import {
-  resolveGovernmentId,
+  resolveOptionalGovernmentId,
   scopeGovernmentIdDocument,
   type GovernmentIdInput,
 } from "@/modules/applications/government-id";
@@ -34,7 +34,7 @@ export interface RegisterPlayerInput extends GovernmentIdInput {
 
 /**
  * Account applications (userId set) run under the one-registration rule and
- * must carry a Government ID; public submissions (no account) do not.
+ * may carry a Government ID (optional); public submissions (no account) do not.
  */
 export async function registerPlayer(input: RegisterPlayerInput) {
   const { districtId, stateId } = await resolveApplicationDistrict(input);
@@ -55,9 +55,11 @@ export async function registerPlayer(input: RegisterPlayerInput) {
     ? await withRegistrationChoice(userId, "player", async (tx) => {
         const existing = await tx.player.findUnique({ where: { userId }, select: { status: true } });
         if (existing) throw duplicateApplicationError("player", existing.status);
-        const governmentId = await resolveGovernmentId(tx, input, { userId });
+        const governmentId = await resolveOptionalGovernmentId(tx, input, { userId });
         const created = await tx.player.create({ data: { ...data, ...governmentId, userId } });
-        await scopeGovernmentIdDocument(tx, governmentId.governmentIdDocumentId, { stateId, districtId });
+        if (governmentId.governmentIdDocumentId) {
+          await scopeGovernmentIdDocument(tx, governmentId.governmentIdDocumentId, { stateId, districtId });
+        }
         return created;
       })
     : await prisma.player.create({ data });
@@ -109,8 +111,8 @@ export async function resubmitPlayer(playerId: string, userId: string, input: Re
       where: { id: playerId },
       select: { governmentIdType: true, governmentIdNumber: true, governmentIdDocumentId: true },
     });
-    // The number or document may be kept from the returned application.
-    const governmentId = await resolveGovernmentId(tx, input, { userId, existing });
+    // Optional; the number or document may be kept from the returned application.
+    const governmentId = await resolveOptionalGovernmentId(tx, input, { userId, existing });
 
     const result = await tx.player.updateMany({
       where: { id: playerId, userId, status: "REJECTED" },
@@ -132,7 +134,9 @@ export async function resubmitPlayer(playerId: string, userId: string, input: Re
     if (result.count === 0) {
       throw AppError.conflict("This application is not in a rejected state and cannot be resubmitted.");
     }
-    await scopeGovernmentIdDocument(tx, governmentId.governmentIdDocumentId, { stateId, districtId });
+    if (governmentId.governmentIdDocumentId) {
+      await scopeGovernmentIdDocument(tx, governmentId.governmentIdDocumentId, { stateId, districtId });
+    }
     // A replaced document is not kept.
     if (existing?.governmentIdDocumentId && existing.governmentIdDocumentId !== governmentId.governmentIdDocumentId) {
       await tx.mediaAsset.delete({ where: { id: existing.governmentIdDocumentId } });

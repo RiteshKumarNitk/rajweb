@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui
 import { StatusBadge } from "@/shared/components/ui/status-badge";
 import { REQUEST_TYPE_LABELS } from "@/modules/requests/request-types";
 import { RequestReviewActions } from "./request-review-actions";
+import { PROFILE_FIELD_LABELS, type ProfileFieldValue } from "@/modules/requests/request-types";
 
 export default async function AdminRequestReviewPage({
   params,
@@ -119,7 +120,29 @@ export default async function AdminRequestReviewPage({
               </div>
             )}
 
-            {serviceRequest.requestedValue && !["CONTACT_UPDATE", "DISTRICT_CHANGE", "ADDRESS_UPDATE"].includes(serviceRequest.type) && (
+            {serviceRequest.requestedField && (
+              <div className="mt-2 space-y-1">
+                <p>
+                  <span className="text-slate-500">Field:</span>{" "}
+                  <span className="font-medium">{PROFILE_FIELD_LABELS[serviceRequest.requestedField as ProfileFieldValue] ?? serviceRequest.requestedField}</span>
+                </p>
+                <p>
+                  <span className="text-slate-500">Current (when requested):</span> <span className="font-medium">{serviceRequest.currentValue || "—"}</span>
+                </p>
+                <p>
+                  <span className="text-slate-500">Requested:</span> <span className="font-medium text-accent">{serviceRequest.requestedValue}</span>
+                </p>
+                <p className="text-xs text-slate-500">Approving applies this value to the {profileType.toLowerCase()} record.</p>
+              </div>
+            )}
+
+            {serviceRequest.type === "ADDRESS_UPDATE" && serviceRequest.currentValue && (
+              <p className="mt-2">
+                <span className="text-slate-500">Current Address (when requested):</span> <span className="font-medium">{serviceRequest.currentValue}</span>
+              </p>
+            )}
+
+            {serviceRequest.requestedValue && !serviceRequest.requestedField && !["CONTACT_UPDATE", "DISTRICT_CHANGE", "ADDRESS_UPDATE"].includes(serviceRequest.type) && (
               <div className="mt-2">
                 <p className="text-slate-500">Details:</p>
                 <p className="font-medium">{serviceRequest.requestedValue}</p>

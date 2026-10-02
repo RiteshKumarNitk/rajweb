@@ -21,9 +21,9 @@ export default async function AccountDocumentsPage() {
   if (!authUser) redirect("/account/login");
 
   const [player, coach] = await Promise.all([
-    prisma.player.findFirst({
-      where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
-      include: { certificates: { where: { isRevoked: false, pdfPath: { not: null } } } },
+    prisma.player.findUnique({
+      where: { userId: authUser.id },
+      select: { certificates: { where: { isRevoked: false } } },
     }),
     prisma.coach.findFirst({
       where: { OR: [{ userId: authUser.id }, { user: { email: authUser.email ?? "" } }] },
@@ -37,7 +37,7 @@ export default async function AccountDocumentsPage() {
       id: c.id,
       title: `${c.eventName ? `${c.eventName} — ${c.title ?? "Certificate"}` : "Official Player Certificate"} — ${c.certificateNumber}`,
       date: c.issuedAt,
-      url: storage.getUrl(c.pdfPath!),
+      url: `/api/certificates/${c.id}/pdf`,
     })),
     ...(coach?.certificates ?? []).map((c) => ({
       id: c.id,

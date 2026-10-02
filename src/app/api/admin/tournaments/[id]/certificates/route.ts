@@ -5,7 +5,6 @@ import { requirePermission } from "@/security/auth/session";
 import { PERMISSIONS } from "@/security/rbac/permissions";
 import { assertInScope } from "@/security/rbac/org-scope";
 import { createAuditLog } from "@/services/audit/audit-service";
-import { getStorage } from "@/infrastructure/storage/storage-adapter";
 import { issueTournamentCertificates } from "@/services/certificates/certificate-service";
 
 const issueSchema = z.object({
@@ -62,10 +61,9 @@ export const POST = withApiHandler(
       });
     }
 
-    const storage = getStorage();
     return jsonSuccess(
       {
-        issued: result.issued.map((c) => ({ ...c, pdfUrl: c.pdfPath ? storage.getUrl(c.pdfPath) : null })),
+        issued: result.issued.map((c) => ({ ...c, pdfUrl: `/api/certificates/${c.id}/pdf` })),
         skipped: result.skipped,
       },
       requestId,

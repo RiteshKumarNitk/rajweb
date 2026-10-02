@@ -29,11 +29,11 @@ export default async function AccountCertificatesPage() {
   const entityWhere = entityConditions.length > 0 ? { OR: entityConditions } : undefined;
 
   const [player, coach] = await Promise.all([
-    entityWhere
+    authUser.id
       ? prisma.player
-          .findFirst({
-            where: entityWhere,
-            include: { certificates: { where: { isRevoked: false }, orderBy: { issuedAt: "desc" } } },
+          .findUnique({
+            where: { userId: authUser.id },
+            select: { certificates: { where: { isRevoked: false }, orderBy: { issuedAt: "desc" } } },
           })
           .catch(() => null)
       : null,
@@ -137,13 +137,11 @@ export default async function AccountCertificatesPage() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 pt-1">
-                  {cert.pdfPath && (
-                    <Button variant="outline" size="sm" asChild className="flex-1 text-xs">
-                      <a href={storage.getUrl(cert.pdfPath)} target="_blank" rel="noopener noreferrer">
-                        <Download className="mr-1.5 h-3.5 w-3.5" /> Download PDF
-                      </a>
-                    </Button>
-                  )}
+                  <Button variant="outline" size="sm" asChild className="flex-1 text-xs">
+                    <a href={`/api/certificates/${cert.id}/pdf`}>
+                      <Download className="mr-1.5 h-3.5 w-3.5" /> Download PDF
+                    </a>
+                  </Button>
                   <Button variant="ghost" size="sm" asChild className="text-xs text-primary hover:bg-slate-100">
                     <Link href={`/verify?certificateNumber=${cert.certificateNumber}`} target="_blank">
                       Verify <ExternalLink className="ml-1 h-3 w-3" />

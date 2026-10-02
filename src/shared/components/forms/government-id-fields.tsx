@@ -33,21 +33,31 @@ export interface GovernmentIdOnFile {
 /** The three values as a form holds them (the type is checked by the API). */
 export type GovernmentIdFormValues = Record<keyof GovernmentIdValue, string>;
 
-/** Form fields to merge into a react-hook-form zod object. */
+/** Form fields to merge into a react-hook-form zod object (checked by checkGovernmentId). */
 export const governmentIdFormShape = {
-  governmentIdType: z.string().min(1, "Select your Government ID type"),
+  governmentIdType: z.string(),
   governmentIdNumber: z.string().max(40),
   governmentIdDocumentId: z.string(),
 };
 
-/** Number and document are required unless a resubmission keeps the ones on file. */
-export function checkGovernmentId(onFile: GovernmentIdOnFile | null | undefined) {
+/**
+ * Required mode: type, number and document (a resubmission may keep the
+ * number and document on file). Optional mode: all may be left blank; a
+ * chosen type needs its number; a number or document needs a type.
+ */
+export function checkGovernmentId(onFile: GovernmentIdOnFile | null | undefined, options: { optional?: boolean } = {}) {
   return (d: GovernmentIdFormValues, ctx: z.RefinementCtx) => {
+    if (!d.governmentIdType) {
+      if (!options.optional || d.governmentIdNumber.trim() || d.governmentIdDocumentId) {
+        ctx.addIssue({ code: "custom", path: ["governmentIdType"], message: "Select your Government ID type" });
+      }
+      return;
+    }
     const keepsNumber = Boolean(onFile?.maskedNumber && onFile.type === d.governmentIdType);
     if (!d.governmentIdNumber.trim() && !keepsNumber) {
       ctx.addIssue({ code: "custom", path: ["governmentIdNumber"], message: "Enter your Government ID number" });
     }
-    if (!d.governmentIdDocumentId && !onFile?.hasDocument) {
+    if (!options.optional && !d.governmentIdDocumentId && !onFile?.hasDocument) {
       ctx.addIssue({ code: "custom", path: ["governmentIdDocumentId"], message: "Upload your Government ID document" });
     }
   };
@@ -77,12 +87,15 @@ export function GovernmentIdFields({
   errors,
   onFile,
   disabled,
+  optional,
 }: {
   value: GovernmentIdValue;
   onChange: (value: Partial<GovernmentIdValue>) => void;
   errors?: Partial<Record<keyof GovernmentIdValue, string>>;
   onFile?: GovernmentIdOnFile | null;
   disabled?: boolean;
+  /** Player applications: the whole section may be left blank. */
+  optional?: boolean;
 }) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -111,9 +124,10 @@ export function GovernmentIdFields({
 
   return (
     <fieldset className="space-y-4 rounded-lg border border-slate-200 p-4" disabled={disabled}>
-      <legend className="px-1 text-sm font-semibold text-slate-700">Government ID</legend>
+      <legend className="px-1 text-sm font-semibold text-slate-700">Government ID{optional ? " (optional)" : ""}</legend>
       <p className="text-xs text-slate-500">
-        Used only to verify your identity. Visible to you and to the officials who review your application.
+        {optional ? "You can submit without it. " : ""}Used only to verify your identity. Visible to you and to the
+        officials who review your application.
       </p>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">

@@ -122,11 +122,15 @@ async function generatePDF(content: CertificateContent, qrDataUrl: string): Prom
   });
 }
 
+async function renderPdf(content: CertificateContent, qrCode: string): Promise<Buffer> {
+  const qrDataUrl = await QRCode.toDataURL(certificateVerificationUrl(qrCode), { width: 200 });
+  return generatePDF(content, qrDataUrl);
+}
+
 /** Renders + stores the PDF; returns its storage path, or null (logged) on failure. */
 async function renderAndStore(content: CertificateContent, qrCode: string): Promise<string | null> {
   try {
-    const qrDataUrl = await QRCode.toDataURL(certificateVerificationUrl(qrCode), { width: 200 });
-    const pdfBuffer = await generatePDF(content, qrDataUrl);
+    const pdfBuffer = await renderPdf(content, qrCode);
     return await getStorage().upload(pdfBuffer, `${content.certificateNumber}.pdf`, "certificates");
   } catch (err) {
     // The certificate record is still created (it verifies without a PDF),
@@ -135,6 +139,71 @@ async function renderAndStore(content: CertificateContent, qrCode: string): Prom
     log.error({ err, certificateNumber: content.certificateNumber }, "Certificate PDF generation/upload failed");
     return null;
   }
+}
+
+// ─── Printed content (shared by issuing and by re-rendering a missing PDF) ──
+
+const REGISTRATION_TITLE = "Certificate of Registration";
+
+/** Exactly what a player registration certificate prints, from its snapshot. */
+function registrationCertificateContent(c: {
+  title: string | null;
+  recipientName: string;
+  recipientIdLine: string;
+  districtName: string | null;
+  stateName: string | null;
+  certificateNumber: string;
+  issuedAt: Date;
+  expiresAt: Date | null;
+  signatories: SignatorySnapshot[];
+}): CertificateContent {
+  return {
+    title: c.title ?? REGISTRATION_TITLE,
+    recipientName: c.recipientName,
+    recipientIdLine: c.recipientIdLine,
+    bodyLines: [`has been duly registered as an official Player with the ${siteConfig.name}.`],
+    locationLine: c.districtName ? `District: ${c.districtName}${c.stateName ? `, ${c.stateName}` : ""}` : null,
+    certificateNumber: c.certificateNumber,
+    issuedAt: c.issuedAt,
+    expiresAt: c.expiresAt,
+    signatories: c.signatories,
+  };
+}
+
+/** Exactly what a tournament certificate prints, from its snapshot. */
+function tournamentCertificateContent(c: {
+  title: string;
+  recipientName: string;
+  recipientIdLine: string;
+  eventName: string;
+  position: string | null;
+  eventStartDate: Date;
+  eventEndDate: Date;
+  /** "venue, city" as snapshotted. */
+  venue: string | null;
+  districtName: string | null;
+  stateName: string | null;
+  certificateNumber: string;
+  issuedAt: Date;
+  signatories: SignatorySnapshot[];
+  logoUrl: string | null;
+}): CertificateContent {
+  const dates =
+    formatDate(c.eventStartDate) === formatDate(c.eventEndDate)
+      ? formatDate(c.eventStartDate)
+      : `${formatDate(c.eventStartDate)} – ${formatDate(c.eventEndDate)}`;
+  const locationParts = [c.venue, c.districtName, c.stateName].filter(Boolean);
+  return {
+    title: c.title,
+    recipientName: c.recipientName,
+    recipientIdLine: c.recipientIdLine,
+    bodyLines: [`participated in ${c.eventName}`, ...(c.position ? [`Achievement: ${c.position}`] : []), dates],
+    locationLine: locationParts.length ? locationParts.join(", ") : null,
+    certificateNumber: c.certificateNumber,
+    issuedAt: c.issuedAt,
+    signatories: c.signatories,
+    logoUrl: c.logoUrl,
+  };
 }
 
 function toSnapshot(s: { name: string; designation: string; organization: string | null; signatureImageUrl: string | null }): SignatorySnapshot {
@@ -196,20 +265,21 @@ export async function issuePlayerCertificate(playerId: string, issuedById: strin
 
   const signatories = await stateSignatories(player.district.stateId);
   const stateName = player.district.state?.name ?? null;
-  const title = "Certificate of Registration";
+  const title = REGISTRATION_TITLE;
+  const recipientIdLine = `Player ID: ${player.playerId}`;
 
   const pdfPath = await renderAndStore(
-    {
+    registrationCertificateContent({
       title,
       recipientName: player.name,
-      recipientIdLine: `Player ID: ${player.playerId}`,
-      bodyLines: [`has been duly registered as an official Player with the ${siteConfig.name}.`],
-      locationLine: `District: ${player.district.name}${stateName ? `, ${stateName}` : ""}`,
+      recipientIdLine,
+      districtName: player.district.name,
+      stateName,
       certificateNumber,
       issuedAt,
       expiresAt,
       signatories,
-    },
+    }),
     qrCode
   );
 
@@ -225,6 +295,8 @@ export async function issuePlayerCertificate(playerId: string, issuedById: strin
       districtName: player.district.name,
       stateName,
       signatories: signatories as unknown as object[],
+      recipientName: player.name,
+      recipientIdLine,
       issuedById,
     },
   });
@@ -282,7 +354,7 @@ export async function issueTournamentCertificates(
 
   const signatories = tournament.signatories.map((ts) => toSnapshot(ts.signatory));
   const title = tournament.certificateTitle?.trim() || "Certificate of Participation";
-  const locationParts = [tournament.venue, tournament.city, tournament.district?.name, tournament.state?.name].filter(Boolean);
+  const venue = [tournament.venue, tournament.city].filter(Boolean).join(", ") || null;
 
   const byPlayer = new Map<string, TournamentCertificateEntry>();
   for (const e of entries) byPlayer.set(e.playerId, e);
@@ -316,27 +388,25 @@ export async function issueTournamentCertificates(
     const qrCode = generateId("QR");
     const issuedAt = new Date();
     const position = entry.position?.trim() || null;
-    const dates =
-      formatDate(tournament.startDate) === formatDate(tournament.endDate)
-        ? formatDate(tournament.startDate)
-        : `${formatDate(tournament.startDate)} – ${formatDate(tournament.endDate)}`;
+    const recipientIdLine = `Player ID: ${registration.player.playerId}`;
 
     const pdfPath = await renderAndStore(
-      {
+      tournamentCertificateContent({
         title,
         recipientName: registration.player.name,
-        recipientIdLine: `Player ID: ${registration.player.playerId}`,
-        bodyLines: [
-          `participated in ${tournament.name}`,
-          ...(position ? [`Achievement: ${position}`] : []),
-          dates,
-        ],
-        locationLine: locationParts.length ? locationParts.join(", ") : null,
+        recipientIdLine,
+        eventName: tournament.name,
+        position,
+        eventStartDate: tournament.startDate,
+        eventEndDate: tournament.endDate,
+        venue,
+        districtName: tournament.district?.name ?? null,
+        stateName: tournament.state?.name ?? null,
         certificateNumber,
         issuedAt,
         signatories,
         logoUrl: tournament.certificateLogoUrl,
-      },
+      }),
       qrCode
     );
 
@@ -354,12 +424,14 @@ export async function issueTournamentCertificates(
           eventName: tournament.name,
           eventStartDate: tournament.startDate,
           eventEndDate: tournament.endDate,
-          venue: [tournament.venue, tournament.city].filter(Boolean).join(", ") || null,
+          venue,
           districtName: tournament.district?.name ?? null,
           stateName: tournament.state?.name ?? null,
           position,
           logoUrl: tournament.certificateLogoUrl,
           signatories: signatories as unknown as object[],
+          recipientName: registration.player.name,
+          recipientIdLine,
           issuedById,
         },
       });
@@ -378,6 +450,85 @@ export async function issueTournamentCertificates(
 
   log.info({ tournamentId, issued: result.issued.length, skipped: result.skipped.length }, "Tournament certificates issued");
   return result;
+}
+
+// ─── PDF of an issued player certificate ────────────────────────────────────
+
+/**
+ * The certificate's PDF: the stored file when there is one. A certificate
+ * whose PDF was never stored (or was lost with a non-persistent disk) is
+ * rendered ONCE from its issue-time snapshot — same renderer, number, QR,
+ * signatories, title and event — then stored, and that file is served from
+ * then on. Never re-rendered because profile data changed: the recipient is
+ * frozen on the row the first time (legacy rows had no recipient snapshot).
+ */
+export async function getPlayerCertificatePdf(certificateId: string): Promise<{ data: Buffer; fileName: string }> {
+  const cert = await prisma.playerCertificate.findUnique({
+    where: { id: certificateId },
+    include: { player: { select: { name: true, playerId: true } } },
+  });
+  if (!cert) throw AppError.notFound("Certificate not found");
+  const fileName = `${cert.certificateNumber}.pdf`;
+  const storage = getStorage();
+
+  if (cert.pdfPath) {
+    const stored = await storage.read(cert.pdfPath);
+    if (stored) return { data: stored.data, fileName };
+  }
+
+  const recipientName = cert.recipientName ?? cert.player.name;
+  const recipientIdLine = cert.recipientIdLine ?? `Player ID: ${cert.player.playerId}`;
+  const signatories = (Array.isArray(cert.signatories) ? cert.signatories : []) as unknown as SignatorySnapshot[];
+  const content =
+    cert.tournamentId && cert.eventName && cert.eventStartDate && cert.eventEndDate
+      ? tournamentCertificateContent({
+          title: cert.title ?? "Certificate of Participation",
+          recipientName,
+          recipientIdLine,
+          eventName: cert.eventName,
+          position: cert.position,
+          eventStartDate: cert.eventStartDate,
+          eventEndDate: cert.eventEndDate,
+          venue: cert.venue,
+          districtName: cert.districtName,
+          stateName: cert.stateName,
+          certificateNumber: cert.certificateNumber,
+          issuedAt: cert.issuedAt,
+          signatories,
+          logoUrl: cert.logoUrl,
+        })
+      : registrationCertificateContent({
+          title: cert.title,
+          recipientName,
+          recipientIdLine,
+          districtName: cert.districtName,
+          stateName: cert.stateName,
+          certificateNumber: cert.certificateNumber,
+          issuedAt: cert.issuedAt,
+          expiresAt: cert.expiresAt,
+          signatories,
+        });
+  const data = await renderPdf(content, cert.qrCode);
+
+  let pdfPath = cert.pdfPath;
+  try {
+    pdfPath = await storage.upload(data, fileName, "certificates");
+  } catch (err) {
+    // Another request stored it first (write-once storage): serve that file.
+    const stored = await storage.read(`certificates/${fileName}`);
+    if (stored) return { data: stored.data, fileName };
+    log.error({ err, certificateNumber: cert.certificateNumber }, "Certificate PDF could not be stored");
+  }
+  await prisma.playerCertificate.updateMany({
+    where: { id: cert.id },
+    data: {
+      ...(pdfPath ? { pdfPath } : {}),
+      ...(cert.recipientName ? {} : { recipientName }),
+      ...(cert.recipientIdLine ? {} : { recipientIdLine }),
+    },
+  });
+  log.info({ certificateNumber: cert.certificateNumber }, "Missing certificate PDF rendered from its snapshot and stored");
+  return { data, fileName };
 }
 
 // ─── Coach (not wired to any route yet) ────────────────────────────────────

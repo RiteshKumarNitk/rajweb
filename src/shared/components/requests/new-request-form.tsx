@@ -10,9 +10,14 @@ import { Textarea } from "@/shared/components/ui/textarea";
 import { useRegistrationLocations } from "@/shared/components/forms/registration-locations-context";
 import { apiPost, handleApiFetch } from "@/lib/api-client";
 import {
+  GENDER_LABELS,
+  PLAYER_CATEGORIES,
+  PROFILE_FIELDS_BY_TYPE,
+  PROFILE_FIELD_LABELS,
   REQUEST_TYPES,
   REQUEST_TYPE_LABELS,
   REQUEST_TYPE_DESCRIPTIONS,
+  type ProfileFieldValue,
   type RequestTypeValue,
 } from "@/modules/requests/request-types";
 
@@ -20,6 +25,22 @@ export interface CurrentProfileValues {
   email: string;
   mobile: string;
   district: string;
+  name?: string;
+  /** YYYY-MM-DD */
+  dateOfBirth?: string;
+  gender?: string;
+  category?: string | null;
+  address?: string | null;
+}
+
+const SELECT_CLASS =
+  "mt-1.5 h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+
+function currentFieldDisplay(current: CurrentProfileValues, field: ProfileFieldValue): string {
+  if (field === "NAME") return current.name ?? "";
+  if (field === "DATE_OF_BIRTH") return current.dateOfBirth ?? "";
+  if (field === "GENDER") return current.gender ? (GENDER_LABELS[current.gender] ?? current.gender) : "";
+  return current.category ?? "Not set";
 }
 
 export function NewRequestForm({
@@ -44,7 +65,10 @@ export function NewRequestForm({
   const [requestedEmail, setRequestedEmail] = useState(current.email);
   const [requestedAddress, setRequestedAddress] = useState("");
   const [requestedDistrict, setRequestedDistrict] = useState("");
+  const [requestedField, setRequestedField] = useState<ProfileFieldValue | "">("");
+  const [fieldValue, setFieldValue] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const profileFields = PROFILE_FIELDS_BY_TYPE[profileType];
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -60,6 +84,10 @@ export function NewRequestForm({
       toast.error("Select the district you want to move to");
       return;
     }
+    if (type === "PROFILE_CORRECTION" && requestedField && !fieldValue.trim()) {
+      toast.error(`Enter the corrected ${PROFILE_FIELD_LABELS[requestedField].toLowerCase()}`);
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -67,9 +95,13 @@ export function NewRequestForm({
         profileType,
         type,
         reason: reason.trim(),
-        requestedValue: ["PROFILE_CORRECTION", "CERTIFICATE_REQUEST", "CERTIFICATE_CORRECTION", "DOCUMENT_UPDATE", "OTHER"].includes(type)
-          ? requestedValue.trim() || undefined
-          : undefined,
+        requestedField: type === "PROFILE_CORRECTION" && requestedField ? requestedField : undefined,
+        requestedValue:
+          type === "PROFILE_CORRECTION" && requestedField
+            ? fieldValue.trim()
+            : ["PROFILE_CORRECTION", "CERTIFICATE_REQUEST", "CERTIFICATE_CORRECTION", "DOCUMENT_UPDATE", "OTHER"].includes(type)
+              ? requestedValue.trim() || undefined
+              : undefined,
         requestedMobile: type === "CONTACT_UPDATE" ? requestedMobile.trim() : undefined,
         requestedEmail: type === "CONTACT_UPDATE" ? requestedEmail.trim() : undefined,
         requestedAddress: type === "ADDRESS_UPDATE" ? requestedAddress.trim() : undefined,
@@ -104,6 +136,69 @@ export function NewRequestForm({
         {type && <p className="mt-1.5 text-xs text-slate-500">{REQUEST_TYPE_DESCRIPTIONS[type]}</p>}
       </div>
 
+      {type === "PROFILE_CORRECTION" && (
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="requested-field">Field to correct</Label>
+            <select
+              id="requested-field"
+              value={requestedField}
+              onChange={(e) => {
+                setRequestedField(e.target.value as ProfileFieldValue | "");
+                setFieldValue("");
+              }}
+              className={SELECT_CLASS}
+            >
+              <option value="">Something else (describe below)</option>
+              {profileFields.map((f) => (
+                <option key={f} value={f}>{PROFILE_FIELD_LABELS[f]}</option>
+              ))}
+            </select>
+          </div>
+          {requestedField && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <Label>Current</Label>
+                <Input value={currentFieldDisplay(current, requestedField)} disabled className="mt-1.5" />
+              </div>
+              <div>
+                <Label htmlFor="requested-field-value">Requested</Label>
+                {requestedField === "GENDER" ? (
+                  <select id="requested-field-value" value={fieldValue} onChange={(e) => setFieldValue(e.target.value)} className={SELECT_CLASS}>
+                    <option value="">Select</option>
+                    {Object.entries(GENDER_LABELS).map(([v, l]) => (
+                      <option key={v} value={v}>{l}</option>
+                    ))}
+                  </select>
+                ) : requestedField === "CATEGORY" ? (
+                  <select id="requested-field-value" value={fieldValue} onChange={(e) => setFieldValue(e.target.value)} className={SELECT_CLASS}>
+                    <option value="">Select</option>
+                    {PLAYER_CATEGORIES.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <Input
+                    id="requested-field-value"
+                    type={requestedField === "DATE_OF_BIRTH" ? "date" : "text"}
+                    value={fieldValue}
+                    onChange={(e) => setFieldValue(e.target.value)}
+                    className="mt-1.5"
+                  />
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {type === "CONTACT_UPDATE" && (
+        <p className="text-xs text-slate-500">
+          Current mobile: <span className="font-medium text-slate-700">{current.mobile}</span> · Current email:{" "}
+          <span className="font-medium text-slate-700">{current.email}</span>
+        </p>
+      )}
+
       {type === "CONTACT_UPDATE" && (
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
@@ -119,6 +214,11 @@ export function NewRequestForm({
 
       {type === "ADDRESS_UPDATE" && (
         <div>
+          {current.address !== undefined && (
+            <p className="mb-2 text-xs text-slate-500">
+              Current address: <span className="font-medium text-slate-700">{current.address || "Not on file"}</span>
+            </p>
+          )}
           <Label htmlFor="requested-address">New Address</Label>
           <Textarea id="requested-address" value={requestedAddress} onChange={(e) => setRequestedAddress(e.target.value)} className="mt-1.5" placeholder="Full address" />
         </div>
@@ -147,7 +247,7 @@ export function NewRequestForm({
         </div>
       )}
 
-      {(type === "PROFILE_CORRECTION" || type === "CERTIFICATE_REQUEST" || type === "CERTIFICATE_CORRECTION" || type === "DOCUMENT_UPDATE" || type === "OTHER") && (
+      {((type === "PROFILE_CORRECTION" && !requestedField) || type === "CERTIFICATE_REQUEST" || type === "CERTIFICATE_CORRECTION" || type === "DOCUMENT_UPDATE" || type === "OTHER") && (
         <div>
           <Label htmlFor="requested-value">
             {type === "PROFILE_CORRECTION" ? "What needs to be corrected"

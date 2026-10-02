@@ -5,7 +5,6 @@ import { PERMISSIONS, hasPermission } from "@/security/rbac/permissions";
 import { assertInScope, districtTarget, DISTRICT_STATE_SELECT } from "@/security/rbac/org-scope";
 import { approvePlayer, rejectPlayer } from "@/modules/players/player.service";
 import { issuePlayerCertificate } from "@/services/certificates/certificate-service";
-import { getStorage } from "@/infrastructure/storage/storage-adapter";
 import { createAuditLog } from "@/services/audit/audit-service";
 
 export const POST = withApiHandler(
@@ -98,7 +97,7 @@ export const POST = withApiHandler(
           qrCode: cert.qrCode,
           issuedAt: cert.issuedAt,
           expiresAt: cert.expiresAt,
-          pdfUrl: cert.pdfPath ? getStorage().getUrl(cert.pdfPath) : undefined,
+          pdfUrl: `/api/certificates/${cert.id}/pdf`,
         },
         requestId,
         `Certificate ${cert.certificateNumber} issued`

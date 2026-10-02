@@ -1,7 +1,15 @@
 import { NetlifyBlobsStorageAdapter } from "./netlify-blobs-adapter";
+import { DatabaseStorageAdapter } from "./database-adapter";
+
+export interface StoredFileContent {
+  data: Buffer;
+  contentType: string;
+}
 
 export interface StorageAdapter {
   upload(file: Buffer, filename: string, folder?: string): Promise<string>;
+  /** The stored bytes, or null when the file does not exist. */
+  read(path: string): Promise<StoredFileContent | null>;
   delete(path: string): Promise<void>;
   getUrl(path: string): string;
 }
@@ -26,6 +34,19 @@ export class LocalStorageAdapter implements StorageAdapter {
     return folder ? `${folder}/${filename}` : filename;
   }
 
+  async read(filePath: string): Promise<StoredFileContent | null> {
+    const fs = await import("fs/promises");
+    const path = await import("path");
+    const basePath = path.resolve(this.basePath);
+    const fullPath = path.resolve(basePath, filePath);
+    if (!fullPath.startsWith(basePath + path.sep)) return null;
+    try {
+      return { data: await fs.readFile(fullPath), contentType: "application/pdf" };
+    } catch {
+      return null;
+    }
+  }
+
   async delete(filePath: string): Promise<void> {
     const fs = await import("fs/promises");
     const path = await import("path");
@@ -46,9 +67,14 @@ export class LocalStorageAdapter implements StorageAdapter {
 
 let storageInstance: StorageAdapter | null = null;
 
-function resolveStorageType(): string {
+/**
+ * STORAGE_TYPE wins; otherwise Netlify → Blobs, Vercel → database (its
+ * filesystem is not persistent, so a local file would be lost), else local disk.
+ */
+export function resolveStorageType(): string {
   if (process.env.STORAGE_TYPE) return process.env.STORAGE_TYPE;
   if (process.env.NETLIFY === "true") return "netlify";
+  if (process.env.VERCEL === "1") return "database";
   return "local";
 }
 
@@ -58,6 +84,9 @@ export function getStorage(): StorageAdapter {
     switch (type) {
       case "netlify":
         storageInstance = new NetlifyBlobsStorageAdapter();
+        break;
+      case "database":
+        storageInstance = new DatabaseStorageAdapter();
         break;
       case "local":
       default:

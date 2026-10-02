@@ -3,12 +3,12 @@
 import { useState } from "react";
 import { UserCheck } from "lucide-react";
 import { Button } from "@/shared/components/ui/button";
-import { PlayerAccountForm } from "./player-account-form";
+import { PlayerAccountForm, type PlayerPrefill } from "./player-account-form";
 
 export function PlayerRegistrationFlow({
   prefill,
 }: {
-  prefill: { name: string; email: string; phone: string };
+  prefill: PlayerPrefill;
 }) {
   const [showForm, setShowForm] = useState(false);
 

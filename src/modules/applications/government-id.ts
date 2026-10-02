@@ -64,17 +64,57 @@ export interface GovernmentIdValues {
   governmentIdDocumentId: string;
 }
 
+/** What an optional Government ID resolves to: nothing, or a type + number with an optional document. */
+export interface OptionalGovernmentIdValues {
+  governmentIdType: GovernmentIdType | null;
+  governmentIdNumber: string | null;
+  governmentIdDocumentId: string | null;
+}
+
+type ExistingGovernmentId = Partial<Record<keyof GovernmentIdValues, string | null>> | null | undefined;
+
+/**
+ * Optional Government ID (Player applications): leaving everything blank is
+ * fine. Once a type is chosen its number is required and checked; the
+ * document stays optional. A number or document without a type is refused,
+ * so a stored document always says what it is.
+ */
+export async function resolveOptionalGovernmentId(
+  tx: Prisma.TransactionClient,
+  input: GovernmentIdInput,
+  opts: { userId: string; existing?: ExistingGovernmentId }
+): Promise<OptionalGovernmentIdValues> {
+  const type = input.governmentIdType ?? opts.existing?.governmentIdType ?? null;
+  const hasInput = Boolean(input.governmentIdNumber?.trim() || input.governmentIdDocumentId);
+  if (!type) {
+    if (hasInput) throw AppError.validation("Select your Government ID type");
+    return { governmentIdType: null, governmentIdNumber: null, governmentIdDocumentId: null };
+  }
+  return resolveGovernmentId(tx, input, { ...opts, documentOptional: true });
+}
+
 /**
  * Validates the submitted Government ID, falling back to the values already
  * on the record (a resubmission may keep the number or the document). The
- * result must be complete. A new document must be a GOVERNMENT_ID file the
- * same account uploaded and not attached to any other application.
+ * result must be complete (the document may be optional). A new document must
+ * be a GOVERNMENT_ID file the same account uploaded and not attached to any
+ * other application.
  */
 export async function resolveGovernmentId(
   tx: Prisma.TransactionClient,
   input: GovernmentIdInput,
-  opts: { userId: string; existing?: Partial<Record<keyof GovernmentIdValues, string | null>> | null }
-): Promise<GovernmentIdValues> {
+  opts: { userId: string; existing?: ExistingGovernmentId; documentOptional: true }
+): Promise<OptionalGovernmentIdValues & { governmentIdType: GovernmentIdType; governmentIdNumber: string }>;
+export async function resolveGovernmentId(
+  tx: Prisma.TransactionClient,
+  input: GovernmentIdInput,
+  opts: { userId: string; existing?: ExistingGovernmentId; documentOptional?: false }
+): Promise<GovernmentIdValues>;
+export async function resolveGovernmentId(
+  tx: Prisma.TransactionClient,
+  input: GovernmentIdInput,
+  opts: { userId: string; existing?: ExistingGovernmentId; documentOptional?: boolean }
+): Promise<OptionalGovernmentIdValues> {
   const type = (input.governmentIdType ?? opts.existing?.governmentIdType ?? null) as GovernmentIdType | null;
   const typeChanged = Boolean(input.governmentIdType && input.governmentIdType !== opts.existing?.governmentIdType);
   const rawNumber = input.governmentIdNumber?.trim()
@@ -86,7 +126,7 @@ export async function resolveGovernmentId(
 
   if (!type) throw AppError.validation("Select your Government ID type");
   if (!rawNumber) throw AppError.validation("Enter your Government ID number");
-  if (!documentId) throw AppError.validation("Upload your Government ID document");
+  if (!documentId && !opts.documentOptional) throw AppError.validation("Upload your Government ID document");
 
   const number = normalizeGovernmentIdNumber(rawNumber);
   const format = FORMATS[type];

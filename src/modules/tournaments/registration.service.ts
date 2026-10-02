@@ -1,8 +1,11 @@
 import { Prisma } from "@prisma/client";
 import prisma from "@/infrastructure/database/prisma";
 import { AppError } from "@/core/errors/app-error";
-
-const OCCUPYING_STATUSES = ["PENDING", "APPROVED"] as const;
+import {
+  OCCUPYING_REGISTRATION_STATUSES,
+  playerRegistrationState,
+  tournamentRegistrationState,
+} from "@/modules/tournaments/registration-eligibility";
 
 export interface CreatedTournamentRegistration {
   id: string;
@@ -22,6 +25,8 @@ export interface CreatedTournamentRegistration {
  *
  * The existing unique key is (tournamentId, playerId): one registration per
  * player per tournament, which also prevents a second category entry.
+ * Eligibility (status, window, categories, capacity, player) is the same
+ * function the account pages use, so the page and the API never disagree.
  */
 export async function registerForTournament(
   userId: string,
@@ -32,54 +37,55 @@ export async function registerForTournament(
     return await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM tournaments WHERE id = ${tournamentId} FOR UPDATE`;
 
-      const tournament = await tx.tournament.findUnique({ where: { id: tournamentId } });
+      const tournament = await tx.tournament.findUnique({
+        where: { id: tournamentId },
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          stateId: true,
+          districtId: true,
+          registrationStart: true,
+          registrationDeadline: true,
+          maxParticipants: true,
+          requiresApprovedPlayer: true,
+        },
+      });
       if (!tournament) throw AppError.notFound("Tournament not found");
 
-      if (tournament.status !== "REGISTRATION_OPEN") {
-        throw AppError.validation("Registration is not open for this tournament");
-      }
+      const [activeCategories, occupied, player] = await Promise.all([
+        tx.tournamentRegistrationCategory.count({ where: { tournamentId, isActive: true } }),
+        tx.tournamentRegistration.count({ where: { tournamentId, status: { in: [...OCCUPYING_REGISTRATION_STATUSES] } } }),
+        // The session user's own player — never an id from the client.
+        tx.player.findUnique({ where: { userId }, select: { id: true, status: true } }),
+      ]);
+      const existing = player
+        ? await tx.tournamentRegistration.findUnique({
+            where: { tournamentId_playerId: { tournamentId, playerId: player.id } },
+            select: { categoryId: true },
+          })
+        : null;
 
-      const now = new Date();
-      if (tournament.registrationStart && now < tournament.registrationStart) {
-        throw AppError.validation("Registration has not started yet.");
+      const state = playerRegistrationState(
+        tournamentRegistrationState(tournament, { activeCategories, occupied }),
+        tournament,
+        player,
+        Boolean(existing)
+      );
+      if (state.block === "ALREADY_REGISTERED") {
+        throw AppError.conflict(
+          existing?.categoryId === categoryId
+            ? "You are already registered for this category."
+            : "You are already registered for this tournament."
+        );
       }
-      if (tournament.registrationDeadline && now > tournament.registrationDeadline) {
-        throw AppError.validation("Registration is closed.");
-      }
-
-      const player = await tx.player.findUnique({ where: { userId } });
-      if (!player) {
-        throw AppError.validation("You must register as a player before registering for a tournament.");
-      }
-      if (tournament.requiresApprovedPlayer && player.status !== "APPROVED") {
-        throw AppError.validation("An approved player registration is required for this tournament.");
-      }
+      if (!state.open || !player) throw AppError.validation(state.message ?? "Registration is not available.");
 
       const category = await tx.tournamentRegistrationCategory.findFirst({
         where: { id: categoryId, tournamentId, isActive: true },
       });
       if (!category || !Number.isInteger(category.fee) || category.fee < 0) {
         throw AppError.validation("This category is not available for registration.");
-      }
-
-      const existing = await tx.tournamentRegistration.findUnique({
-        where: { tournamentId_playerId: { tournamentId, playerId: player.id } },
-      });
-      if (existing) {
-        throw AppError.conflict(
-          existing.categoryId === categoryId
-            ? "You are already registered for this category."
-            : "You are already registered for this tournament."
-        );
-      }
-
-      if (tournament.maxParticipants != null) {
-        const occupied = await tx.tournamentRegistration.count({
-          where: { tournamentId, status: { in: [...OCCUPYING_STATUSES] } },
-        });
-        if (occupied >= tournament.maxParticipants) {
-          throw AppError.validation("Registration capacity has been reached.");
-        }
       }
 
       const registration = await tx.tournamentRegistration.create({

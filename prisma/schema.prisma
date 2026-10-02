@@ -306,6 +306,10 @@ model PlayerCertificate {
   logoUrl           String?
   // [{ name, designation, organization, signatureImageUrl }] in signing order.
   signatories       Json?
+  // Recipient as printed ("Player ID: …" line included), so a later rename
+  // never changes an issued certificate. Null on rows issued before it existed.
+  recipientName     String?
+  recipientIdLine   String?
   issuedById        String?
 
   @@unique([tournamentId, playerId])
@@ -513,6 +517,9 @@ model Request {
   // structured field below (PROFILE_CORRECTION, CERTIFICATE_*, DOCUMENT_UPDATE, OTHER).
   currentValue        String?
   requestedValue      String?
+  // PROFILE_CORRECTION of one known field (NAME, DATE_OF_BIRTH, GENDER,
+  // CATEGORY): applied on approval. Null = free-text, informational only.
+  requestedField      String?
   // Structured fields for the request types whose approval can safely apply
   // itself to the underlying record — see request.service.ts for exactly
   // which types are auto-applied vs. informational-only.
@@ -1225,4 +1232,17 @@ enum GovernmentIdType {
   PASSPORT
   VOTER_ID
   DRIVING_LICENCE
+}
+
+// Files kept in the database by the "database" storage adapter (used on
+// hosts without a persistent disk, e.g. Vercel). Keyed by the same path the
+// other adapters use; served only through the authorization-checked /api/files.
+model StoredFile {
+  path      String   @id
+  mimeType  String
+  size      Int
+  data      Bytes
+  createdAt DateTime @default(now())
+
+  @@map("stored_files")
 }

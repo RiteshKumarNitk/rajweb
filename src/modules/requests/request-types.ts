@@ -40,3 +40,27 @@ export const REQUEST_TYPE_DESCRIPTIONS: Record<RequestTypeValue, string> = {
  * see request.service.ts for the exact per-type behavior this drives.
  */
 export const AUTO_APPLY_REQUEST_TYPES: RequestTypeValue[] = ["CONTACT_UPDATE", "DISTRICT_CHANGE", "ADDRESS_UPDATE"];
+
+/**
+ * Profile fields a PROFILE_CORRECTION can name. With a field, approval applies
+ * the new value to the record (and the audit keeps the previous one); without
+ * one, the correction stays informational as before.
+ */
+export const PROFILE_FIELDS = ["NAME", "DATE_OF_BIRTH", "GENDER", "CATEGORY"] as const;
+export type ProfileFieldValue = (typeof PROFILE_FIELDS)[number];
+
+export const PROFILE_FIELD_LABELS: Record<ProfileFieldValue, string> = {
+  NAME: "Full Name",
+  DATE_OF_BIRTH: "Date of Birth",
+  GENDER: "Gender",
+  CATEGORY: "Playing Category",
+};
+
+/** Which fields exist on each profile type. */
+export const PROFILE_FIELDS_BY_TYPE: Record<"player" | "coach", ProfileFieldValue[]> = {
+  player: ["NAME", "DATE_OF_BIRTH", "GENDER", "CATEGORY"],
+  coach: ["NAME"],
+};
+
+export const PLAYER_CATEGORIES = ["Sub-Junior", "Junior", "Senior", "Master"] as const;
+export const GENDER_LABELS: Record<string, string> = { MALE: "Male", FEMALE: "Female", OTHER: "Other" };
