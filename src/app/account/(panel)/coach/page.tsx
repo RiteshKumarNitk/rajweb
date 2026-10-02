@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   Award,
@@ -8,7 +7,6 @@ import {
   GraduationCap,
   MapPin,
   Sparkles,
-  ShieldCheck,
   Download,
   AlertCircle,
   Calendar,
@@ -24,6 +22,7 @@ import { CoachRegistrationFlow } from "./coach-registration-flow";
 import { CoachResubmitActions } from "./coach-resubmit-actions";
 import { getApplicationHistory } from "@/modules/applications/application-history.server";
 import { RequestsPanel, type RequestRow } from "@/shared/components/requests/requests-panel";
+import { getOwnRequestRows } from "@/modules/requests/own-requests.server";
 import { ApplicationPendingNotice } from "@/shared/components/account/application-pending-notice";
 import { GovernmentIdSummary, governmentIdOnFile } from "@/shared/components/account/government-id-summary";
 import { getRegistrationChoice } from "@/modules/applications/registration-choice.server";
@@ -89,30 +88,8 @@ export default async function AccountCoachPage() {
     const certificate = coach.certificates[0];
     const storage = getStorage();
     const history = await getApplicationHistory("coaches", coach.id, coach.createdAt);
-    const requests =
-      coach.status === "APPROVED"
-        ? await prisma.request.findMany({
-            where: { coachId: coach.id },
-            include: { requestedDistrict: true },
-            orderBy: { createdAt: "desc" },
-          })
-        : [];
-    const requestRows: RequestRow[] = requests.map((r) => ({
-      id: r.id,
-      requestNumber: r.requestNumber,
-      type: r.type,
-      status: r.status,
-      reason: r.reason,
-      requestedValue: r.requestedValue,
-      requestedMobile: r.requestedMobile,
-      requestedEmail: r.requestedEmail,
-      requestedAddress: r.requestedAddress,
-      requestedDistrict: r.requestedDistrict?.name ?? null,
-      adminRemarks: r.adminRemarks,
-      rejectionReason: r.rejectionReason,
-      createdAt: r.createdAt.toISOString(),
-      resolvedAt: r.resolvedAt?.toISOString() ?? null,
-    }));
+    const requestRows: RequestRow[] =
+      coach.status === "APPROVED" && authUser.id ? await getOwnRequestRows(authUser.id, { coachId: coach.id }) : [];
 
     const initial = coach.name ? coach.name.charAt(0).toUpperCase() : "C";
 
@@ -128,11 +105,6 @@ export default async function AccountCoachPage() {
               Manage your certified coaching credentials, state licenses, and district affiliations.
             </p>
           </div>
-          <Button variant="outline" size="sm" asChild className="self-start sm:self-auto">
-            <Link href="/account/verify" className="flex items-center gap-1.5">
-              <ShieldCheck className="h-4 w-4 text-emerald-600" /> Verify Credentials
-            </Link>
-          </Button>
         </div>
 
         {/* Coach Hero Banner */}
@@ -306,11 +278,6 @@ export default async function AccountCoachPage() {
                     </a>
                   </Button>
                 )}
-                <Button size="sm" asChild className="w-full text-xs bg-primary text-white hover:bg-slate-800">
-                  <Link href={`/account/verify?certificateNumber=${encodeURIComponent(certificate.certificateNumber)}`}>
-                    <ShieldCheck className="mr-1.5 h-3.5 w-3.5 text-emerald-400" /> Verify & View Template
-                  </Link>
-                </Button>
               </div>
             )}
           </Card>

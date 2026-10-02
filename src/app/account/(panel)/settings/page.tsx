@@ -10,7 +10,6 @@ import {
   KeyRound,
   Shield,
   Smartphone,
-  ExternalLink,
   Edit3,
   Sparkles,
   Lock,
@@ -252,17 +251,6 @@ export default async function AccountSettingsPage() {
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
             <div className="space-y-3">
-              <div className="flex items-start justify-between rounded-lg border border-slate-100 bg-slate-50/70 p-3">
-                <div className="space-y-0.5">
-                  <p className="text-xs font-semibold text-primary">Certificate Verification Portal</p>
-                  <p className="text-xs text-slate-500">Check validity of any RRA-issued certificate anytime.</p>
-                </div>
-                <Button variant="outline" size="sm" asChild className="shrink-0 h-8 text-xs">
-                  <Link href="/verify" target="_blank">
-                    Verify Certificate <ExternalLink className="ml-1 h-3 w-3" />
-                  </Link>
-                </Button>
-              </div>
 
               <div className="flex items-start justify-between rounded-lg border border-slate-100 bg-slate-50/70 p-3">
                 <div className="space-y-0.5">

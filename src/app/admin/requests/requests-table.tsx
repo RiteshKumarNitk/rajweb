@@ -109,6 +109,7 @@ export function RequestsTable({ requests }: { requests: AdminRequestRow[] }) {
           <option value="PENDING">Pending</option>
           <option value="APPROVED">Approved</option>
           <option value="REJECTED">Rejected</option>
+          <option value="CANCELLED">Cancelled by member</option>
         </select>
         <select
           value={district}

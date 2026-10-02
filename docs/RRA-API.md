@@ -575,6 +575,19 @@ All Session + CSRF, 20/min; another member's order or attempt → 404. `PAYMENT_
 - Player/Coach register and resubmit accept `governmentIdType` (`AADHAAR` | `PAN` | `PASSPORT` | `VOTER_ID` | `DRIVING_LICENCE`), `governmentIdNumber`, `governmentIdDocumentId`. Required for a signed-in applicant (400 "Select your Government ID type" / "Enter your Government ID number" / "Upload your Government ID document"); the number must match the type's format (400) and is stored without spaces/hyphens, upper-cased; the document must be a `GOVERNMENT_ID` upload by the same account not attached elsewhere (400 otherwise). On resubmit, a blank number or no new document keeps what is on file; a replaced document is deleted.
 - `GET /api/media/{id}` for a `GOVERNMENT_ID` document: the uploader, or a user with `players:read` / `coaches:read` whose scope covers the linked application's district → 200 (`private, no-store`); anyone else signed in → 404; anonymous → 401.
 
+## 13h. Member Account APIs (2026-10-02 / 10-03)
+
+All derive the member from the session; ids in the URL or query never grant access.
+
+- `GET /api/account/tournaments` — Session, 60/min. The player's own entries. Query: `q` (name or code), `status` (`reg:PENDING|APPROVED|REJECTED`, `t:UPCOMING|IN_PROGRESS|COMPLETED|CANCELLED`), `year`, `state`, `district`, `certificate` (`yes|no`), `page`, `pageSize` (10/20/25). Response `{ rows, total, page, pageSize, pages }`. No player → empty list.
+- `GET /api/account/certificates/{id}` — Session. One of the member's own player certificates (snapshot fields, `type`, `downloadUrl`); others → 404.
+- `GET /api/certificates/{id}/pdf` — Session, 30/min. The certificate PDF (attachment, `private, no-store`): owner, or `certificates:read` within scope; others 404; owner of a revoked certificate 409. Only GET (other methods 405).
+- `POST /api/account/requests/{id}/cancel` — Session, CSRF, 20/min. Own PENDING request → `CANCELLED` (kept; audit `REQUEST_CANCELLED`); processed → 409; not the caller's → 404.
+- `POST /api/requests` — adds `requestedField` (`NAME|DATE_OF_BIRTH|GENDER|CATEGORY`) for a PROFILE_CORRECTION; `currentValue` is set by the server. Approval applies the field and audits `changes: [{ field, previousValue, newValue }]`.
+- `POST /api/tournaments/{id}/registrations` — same rules as the pages (status, IST window, categories, capacity, approved player); messages say why.
+- `PATCH /api/account/profile` — with an approved Player/Coach registration, changing `address` → 400 (use an Address Update request).
+- `POST /api/players/register` / resubmit — Government ID optional.
+
 ## 13a. Admin Gallery APIs
 
 ### 13a.1 Create gallery item

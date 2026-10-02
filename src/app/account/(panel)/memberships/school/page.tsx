@@ -228,13 +228,6 @@ export default async function AccountSchoolMembershipPage() {
               </CardContent>
             </div>
 
-            <div className="p-6 pt-0">
-              <Button variant="ghost" size="sm" asChild className="w-full text-xs text-slate-500">
-                <Link href="/verify" target="_blank">
-                  Verify Credentials in Registry →
-                </Link>
-              </Button>
-            </div>
           </Card>
         </div>
 

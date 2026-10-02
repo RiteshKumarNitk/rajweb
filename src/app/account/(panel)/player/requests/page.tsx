@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { ClipboardList } from "lucide-react";
 import prisma from "@/infrastructure/database/prisma";
 import { Card, CardContent } from "@/shared/components/ui/card";
-import { RequestsPanel, type RequestRow } from "@/shared/components/requests/requests-panel";
+import { RequestsPanel } from "@/shared/components/requests/requests-panel";
+import { getOwnRequestRows } from "@/modules/requests/own-requests.server";
 import { requireOwnPlayer } from "../require-own-player";
 
 export const dynamic = "force-dynamic";
@@ -30,38 +31,10 @@ export default async function PlayerRequestsPage({ searchParams }: { searchParam
     );
   }
 
-  const [requests, profile] = await Promise.all([
-    prisma.request.findMany({
-      where: { playerId: player.id },
-      select: {
-        id: true,
-        requestNumber: true,
-        type: true,
-        status: true,
-        reason: true,
-        requestedValue: true,
-        requestedField: true,
-        currentValue: true,
-        requestedMobile: true,
-        requestedEmail: true,
-        requestedAddress: true,
-        requestedDistrict: { select: { name: true } },
-        adminRemarks: true,
-        rejectionReason: true,
-        createdAt: true,
-        resolvedAt: true,
-      },
-      orderBy: { createdAt: "desc" },
-    }),
+  const [rows, profile] = await Promise.all([
+    getOwnRequestRows(authUser.id, { playerId: player.id }),
     prisma.userProfile.findUnique({ where: { userId: authUser.id }, select: { address: true } }),
   ]);
-
-  const rows: RequestRow[] = requests.map((r) => ({
-    ...r,
-    requestedDistrict: r.requestedDistrict?.name ?? null,
-    createdAt: r.createdAt.toISOString(),
-    resolvedAt: r.resolvedAt?.toISOString() ?? null,
-  }));
 
   return (
     <div className="-mt-6">

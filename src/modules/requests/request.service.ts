@@ -339,6 +339,31 @@ export async function approveRequest(
   return { request, changes };
 }
 
+/**
+ * The requester withdraws their own request. Only while PENDING — once an
+ * admin has approved or rejected it, it can no longer be cancelled. The
+ * ownership check is part of the update itself (id AND userId), so another
+ * user's request id changes nothing and reads as not found.
+ */
+export async function cancelOwnRequest(requestId: string, userId: string) {
+  const result = await prisma.request.updateMany({
+    where: { id: requestId, userId, status: "PENDING" },
+    data: { status: "CANCELLED", resolvedAt: new Date() },
+  });
+  if (result.count === 0) {
+    const own = await prisma.request.findFirst({ where: { id: requestId, userId }, select: { status: true } });
+    if (!own) throw AppError.notFound("Request not found");
+    throw AppError.conflict(
+      own.status === "CANCELLED" ? "This request is already cancelled." : "This request has already been processed and can no longer be cancelled."
+    );
+  }
+  log.info({ requestId, userId }, "Request cancelled by its requester");
+  return prisma.request.findUniqueOrThrow({
+    where: { id: requestId },
+    select: { id: true, requestNumber: true, type: true, status: true },
+  });
+}
+
 export async function rejectRequest(requestId: string, adminId: string, reason: string) {
   const result = await prisma.request.updateMany({
     where: { id: requestId, status: "PENDING" },

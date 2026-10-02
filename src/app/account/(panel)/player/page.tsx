@@ -1,13 +1,11 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { History, UserCheck, MapPin, IdCard, FileText, AlertCircle, PencilLine, Clock } from "lucide-react";
+import { History, UserCheck, MapPin, IdCard, FileText, AlertCircle, Clock } from "lucide-react";
 import { getApplicationHistory } from "@/modules/applications/application-history.server";
 import prisma from "@/infrastructure/database/prisma";
 import { getCurrentUser } from "@/security/auth/session";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
 import { StatusBadge } from "@/shared/components/ui/status-badge";
-import { Button } from "@/shared/components/ui/button";
 import { formatDate } from "@/lib/utils";
 import { PlayerRegistrationFlow } from "./player-registration-flow";
 import { PlayerResubmitActions } from "./player-resubmit-actions";
@@ -17,6 +15,7 @@ import { getRegistrationChoice } from "@/modules/applications/registration-choic
 import { RegistrationLockedNotice } from "@/shared/components/account/registration-locked-notice";
 import { getOwnPlayer } from "@/modules/players/own-player.server";
 import { GENDER_LABELS } from "@/modules/requests/request-types";
+import { PlayerEditProfile } from "./player-edit-profile";
 
 export const dynamic = "force-dynamic";
 
@@ -158,16 +157,18 @@ export default async function AccountPlayerPage() {
       )}
 
       {player.status === "APPROVED" && (
-        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-slate-600">
-            Your approved details are read-only. To change anything — including your district — send a request to your association.
-          </p>
-          <Button size="sm" asChild className="shrink-0">
-            <Link href="/account/player/requests?new=1">
-              <PencilLine className="h-4 w-4" /> Request Change
-            </Link>
-          </Button>
-        </div>
+        <PlayerEditProfile
+          current={{
+            name: player.name,
+            email: player.email,
+            mobile: player.mobile,
+            district: player.district.name,
+            dateOfBirth: player.dateOfBirth.toISOString().slice(0, 10),
+            gender: player.gender,
+            category: player.category,
+            address: address?.address ?? null,
+          }}
+        />
       )}
 
       <div className="grid gap-6 lg:grid-cols-2">

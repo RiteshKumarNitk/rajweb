@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import { redirect } from "next/navigation";
-import { UserCog, Sparkles, CheckCircle2, ShieldCheck, Mail, MapPin, User, AlertCircle } from "lucide-react";
+import { Sparkles, Mail } from "lucide-react";
 import prisma from "@/infrastructure/database/prisma";
 import { getCurrentUser } from "@/security/auth/session";
 import { getMemberHome } from "@/modules/account/member-home.server";
 import { MemberIdentityCard } from "@/shared/components/account/member-identity-card";
 import { getRegistrationChoice } from "@/modules/applications/registration-choice.server";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
-import { ProfileForm } from "./profile-form";
+import { Card, CardContent } from "@/shared/components/ui/card";
+import { ProfileDetails } from "./profile-details";
 import { calculateProfileCompletion } from "@/modules/account/profile-completion";
 
 export const dynamic = "force-dynamic";
@@ -124,22 +124,17 @@ export default async function AccountProfilePage() {
         </CardContent>
       </Card>
 
-      {/* Main Profile Form Card */}
-      <Card className="mx-auto max-w-3xl">
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-800">
-              <User className="h-4 w-4" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">Edit Personal & Address Details</CardTitle>
-              <CardDescription>Ensure your legal full name and address match your official government ID.</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <ProfileForm
-            initial={{
+      {/* Read-only by default; "Edit Profile" opens the form */}
+      <ProfileDetails
+        home={{ stateName: home.stateName, districtName: home.districtName }}
+        addressRequestHref={
+          registration.status.player === "APPROVED"
+            ? "/account/player/requests?new=1"
+            : registration.status.coach === "APPROVED"
+              ? "/account/coach"
+              : null
+        }
+        initial={{
               name: user.name,
               email: user.email,
               phone: user.phone ?? "",
@@ -153,9 +148,7 @@ export default async function AccountProfilePage() {
               country: user.profile?.country ?? "India",
               pincode: user.profile?.pincode ?? "",
             }}
-          />
-        </CardContent>
-      </Card>
+      />
     </div>
   );
 }

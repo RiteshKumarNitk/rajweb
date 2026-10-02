@@ -7,6 +7,7 @@ const STATUS_STYLES: Record<string, string> = {
   REJECTED: "bg-red-100 text-red-700",
   SUSPENDED: "bg-red-100 text-red-700",
   EXPIRED: "bg-slate-200 text-slate-600",
+  CANCELLED: "bg-slate-200 text-slate-600",
 };
 
 export function StatusBadge({

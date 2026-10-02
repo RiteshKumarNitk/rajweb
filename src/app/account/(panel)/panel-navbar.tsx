@@ -13,7 +13,6 @@ import {
   Building2,
   Trophy,
   Award,
-  ShieldCheck,
   FileText,
   UserCog,
   ShoppingBag,
@@ -26,6 +25,7 @@ import {
   User as UserIcon,
   ChevronDown,
   Sparkles,
+  Inbox,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -80,6 +80,7 @@ function buildNavSections(registration: NavRegistration): { title: string; items
       items: [
         { name: "Dashboard", href: "/account/dashboard", icon: LayoutDashboard },
         { name: "My Applications", href: "/account/applications", icon: ClipboardList },
+        { name: "My Requests", href: "/account/requests", icon: Inbox },
       ],
     },
     { title: "Registration", items },
@@ -93,7 +94,6 @@ const staticNavSections: { title: string; items: NavItem[] }[] = [
     items: [
       { name: "Tournaments", href: "/account/tournaments", icon: Trophy },
       { name: "Certificates", href: "/account/certificates", icon: Award },
-      { name: "Verify Certificate", href: "/account/verify", icon: ShieldCheck },
     ],
   },
   {

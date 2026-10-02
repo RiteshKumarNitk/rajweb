@@ -1,6 +1,6 @@
 import { z } from "zod";
 import prisma from "@/infrastructure/database/prisma";
-import { withApiHandler, jsonSuccess } from "@/core/api/with-api-handler";
+import { withApiHandler, jsonSuccess, AppError } from "@/core/api/with-api-handler";
 import { requireAuth } from "@/security/auth/session";
 import { sanitizeText, sanitizeOptionalText, sanitizePhone } from "@/security/sanitize";
 import { calculateProfileCompletion } from "@/modules/account/profile-completion";
@@ -71,6 +71,20 @@ export const PATCH = withApiHandler(
   async (request, { requestId }) => {
     const authUser = await requireAuth();
     const data = updateProfileSchema.parse(await request.json());
+
+    // With an approved Player/Coach registration the street address is part of
+    // the approved record: it changes only through an Address Update request.
+    if (data.address !== undefined) {
+      const [current, player, coach] = await Promise.all([
+        prisma.userProfile.findUnique({ where: { userId: authUser.id }, select: { address: true } }),
+        prisma.player.findUnique({ where: { userId: authUser.id }, select: { status: true } }),
+        prisma.coach.findUnique({ where: { userId: authUser.id }, select: { status: true } }),
+      ]);
+      const changed = (sanitizeOptionalText(data.address) ?? null) !== (current?.address ?? null);
+      if (changed && (player?.status === "APPROVED" || coach?.status === "APPROVED")) {
+        throw AppError.validation("Your address is part of your approved registration — send an Address Update request instead.");
+      }
+    }
 
     if (data.name || data.phone !== undefined) {
       await prisma.user.update({

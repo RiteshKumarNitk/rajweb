@@ -37,7 +37,18 @@ export interface ProfileInitialValues extends ProfileFormData {
   email: string;
 }
 
-export function ProfileForm({ initial }: { initial: ProfileInitialValues }) {
+export function ProfileForm({
+  initial,
+  addressLocked = false,
+  onSaved,
+  onCancel,
+}: {
+  initial: ProfileInitialValues;
+  /** Approved registration: the street address changes only through an Address Update request. */
+  addressLocked?: boolean;
+  onSaved?: () => void;
+  onCancel?: () => void;
+}) {
   const router = useRouter();
   const {
     register,
@@ -52,11 +63,12 @@ export function ProfileForm({ initial }: { initial: ProfileInitialValues }) {
     try {
       const res = await apiFetch("/api/account/profile", {
         method: "PATCH",
-        body: JSON.stringify(data),
+        body: JSON.stringify(addressLocked ? { ...data, address: undefined } : data),
       });
       const { message } = await handleApiFetch(res);
       toast.success(message ?? "Profile updated successfully");
       router.refresh();
+      onSaved?.();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update profile");
     }
@@ -123,7 +135,13 @@ export function ProfileForm({ initial }: { initial: ProfileInitialValues }) {
           register={register}
           errors={errors}
           fields={[
-            { name: "address", label: "Street Address", type: "textarea", placeholder: "House/Flat no., Street, Colony" },
+            {
+              name: "address",
+              label: addressLocked ? "Street Address (change through an Address Update request)" : "Street Address",
+              type: "textarea",
+              placeholder: "House/Flat no., Street, Colony",
+              disabled: addressLocked,
+            },
             { name: "city", label: "City / Town", placeholder: "e.g. Jaipur" },
             { name: "state", label: "State", placeholder: "e.g. Rajasthan" },
             { name: "country", label: "Country", placeholder: "India" },
@@ -133,7 +151,12 @@ export function ProfileForm({ initial }: { initial: ProfileInitialValues }) {
       </div>
 
       {/* Submit Button */}
-      <div className="border-t border-slate-100 pt-4 flex justify-end">
+      <div className="border-t border-slate-100 pt-4 flex justify-end gap-2">
+        {onCancel && (
+          <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
+            Cancel
+          </Button>
+        )}
         <Button
           type="submit"
           disabled={isSubmitting}
@@ -145,7 +168,7 @@ export function ProfileForm({ initial }: { initial: ProfileInitialValues }) {
             </>
           ) : (
             <>
-              <Save className="mr-2 h-4 w-4" /> Save Changes
+              <Save className="mr-2 h-4 w-4" /> Save
             </>
           )}
         </Button>

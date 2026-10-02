@@ -141,7 +141,7 @@ export default async function PlayerCertificatePage({ params }: { params: Promis
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <ShieldCheck className="h-4 w-4 text-emerald-600" /> Verification
+              <ShieldCheck className="h-4 w-4 text-emerald-600" /> QR on your certificate
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-center">
@@ -156,11 +156,6 @@ export default async function PlayerCertificatePage({ params }: { params: Promis
                   </a>
                 </Button>
               )}
-              <Button variant="outline" asChild>
-                <Link href={`/verify?certificateNumber=${encodeURIComponent(c.certificateNumber)}`} target="_blank">
-                  <ShieldCheck className="h-4 w-4" /> Verify
-                </Link>
-              </Button>
             </div>
           </CardContent>
         </Card>

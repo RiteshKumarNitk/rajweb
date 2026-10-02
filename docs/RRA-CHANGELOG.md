@@ -636,6 +636,22 @@ One-registration rule enforced server-side under a per-account lock; Government 
 
 ---
 
+## Player Experience & Member Account Area — 2026-10-02 / 10-03
+
+### Summary
+The Player area becomes a read-only profile with Tournaments, Certificates and Change Requests; tournament registration explains every refusal and reads date-only deadlines in IST; certificates download as the real PDF (stored in the database on Vercel); members can cancel pending requests; My Profile is read-only until Edit; Documents and Tournaments are rebuilt (search, filters, pagination). Details: [RRA-PROJECT-STATUS.md §22](RRA-PROJECT-STATUS.md#22-player-experience--member-account-area-2026-10-02--10-03).
+
+### Database Changes (additive)
+`RequestStatus` value `CANCELLED`; `player_certificates.recipientName/recipientIdLine`; `requests.requestedField`; table `stored_files`; plus the not-yet-applied Government ID changes from the previous entry. **Production does not have these yet — run `npx prisma db push` before or with the deploy; the account pages fail without them.**
+
+### API Changes
+New: `GET /api/account/tournaments`, `GET /api/account/certificates/{id}`, `GET /api/certificates/{id}/pdf`, `POST /api/account/requests/{id}/cancel`. Changed: request creation/approval (structured profile corrections, audit before/after), tournament registration (shared eligibility, IST window), profile (address via request when approved), player registration (Government ID optional), `/api/files` reads through the storage adapter.
+
+### Security
+Every member route resolves ownership from the session; certificate PDFs, documents, tournament entries and requests of other users are 404; certificates are read-only for members.
+
+---
+
 ## Upcoming (not started)
 
 Phases J–U are PLANNED — see [RRA-PROJECT-STATUS.md §10](RRA-PROJECT-STATUS.md#10-remaining-roadmap). Add an entry here using the template below when each lands:

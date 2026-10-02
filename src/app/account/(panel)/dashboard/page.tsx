@@ -96,10 +96,10 @@ const quickActionCards: Array<{
     badge: "Verified",
   },
   {
-    title: "Verify Certificate",
-    desc: "Public authentication check for any issued certificate",
-    href: "/verify",
-    icon: ShieldCheck,
+    title: "My Documents",
+    desc: "Your identity document and issued certificates",
+    href: "/account/documents",
+    icon: FileCheck,
     color: "bg-cyan-500/10 text-cyan-600 border-cyan-200",
     badge: "Instant",
   },
@@ -318,16 +318,6 @@ export default async function AccountDashboardPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            <Button
-              variant="outline"
-              size="sm"
-              asChild
-              className="border-slate-700 bg-slate-800/80 text-white hover:bg-slate-700 hover:text-white"
-            >
-              <Link href="/verify" target="_blank" className="flex items-center gap-1.5">
-                <ShieldCheck className="h-4 w-4 text-emerald-400" /> Verify Certificate
-              </Link>
-            </Button>
             <Button
               size="sm"
               asChild

@@ -499,6 +499,8 @@ enum RequestStatus {
   PENDING
   APPROVED
   REJECTED
+  // Withdrawn by the member who made it, before any admin decision.
+  CANCELLED
 }
 
 model Request {
