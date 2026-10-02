@@ -6,10 +6,16 @@ import { createModuleLogger } from "@/core/logger";
 import type { Gender } from "@prisma/client";
 import { resolveApplicationDistrict } from "@/modules/districts/registration-locations.server";
 import { duplicateApplicationError } from "@/modules/applications/duplicate-application";
+import { withRegistrationChoice } from "@/modules/applications/registration-choice.server";
+import {
+  resolveGovernmentId,
+  scopeGovernmentIdDocument,
+  type GovernmentIdInput,
+} from "@/modules/applications/government-id";
 
 const log = createModuleLogger("players");
 
-export interface RegisterPlayerInput {
+export interface RegisterPlayerInput extends GovernmentIdInput {
   name: string;
   dateOfBirth: string;
   gender: Gender;
@@ -26,28 +32,35 @@ export interface RegisterPlayerInput {
   userId?: string;
 }
 
+/**
+ * Account applications (userId set) run under the one-registration rule and
+ * must carry a Government ID; public submissions (no account) do not.
+ */
 export async function registerPlayer(input: RegisterPlayerInput) {
-  if (input.userId) {
-    const existing = await prisma.player.findUnique({ where: { userId: input.userId }, select: { status: true } });
-    if (existing) throw duplicateApplicationError("player", existing.status);
-  }
+  const { districtId, stateId } = await resolveApplicationDistrict(input);
+  const data = {
+    playerId: generateId("PLR"),
+    name: sanitizeText(input.name),
+    dateOfBirth: new Date(input.dateOfBirth),
+    gender: input.gender,
+    email: sanitizeEmail(input.email),
+    mobile: sanitizePhone(input.mobile),
+    districtId,
+    category: input.category ? sanitizeText(input.category) : undefined,
+    status: "PENDING" as const,
+  };
 
-  const { districtId } = await resolveApplicationDistrict(input);
-
-  const player = await prisma.player.create({
-    data: {
-      playerId: generateId("PLR"),
-      name: sanitizeText(input.name),
-      dateOfBirth: new Date(input.dateOfBirth),
-      gender: input.gender,
-      email: sanitizeEmail(input.email),
-      mobile: sanitizePhone(input.mobile),
-      districtId,
-      userId: input.userId,
-      category: input.category ? sanitizeText(input.category) : undefined,
-      status: "PENDING",
-    },
-  });
+  const userId = input.userId;
+  const player = userId
+    ? await withRegistrationChoice(userId, "player", async (tx) => {
+        const existing = await tx.player.findUnique({ where: { userId }, select: { status: true } });
+        if (existing) throw duplicateApplicationError("player", existing.status);
+        const governmentId = await resolveGovernmentId(tx, input, { userId });
+        const created = await tx.player.create({ data: { ...data, ...governmentId, userId } });
+        await scopeGovernmentIdDocument(tx, governmentId.governmentIdDocumentId, { stateId, districtId });
+        return created;
+      })
+    : await prisma.player.create({ data });
 
   log.info({ playerId: player.playerId, districtId, userId: input.userId }, "Player registration submitted");
   return player;
@@ -68,7 +81,7 @@ export async function approvePlayer(playerId: string, approvedBy: string) {
   return prisma.player.findUniqueOrThrow({ where: { id: playerId } });
 }
 
-export interface ResubmitPlayerInput {
+export interface ResubmitPlayerInput extends GovernmentIdInput {
   name: string;
   dateOfBirth: string;
   gender: Gender;
@@ -88,28 +101,43 @@ export interface ResubmitPlayerInput {
  * decision on the same record loses cleanly with a conflict instead of
  * reviving an already-approved application.
  */
-export async function resubmitPlayer(playerId: string, input: ResubmitPlayerInput) {
-  const { districtId } = await resolveApplicationDistrict(input);
+export async function resubmitPlayer(playerId: string, userId: string, input: ResubmitPlayerInput) {
+  const { districtId, stateId } = await resolveApplicationDistrict(input);
 
-  const result = await prisma.player.updateMany({
-    where: { id: playerId, status: "REJECTED" },
-    data: {
-      name: sanitizeText(input.name),
-      dateOfBirth: new Date(input.dateOfBirth),
-      gender: input.gender,
-      email: sanitizeEmail(input.email),
-      mobile: sanitizePhone(input.mobile),
-      districtId,
-      category: input.category ? sanitizeText(input.category) : null,
-      status: "PENDING",
-      rejectionReason: null,
-      approvedAt: null,
-      approvedBy: null,
-    },
+  await withRegistrationChoice(userId, "player", async (tx) => {
+    const existing = await tx.player.findUnique({
+      where: { id: playerId },
+      select: { governmentIdType: true, governmentIdNumber: true, governmentIdDocumentId: true },
+    });
+    // The number or document may be kept from the returned application.
+    const governmentId = await resolveGovernmentId(tx, input, { userId, existing });
+
+    const result = await tx.player.updateMany({
+      where: { id: playerId, userId, status: "REJECTED" },
+      data: {
+        name: sanitizeText(input.name),
+        dateOfBirth: new Date(input.dateOfBirth),
+        gender: input.gender,
+        email: sanitizeEmail(input.email),
+        mobile: sanitizePhone(input.mobile),
+        districtId,
+        category: input.category ? sanitizeText(input.category) : null,
+        ...governmentId,
+        status: "PENDING",
+        rejectionReason: null,
+        approvedAt: null,
+        approvedBy: null,
+      },
+    });
+    if (result.count === 0) {
+      throw AppError.conflict("This application is not in a rejected state and cannot be resubmitted.");
+    }
+    await scopeGovernmentIdDocument(tx, governmentId.governmentIdDocumentId, { stateId, districtId });
+    // A replaced document is not kept.
+    if (existing?.governmentIdDocumentId && existing.governmentIdDocumentId !== governmentId.governmentIdDocumentId) {
+      await tx.mediaAsset.delete({ where: { id: existing.governmentIdDocumentId } });
+    }
   });
-  if (result.count === 0) {
-    throw AppError.conflict("This application is not in a rejected state and cannot be resubmitted.");
-  }
   log.info({ playerId }, "Player application resubmitted");
   return prisma.player.findUniqueOrThrow({ where: { id: playerId } });
 }

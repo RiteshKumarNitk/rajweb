@@ -15,9 +15,11 @@ import {
 } from "@/shared/components/admin/issue-player-certificate-modal";
 import { CertificateDetailsModal } from "@/shared/components/admin/certificate-details-modal";
 import { DataTable, type ColumnDef } from "@/shared/components/ui/data-table";
+import { GovernmentIdCell, type GovernmentIdCellValue } from "@/shared/components/admin/government-id-cell";
 
 export type PlayerRow = EligiblePlayer & {
   status: string;
+  governmentId: GovernmentIdCellValue | null;
   certificate: PlayerCertificateInfo | null;
 };
 
@@ -97,6 +99,10 @@ export function PlayersTable({ players }: { players: PlayerRow[] }) {
           {p.district}
         </span>
       ),
+    },
+    {
+      header: "Government ID",
+      cell: (player) => <GovernmentIdCell value={player.governmentId} />,
     },
     {
       header: "Status",

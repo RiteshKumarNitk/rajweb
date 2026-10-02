@@ -23,7 +23,7 @@ async function load(url: string): Promise<LocationOption[]> {
  * State → District picker. Districts are fetched from the server for the
  * chosen state (`/api/locations/districts?stateId=`), so the list can only
  * ever contain that state's districts. Changing the state clears the district,
- * and a single active state is selected automatically. The server re-checks
+ * and a single active state (e.g. only Rajasthan) is selected and fixed. The server re-checks
  * that the district belongs to the state on submit.
  */
 export function StateDistrictSelect({
@@ -82,7 +82,7 @@ export function StateDistrictSelect({
           name="stateId"
           className={SELECT_CLASS}
           value={stateId}
-          disabled={disabled || !states}
+          disabled={disabled || !states || Boolean(onlyState)}
           onChange={(e) => {
             const s = states?.find((x) => x.id === e.target.value);
             onChange({ stateId: e.target.value, districtId: "", stateName: s?.name });

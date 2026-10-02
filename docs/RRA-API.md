@@ -568,6 +568,13 @@ All Session + CSRF, 20/min; another member's order or attempt → 404. `PAYMENT_
 - `resubmit` works only on the owner's REJECTED record (another member's → 404; pending or approved → 409) and updates the same record.
 - Registering never changes the account's role.
 
+## 13g. One Registration per Account & Government ID (2026-10-02)
+
+- **One registration per account.** `POST /api/players/register`, `/api/coaches/register`, `/api/memberships/{club,school,academy}` and the resubmit routes check, for a signed-in caller, the account's existing Player / Coach / Club-School-Academy records. If the account holds another type → **409** "You are registered as a Player. An account can hold only one registration — Player, Coach or Membership." (approved) or "You already have a Coach application. …" (pending/returned/expired). An approved type outranks others. Account submissions are serialised per account (database advisory lock). Anonymous public submissions are not linked to an account and are not affected.
+- `POST /api/account/documents/government-id` — Session, CSRF, 10/min. `multipart/form-data` with `file` (PDF, PNG, JPEG or WebP by content; ≤ 5 MB; otherwise 400). Only for accounts that may apply as Player or Coach (else 409). Response `{ id, fileName, mimeType, size }`. Audit `GOVERNMENT_ID_UPLOADED` (no number).
+- Player/Coach register and resubmit accept `governmentIdType` (`AADHAAR` | `PAN` | `PASSPORT` | `VOTER_ID` | `DRIVING_LICENCE`), `governmentIdNumber`, `governmentIdDocumentId`. Required for a signed-in applicant (400 "Select your Government ID type" / "Enter your Government ID number" / "Upload your Government ID document"); the number must match the type's format (400) and is stored without spaces/hyphens, upper-cased; the document must be a `GOVERNMENT_ID` upload by the same account not attached elsewhere (400 otherwise). On resubmit, a blank number or no new document keeps what is on file; a replaced document is deleted.
+- `GET /api/media/{id}` for a `GOVERNMENT_ID` document: the uploader, or a user with `players:read` / `coaches:read` whose scope covers the linked application's district → 200 (`private, no-store`); anyone else signed in → 404; anonymous → 401.
+
 ## 13a. Admin Gallery APIs
 
 ### 13a.1 Create gallery item

@@ -4,6 +4,7 @@ import prisma from "@/infrastructure/database/prisma";
 import { PanelNavbar } from "./panel-navbar";
 import { getRegistrationLocations } from "@/modules/districts/registration-locations.server";
 import { RegistrationLocationsProvider } from "@/shared/components/forms/registration-locations-context";
+import { getRegistrationChoice, REGISTRATION_KINDS } from "@/modules/applications/registration-choice.server";
 
 export const dynamic = "force-dynamic";
 
@@ -11,20 +12,14 @@ export default async function AccountPanelLayout({ children }: { children: React
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/account/login");
 
-  // No onboarding step: a new member lands on the dashboard and applies as a
-  // Player or Coach only from those portals. The sidebar follows the status.
+  // No onboarding step: a new member lands on the dashboard and chooses ONE
+  // registration — Player, Coach or Membership. The sidebar follows that choice.
   let dbUser = null;
   try {
     if (authUser.id) {
       dbUser = await prisma.user.findUnique({
         where: { id: authUser.id },
-        select: {
-          name: true,
-          email: true,
-          avatar: true,
-          player: { select: { status: true } },
-          coach: { select: { status: true } },
-        },
+        select: { name: true, email: true, avatar: true },
       });
     }
   } catch (err) {
@@ -34,6 +29,10 @@ export default async function AccountPanelLayout({ children }: { children: React
   const name = dbUser?.name ?? authUser.name ?? "User";
   const email = dbUser?.email ?? authUser.email ?? "";
   const avatar = dbUser?.avatar ?? null;
+  const registration = await getRegistrationChoice(authUser.id).catch(() => ({
+    status: { player: null, coach: null, membership: null },
+    allowed: [...REGISTRATION_KINDS],
+  }));
   // Empty on DB failure — the forms then fall back to the static district list.
   const locations = await getRegistrationLocations().catch(() => []);
 
@@ -43,8 +42,7 @@ export default async function AccountPanelLayout({ children }: { children: React
         name={name}
         email={email}
         avatar={avatar}
-        playerStatus={dbUser?.player?.status ?? null}
-        coachStatus={dbUser?.coach?.status ?? null}
+        registration={{ status: registration.status, allowed: registration.allowed }}
       />
       <main className="lg:pl-64">
         <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">

@@ -6,6 +6,7 @@ import { StateFilter } from "@/shared/components/admin/state-filter";
 import { PERMISSIONS } from "@/security/rbac/permissions";
 import { GraduationCap, UserCheck, Clock, Award, ShieldCheck } from "lucide-react";
 import { CoachesTable, type CoachRow } from "./coaches-table";
+import { governmentIdCell } from "@/modules/applications/government-id";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,7 @@ async function getCoaches(scope: OrgScope): Promise<CoachRow[]> {
       certificationLevel: c.certificationLevel,
       district: c.district.name,
       status: c.status,
+      governmentId: governmentIdCell(c),
       createdAt: c.createdAt.toISOString(),
     }));
   } catch {

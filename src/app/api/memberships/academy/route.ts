@@ -6,6 +6,7 @@ import { sanitizeEmail, sanitizePhone, sanitizeText } from "@/security/sanitize"
 import prisma from "@/infrastructure/database/prisma";
 import { getCurrentUser } from "@/security/auth/session";
 import { resolveRegistrationDistrict } from "@/modules/districts/registration-locations.server";
+import { withRegistrationChoice } from "@/modules/applications/registration-choice.server";
 
 const academySchema = z.object({
   academyName: z.string().min(2).max(200),
@@ -34,20 +35,22 @@ export const POST = withApiHandler(
     // Owning state is decided by the district, resolved server-side within the submitted state.
     const { districtId } = await resolveRegistrationDistrict({ district: data.district, state: data.state });
 
-    const membership = await prisma.academyMembership.create({
-      data: {
-        membershipId: generateId("ACD"),
-        academyName: sanitizeText(data.academyName),
-        directorName: sanitizeText(data.directorName),
-        email: sanitizeEmail(data.email),
-        mobile: sanitizePhone(data.phone),
-        address: sanitizeText(data.address),
-        districtId,
-        userId: authUser?.id,
-        coachCount: data.coachCount,
-        status: "PENDING",
-      },
-    });
+    const record = {
+      membershipId: generateId("ACD"),
+      academyName: sanitizeText(data.academyName),
+      directorName: sanitizeText(data.directorName),
+      email: sanitizeEmail(data.email),
+      mobile: sanitizePhone(data.phone),
+      address: sanitizeText(data.address),
+      districtId,
+      userId: authUser?.id,
+      coachCount: data.coachCount,
+      status: "PENDING" as const,
+    };
+    // Signed-in applicants: one registration per account (Player, Coach or Membership).
+    const membership = authUser?.id
+      ? await withRegistrationChoice(authUser.id, "membership", (tx) => tx.academyMembership.create({ data: record }))
+      : await prisma.academyMembership.create({ data: record });
 
     return jsonSuccess(
       { membershipId: membership.membershipId },

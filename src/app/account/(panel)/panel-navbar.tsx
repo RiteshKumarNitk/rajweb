@@ -35,35 +35,44 @@ import { NotificationsBell } from "./notifications-bell";
 
 type NavItem = { name: string; href: string; icon: LucideIcon };
 
+export type RegistrationKind = "player" | "coach" | "membership";
+
+export interface NavRegistration {
+  status: Record<RegistrationKind, string | null>;
+  /** Kinds this account may open — decided on the server from its records. */
+  allowed: RegistrationKind[];
+}
+
 const APPLICATION_STATUS_LABELS: Record<string, string> = {
   PENDING: "Pending",
   REJECTED: "Rejected",
   EXPIRED: "Expired",
+  SUSPENDED: "Suspended",
+};
+
+const REGISTRATION_ITEMS: Record<RegistrationKind, { href: string; icon: LucideIcon; apply: string; application: string; approved: string }> = {
+  player: { href: "/account/player", icon: UserCheck, apply: "Player Registration", application: "Player Application", approved: "Player Portal" },
+  coach: { href: "/account/coach", icon: GraduationCap, apply: "Coach Registration", application: "Coach Application", approved: "Coach Portal" },
+  membership: { href: "/account/memberships", icon: Building2, apply: "Membership", application: "Membership", approved: "Membership" },
 };
 
 /**
- * Registrations follow the member's application status: no application →
- * "Player Portal"; submitted → "Player Application — Pending" (or Rejected /
- * Expired); approved → no longer a registration, shown as "Player Profile"
- * under Overview. Same for Coach. Memberships always stays.
+ * One Registration section. A new account sees Player Registration, Coach
+ * Registration and Membership; once it has chosen, only that one remains —
+ * "Player Application — Pending" (or Rejected / Expired) while under review,
+ * "Player Portal" once approved. Same for Coach and Membership.
  */
-function buildNavSections(playerStatus: string | null, coachStatus: string | null): { title: string; items: NavItem[] }[] {
-  const portals = [
-    { kind: "Player", href: "/account/player", icon: UserCheck, status: playerStatus },
-    { kind: "Coach", href: "/account/coach", icon: GraduationCap, status: coachStatus },
-  ];
-  const profiles = portals
-    .filter((p) => p.status === "APPROVED")
-    .map((p) => ({ name: `${p.kind} Profile`, href: p.href, icon: p.icon }));
-  const registrations = portals
-    .filter((p) => p.status !== "APPROVED")
-    .map((p) => ({
-      name: p.status
-        ? `${p.kind} Application — ${APPLICATION_STATUS_LABELS[p.status] ?? "Submitted"}`
-        : `${p.kind} Portal`,
-      href: p.href,
-      icon: p.icon,
-    }));
+function buildNavSections(registration: NavRegistration): { title: string; items: NavItem[] }[] {
+  const items = registration.allowed.map((kind) => {
+    const item = REGISTRATION_ITEMS[kind];
+    const status = registration.status[kind];
+    const name = !status
+      ? item.apply
+      : status === "APPROVED"
+        ? item.approved
+        : `${item.application} — ${APPLICATION_STATUS_LABELS[status] ?? "Submitted"}`;
+    return { name, href: item.href, icon: item.icon };
+  });
 
   return [
     {
@@ -71,13 +80,9 @@ function buildNavSections(playerStatus: string | null, coachStatus: string | nul
       items: [
         { name: "Dashboard", href: "/account/dashboard", icon: LayoutDashboard },
         { name: "My Applications", href: "/account/applications", icon: ClipboardList },
-        ...profiles,
       ],
     },
-    {
-      title: "Registrations",
-      items: [...registrations, { name: "Memberships", href: "/account/memberships", icon: Building2 }],
-    },
+    { title: "Registration", items },
     ...staticNavSections,
   ];
 }
@@ -112,17 +117,15 @@ export function PanelNavbar({
   name,
   email,
   avatar,
-  playerStatus,
-  coachStatus,
+  registration,
 }: {
   name: string;
   email: string;
   avatar: string | null;
-  playerStatus: string | null;
-  coachStatus: string | null;
+  registration: NavRegistration;
 }) {
   const pathname = usePathname();
-  const navSections = useMemo(() => buildNavSections(playerStatus, coachStatus), [playerStatus, coachStatus]);
+  const navSections = useMemo(() => buildNavSections(registration), [registration]);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 

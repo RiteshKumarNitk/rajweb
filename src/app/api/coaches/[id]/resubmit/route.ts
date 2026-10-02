@@ -3,6 +3,7 @@ import { withApiHandler, jsonSuccess, AppError } from "@/core/api/with-api-handl
 import { requireAuth } from "@/security/auth/session";
 import { resubmitCoach } from "@/modules/coaches/coach.service";
 import { applicationLocationFields, hasApplicationDistrict } from "@/modules/districts/registration-locations.server";
+import { governmentIdFields } from "@/modules/applications/government-id";
 import { createAuditLog } from "@/services/audit/audit-service";
 import prisma from "@/infrastructure/database/prisma";
 
@@ -13,6 +14,7 @@ const coachSchema = z.object({
   qualification: z.string().min(2).max(500),
   certificationLevel: z.enum(["LEVEL_1", "LEVEL_2", "LEVEL_3", "INTERNATIONAL"]),
   ...applicationLocationFields,
+  ...governmentIdFields,
 }).refine(hasApplicationDistrict, { message: "Select your district", path: ["districtId"] });
 
 export const POST = withApiHandler(
@@ -29,7 +31,7 @@ export const POST = withApiHandler(
     const body = await request.json();
     const data = coachSchema.parse(body);
 
-    const updated = await resubmitCoach(id, data);
+    const updated = await resubmitCoach(id, authUser.id, data);
 
     await createAuditLog({
       userId: authUser.id,

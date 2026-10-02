@@ -892,7 +892,7 @@ Supersedes the §19 onboarding step. Google sign-in → basic account (name, ema
 | Pending | IMPLEMENTED | The portal shows "Your … application is under review." with status Pending Approval, submitted date, State and District; no form. A second application → 409 "Your … application is already under review." |
 | Returned (rejected) | IMPLEMENTED | Unchanged resubmission flow: reason + Correct & Resubmit, form prefilled with the existing State/District, same record back to PENDING. A new application instead → 409 |
 | Approved | IMPLEMENTED | Read-only Player/Coach workspace. Applying again (form, old tab or direct API) → 409 "You are already a registered …"; resubmitting an approved record → 409 |
-| Sidebar | IMPLEMENTED | Registrations follow the status: Player Portal → "Player Application — Pending/Rejected/Expired" → once approved it leaves Registrations and appears as "Player Profile" under Overview. Same for Coach. Memberships always stays |
+| Sidebar | REPLACED (§21) | Was: Player and Coach portals side by side, approved ones under Overview, Memberships always shown. Now one Registration section following the one-registration rule |
 | Home district | IMPLEMENTED | Taken from the Player application, else the Coach application, else a home saved by the old onboarding step (kept for the members who completed it). Members with none see and can order from the central equipment store only — the checkout no longer requires onboarding |
 | Scope | Unchanged | Applications are reviewed only by the district's admin, its State Admin or the Super Admin; the profile API cannot change the district; moves go through District Change requests |
 
@@ -900,3 +900,27 @@ No database change: existing columns (`UserProfile` home fields) are kept, no da
 
 ### Verification
 Prisma validation, `tsc --noEmit`, ESLint (0 errors) and `next build --webpack` pass. Throw-away database, production build: 371/371 regression checks, 166/166 shop and application checks, 15/15 + 49/49 real-browser checks (the 49 include the A–I application walk-through), no server errors logged.
+
+## 21. One Registration per Account & Government ID (2026-10-02)
+
+Supersedes the §20 sidebar and the idea that one account may hold a Player **and** a Coach registration. An account holds **one** registration: Player, Coach or Membership (Club / School / Academy).
+
+| Area | Status | Notes |
+|---|---|---|
+| Choice | IMPLEMENTED | Google sign-in → dashboard → "Choose Registration": PLAYER / COACH / MEMBERSHIP. Nothing is asked at sign-in |
+| Rule (server) | IMPLEMENTED | `modules/applications/registration-choice.server.ts` reads the account's Player, Coach and Club/School/Academy records from the database. No application → all three allowed. Any application (pending, returned, approved, expired) → only its type. An APPROVED type outranks pending/returned ones (records from before the rule are kept). Every Player/Coach/Membership register **and** resubmit API checks it; a second type → **409** "You are registered as a Player. An account can hold only one registration — Player, Coach or Membership." (or "You already have a … application"). Account submissions run under a per-account database lock, so two parallel submissions cannot both pass |
+| Direct URLs | IMPLEMENTED | `/account/player`, `/account/coach`, `/account/memberships` and its club/school/academy pages show "… registration is not available" (no form) when the account holds another type. Public register pages already send signed-in users to these pages |
+| Sidebar | IMPLEMENTED | One "Registration" section (no separate Membership section). New account: Player Registration, Coach Registration, Membership. Then only the chosen one: "Player Application — Pending/Rejected/Expired" → "Player Portal" when approved; same for Coach; "Membership — Pending" → "Membership" |
+| Dashboard | IMPLEMENTED | New account: the three choices. Afterwards: "Your Registration" with type, status (Under Review / Returned / Approved), district and member ID; quick links and status cards only for the chosen type |
+| Returned application | IMPLEMENTED | Existing resubmission flow, same record; switching to another type is refused (409) |
+| Government ID (Player, Coach) | IMPLEMENTED — **needs the production schema change** | Type (Aadhaar, PAN, Passport, Voter ID, Driving Licence), number (format checked per type, stored normalised) and document (PDF/PNG/JPEG/WebP ≤ 5 MB, type detected from content). Required on account applications; a resubmission may keep the number and document on file. Not asked at sign-in or for Membership. Public (no-account) forms are unchanged and do not collect it |
+| Government ID privacy | IMPLEMENTED | The document is a private `MediaAsset` (`GOVERNMENT_ID`): served to its uploader, and otherwise only to users with `players:read` / `coaches:read` whose scope covers the application's district (others 404, anonymous 401), `Cache-Control: private, no-store`. The number is shown masked (last four characters) to the member and in admin lists; the full number is never sent to the browser. A replaced document is deleted |
+| State / District | Unchanged | Rajasthan is the only active state in production; with one state the picker fixes it and lists its districts. The server checks the district belongs to the submitted state |
+| Member home | Updated | Home district: Player application → Coach application → Membership → profile home |
+
+### Production
+- **Schema change (additive, must be applied before deploying):** enum `GovernmentIdType`, value `GOVERNMENT_ID` on `MediaAssetKind`, nullable `governmentIdType`, `governmentIdNumber`, `governmentIdDocumentId` on `players` and `coaches`, and two foreign keys to `media_assets` (`ON DELETE SET NULL`). Reviewed with `prisma migrate diff` against production: no drops, no type changes, no data-loss warnings. Apply with `npx prisma db push`.
+- **Existing data (read-only check, counts only):** two accounts hold a registration, and **both** have an APPROVED Player plus a PENDING Club/School/Academy membership created before this rule. Under the rule they see only Player Portal; the pending memberships are kept and remain visible to admins. Decide whether to reject them or approve them (approval would leave those accounts with two registrations).
+
+### Verification
+Prisma validation, `tsc --noEmit`, ESLint (0 errors) and `next build --webpack` pass. Throw-away database, production build: 372/372 regression checks, 200/200 shop and application checks, 15/15 + 79/79 real-browser checks, no server errors logged.

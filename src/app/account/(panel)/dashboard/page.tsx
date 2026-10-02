@@ -25,6 +25,7 @@ import prisma from "@/infrastructure/database/prisma";
 import { getCurrentUser } from "@/security/auth/session";
 import { getMemberHome } from "@/modules/account/member-home.server";
 import { MemberIdentityCard } from "@/shared/components/account/member-identity-card";
+import { getRegistrationChoice, type RegistrationKind } from "@/modules/applications/registration-choice.server";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
 import { Button } from "@/shared/components/ui/button";
 import { StatusBadge } from "@/shared/components/ui/status-badge";
@@ -41,8 +42,18 @@ export const metadata: Metadata = {
   description: "Your official Rajasthan Racquetball Association account dashboard.",
 };
 
-const quickActionCards = [
+const quickActionCards: Array<{
+  title: string;
+  desc: string;
+  href: string;
+  icon: typeof UserCheck;
+  color: string;
+  badge: string;
+  /** Registration cards appear only for the kinds the account may use. */
+  kind?: RegistrationKind;
+}> = [
   {
+    kind: "player",
     title: "Player Portal",
     desc: "Register as an official state player or manage your profile",
     href: "/account/player",
@@ -51,6 +62,7 @@ const quickActionCards = [
     badge: "Official ID",
   },
   {
+    kind: "coach",
     title: "Coach Portal",
     desc: "Register or manage certified coaching credentials",
     href: "/account/coach",
@@ -59,6 +71,7 @@ const quickActionCards = [
     badge: "Certified",
   },
   {
+    kind: "membership",
     title: "Memberships",
     desc: "Club, School, and Academy institutional affiliation",
     href: "/account/memberships",
@@ -247,7 +260,8 @@ export default async function AccountDashboardPage() {
         .catch(() => [])
     : [];
 
-  const home = await getMemberHome(authUser.id);
+  const [home, registration] = await Promise.all([getMemberHome(authUser.id), getRegistrationChoice(authUser.id)]);
+  const canUse = (kind: RegistrationKind) => registration.allowed.includes(kind);
   const initial = user.name ? user.name.charAt(0).toUpperCase() : "U";
   const firstName = (user.name || "Member").split(" ")[0];
 
@@ -328,7 +342,7 @@ export default async function AccountDashboardPage() {
       </div>
 
       {/* District identity */}
-      <MemberIdentityCard home={home} />
+      <MemberIdentityCard home={home} registration={registration} />
 
       {/* Profile Completion Card */}
       {completion.percent < 100 ? (
@@ -403,124 +417,130 @@ export default async function AccountDashboardPage() {
       {/* Core Status & Metrics Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {/* Player Status Card */}
-        <Card className="transition-all hover:border-blue-300 hover:shadow-md">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700">Player Portal</CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-              <UserCheck className="h-4 w-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            {player ? (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <StatusBadge status={player.status} />
-                  <span className="font-mono text-xs font-semibold text-slate-600">{player.playerId}</span>
+        {canUse("player") && (
+          <Card className="transition-all hover:border-blue-300 hover:shadow-md">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-semibold text-slate-700">Player Portal</CardTitle>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                <UserCheck className="h-4 w-4" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              {player ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <StatusBadge status={player.status} />
+                    <span className="font-mono text-xs font-semibold text-slate-600">{player.playerId}</span>
+                  </div>
+                  <p className="text-xs text-slate-400">Submitted {formatDate(player.createdAt)}</p>
+                  {player.status === "REJECTED" && player.rejectionReason && (
+                    <p className="text-xs text-red-600 bg-red-50 p-2 rounded-md border border-red-100">
+                      Reason: {player.rejectionReason}
+                    </p>
+                  )}
+                  <div className="pt-2">
+                    <Button variant="outline" size="sm" asChild className="w-full text-xs">
+                      <Link href="/account/player">
+                        {player.status === "REJECTED"
+                          ? "Correct & Resubmit"
+                          : player.status === "APPROVED"
+                            ? "View Player Profile"
+                            : "View Application"}
+                      </Link>
+                    </Button>
+                  </div>
                 </div>
-                <p className="text-xs text-slate-400">Submitted {formatDate(player.createdAt)}</p>
-                {player.status === "REJECTED" && player.rejectionReason && (
-                  <p className="text-xs text-red-600 bg-red-50 p-2 rounded-md border border-red-100">
-                    Reason: {player.rejectionReason}
-                  </p>
-                )}
-                <div className="pt-2">
-                  <Button variant="outline" size="sm" asChild className="w-full text-xs">
-                    <Link href="/account/player">
-                      {player.status === "REJECTED"
-                        ? "Correct & Resubmit"
-                        : player.status === "APPROVED"
-                          ? "View Player Profile"
-                          : "View Application"}
-                    </Link>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-xs text-slate-500">No player application yet</p>
+                  <Button size="sm" asChild className="w-full text-xs bg-primary text-white hover:bg-slate-800">
+                    <Link href="/account/player">Apply as Player</Link>
                   </Button>
                 </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <p className="text-xs text-slate-500">No player application yet</p>
-                <Button size="sm" asChild className="w-full text-xs bg-primary text-white hover:bg-slate-800">
-                  <Link href="/account/player">Apply as Player</Link>
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Coach Status Card */}
-        <Card className="transition-all hover:border-amber-300 hover:shadow-md">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700">Coach Portal</CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
-              <GraduationCap className="h-4 w-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            {coach ? (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <StatusBadge status={coach.status} />
-                  <span className="font-mono text-xs font-semibold text-slate-600">{coach.coachId}</span>
+        {canUse("coach") && (
+          <Card className="transition-all hover:border-amber-300 hover:shadow-md">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-semibold text-slate-700">Coach Portal</CardTitle>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+                <GraduationCap className="h-4 w-4" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              {coach ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <StatusBadge status={coach.status} />
+                    <span className="font-mono text-xs font-semibold text-slate-600">{coach.coachId}</span>
+                  </div>
+                  <p className="text-xs text-slate-400">Submitted {formatDate(coach.createdAt)}</p>
+                  {coach.status === "REJECTED" && coach.rejectionReason && (
+                    <p className="text-xs text-red-600 bg-red-50 p-2 rounded-md border border-red-100">
+                      Reason: {coach.rejectionReason}
+                    </p>
+                  )}
+                  <div className="pt-2">
+                    <Button variant="outline" size="sm" asChild className="w-full text-xs">
+                      <Link href="/account/coach">
+                        {coach.status === "REJECTED"
+                          ? "Correct & Resubmit"
+                          : coach.status === "APPROVED"
+                            ? "View Coach Profile"
+                            : "View Application"}
+                      </Link>
+                    </Button>
+                  </div>
                 </div>
-                <p className="text-xs text-slate-400">Submitted {formatDate(coach.createdAt)}</p>
-                {coach.status === "REJECTED" && coach.rejectionReason && (
-                  <p className="text-xs text-red-600 bg-red-50 p-2 rounded-md border border-red-100">
-                    Reason: {coach.rejectionReason}
-                  </p>
-                )}
-                <div className="pt-2">
-                  <Button variant="outline" size="sm" asChild className="w-full text-xs">
-                    <Link href="/account/coach">
-                      {coach.status === "REJECTED"
-                        ? "Correct & Resubmit"
-                        : coach.status === "APPROVED"
-                          ? "View Coach Profile"
-                          : "View Application"}
-                    </Link>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-xs text-slate-500">No coach application yet</p>
+                  <Button size="sm" variant="outline" asChild className="w-full text-xs">
+                    <Link href="/account/coach">Apply as Coach</Link>
                   </Button>
                 </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <p className="text-xs text-slate-500">No coach application yet</p>
-                <Button size="sm" variant="outline" asChild className="w-full text-xs">
-                  <Link href="/account/coach">Apply as Coach</Link>
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Memberships Card */}
-        <Card className="transition-all hover:border-purple-300 hover:shadow-md">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700">Memberships & Affiliations</CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-50 text-purple-600">
-              <Building2 className="h-4 w-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            {memberships.length === 0 ? (
-              <div className="space-y-3">
-                <p className="text-xs text-slate-500">No club or institutional affiliations</p>
-                <Button size="sm" variant="outline" asChild className="w-full text-xs">
-                  <Link href="/account/memberships">Explore Affiliations</Link>
-                </Button>
+        {canUse("membership") && (
+          <Card className="transition-all hover:border-purple-300 hover:shadow-md">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-semibold text-slate-700">Memberships & Affiliations</CardTitle>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-50 text-purple-600">
+                <Building2 className="h-4 w-4" />
               </div>
-            ) : (
-              <div className="space-y-2">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-2xl font-bold text-primary">{activeMemberships}</span>
-                  <span className="text-xs text-slate-500">of {memberships.length} active</span>
-                </div>
-                <div className="pt-1">
-                  <Button variant="outline" size="sm" asChild className="w-full text-xs">
-                    <Link href="/account/memberships">Manage Memberships</Link>
+            </CardHeader>
+            <CardContent>
+              {memberships.length === 0 ? (
+                <div className="space-y-3">
+                  <p className="text-xs text-slate-500">No club or institutional affiliations</p>
+                  <Button size="sm" variant="outline" asChild className="w-full text-xs">
+                    <Link href="/account/memberships">Explore Affiliations</Link>
                   </Button>
                 </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-bold text-primary">{activeMemberships}</span>
+                    <span className="text-xs text-slate-500">of {memberships.length} active</span>
+                  </div>
+                  <div className="pt-1">
+                    <Button variant="outline" size="sm" asChild className="w-full text-xs">
+                      <Link href="/account/memberships">Manage Memberships</Link>
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Certificates Card */}
         <Card className="transition-all hover:border-emerald-300 hover:shadow-md">
@@ -596,7 +616,7 @@ export default async function AccountDashboardPage() {
       <div>
         <h2 className="mb-3 text-lg font-bold text-primary">Quick Navigation & Portals</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {quickActionCards.map((action) => (
+          {quickActionCards.filter((action) => !action.kind || canUse(action.kind)).map((action) => (
             <Link
               key={action.href}
               href={action.href}

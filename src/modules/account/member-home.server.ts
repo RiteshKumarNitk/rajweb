@@ -15,9 +15,9 @@ export interface MemberHome {
   districtId: string | null;
   districtName: string | null;
   memberType: MemberTypeValue | null;
-  /** Where the home district comes from: the Player or Coach application, or a legacy profile home. */
-  source: "profile" | "player" | "coach" | null;
-  /** Player/Coach ID when the member has one. */
+  /** Where the home district comes from: the Player, Coach or Membership application, or a legacy profile home. */
+  source: "profile" | "player" | "coach" | "membership" | null;
+  /** Player/Coach/Membership ID when the member has one. */
   memberId: string | null;
   playerStatus: string | null;
   coachStatus: string | null;
@@ -28,8 +28,9 @@ export interface MemberHome {
 /**
  * Resolves the member's home scope server-side. Sign-in never asks for it:
  * the State/District comes from the member's Player application, else their
- * Coach application (both validated server-side when submitted), else a home
- * saved on the profile by the earlier onboarding step.
+ * Coach application, else their Club/School/Academy membership (all validated
+ * server-side when submitted), else a home saved on the profile by the
+ * earlier onboarding step.
  */
 export async function getMemberHome(userId?: string | null): Promise<MemberHome> {
   const emptyHome: MemberHome = {
@@ -60,6 +61,9 @@ export async function getMemberHome(userId?: string | null): Promise<MemberHome>
         },
         player: { select: { playerId: true, status: true, district: { select: { id: true, name: true, state: { select: { id: true, name: true } } } } } },
         coach: { select: { coachId: true, status: true, district: { select: { id: true, name: true, state: { select: { id: true, name: true } } } } } },
+        clubMembership: { select: { membershipId: true, district: { select: { id: true, name: true, state: { select: { id: true, name: true } } } } } },
+        schoolMembership: { select: { membershipId: true, district: { select: { id: true, name: true, state: { select: { id: true, name: true } } } } } },
+        academyMembership: { select: { membershipId: true, district: { select: { id: true, name: true, state: { select: { id: true, name: true } } } } } },
       },
     });
 
@@ -68,8 +72,9 @@ export async function getMemberHome(userId?: string | null): Promise<MemberHome>
     const profile = user.profile;
     const player = user.player;
     const coach = user.coach;
+    const membership = user.clubMembership ?? user.schoolMembership ?? user.academyMembership;
     const base = {
-      memberId: player?.playerId ?? coach?.coachId ?? null,
+      memberId: player?.playerId ?? coach?.coachId ?? membership?.membershipId ?? null,
       playerStatus: player?.status ?? null,
       coachStatus: coach?.status ?? null,
     };
@@ -78,6 +83,8 @@ export async function getMemberHome(userId?: string | null): Promise<MemberHome>
       ? { kind: "player" as const, district: player.district }
       : coach?.district
       ? { kind: "coach" as const, district: coach.district }
+      : membership?.district
+      ? { kind: "membership" as const, district: membership.district }
       : null;
 
     if (registration && registration.district) {
@@ -87,7 +94,7 @@ export async function getMemberHome(userId?: string | null): Promise<MemberHome>
         stateName: registration.district.state?.name ?? null,
         districtId: registration.district.id,
         districtName: registration.district.name,
-        memberType: registration.kind === "player" ? "PLAYER" : "COACH",
+        memberType: registration.kind === "player" ? "PLAYER" : registration.kind === "coach" ? "COACH" : null,
         source: registration.kind,
         hasDistrict: true,
       };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,9 +9,17 @@ import { toast } from "sonner";
 import { Button } from "@/shared/components/ui/button";
 import { FormBuilder } from "@/shared/components/ui/form-builder";
 import { StateDistrictSelect } from "@/shared/components/forms/state-district-select";
+import {
+  GovernmentIdFields,
+  checkGovernmentId,
+  governmentIdFormShape,
+  governmentIdPayload,
+  type GovernmentIdOnFile,
+  type GovernmentIdValue,
+} from "@/shared/components/forms/government-id-fields";
 import { apiPost, handleApiFetch } from "@/lib/api-client";
 
-const coachSchema = z.object({
+const coachShape = {
   name: z.string().min(2, "Name is required"),
   email: z.string().email("Enter a valid email"),
   mobile: z.string().min(10, "Enter a valid phone number"),
@@ -20,9 +28,10 @@ const coachSchema = z.object({
   // Ids from the server-filtered picker; the API re-checks the district is in the state.
   stateId: z.string().min(1, "Select your state"),
   districtId: z.string().min(1, "Select your district"),
-});
+  ...governmentIdFormShape,
+};
 
-type CoachFormData = z.infer<typeof coachSchema>;
+type CoachFormData = z.infer<z.ZodObject<typeof coachShape>>;
 
 export interface CoachResubmitData {
   id: string;
@@ -30,6 +39,7 @@ export interface CoachResubmitData {
   certificationLevel: "LEVEL_1" | "LEVEL_2" | "LEVEL_3" | "INTERNATIONAL";
   stateId: string;
   districtId: string;
+  governmentId: GovernmentIdOnFile | null;
 }
 
 export function CoachAccountForm({
@@ -40,14 +50,18 @@ export function CoachAccountForm({
   resubmit?: CoachResubmitData;
 }) {
   const router = useRouter();
+  const schema = useMemo(
+    () => z.object(coachShape).superRefine(checkGovernmentId(resubmit?.governmentId)),
+    [resubmit?.governmentId]
+  );
   const {
     register,
     handleSubmit,
     watch,
     setValue,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isSubmitted },
   } = useForm<CoachFormData>({
-    resolver: zodResolver(coachSchema),
+    resolver: zodResolver(schema),
     defaultValues: {
       name: prefill.name,
       email: prefill.email,
@@ -56,10 +70,18 @@ export function CoachAccountForm({
       certificationLevel: resubmit?.certificationLevel ?? "LEVEL_1",
       stateId: resubmit?.stateId ?? "",
       districtId: resubmit?.districtId ?? "",
+      governmentIdType: resubmit?.governmentId?.type ?? "",
+      governmentIdNumber: "",
+      governmentIdDocumentId: "",
     },
   });
   const stateId = watch("stateId");
   const districtId = watch("districtId");
+  const governmentId: GovernmentIdValue = {
+    governmentIdType: watch("governmentIdType") as GovernmentIdValue["governmentIdType"],
+    governmentIdNumber: watch("governmentIdNumber"),
+    governmentIdDocumentId: watch("governmentIdDocumentId"),
+  };
   const onLocationChange = useCallback(
     (v: { stateId: string; districtId: string }) => {
       setValue("stateId", v.stateId, { shouldValidate: Boolean(v.stateId) });
@@ -69,10 +91,11 @@ export function CoachAccountForm({
   );
 
   async function onSubmit(data: CoachFormData) {
+    const payload = { ...data, ...governmentIdPayload(data) };
     try {
       const res = resubmit
-        ? await apiPost(`/api/coaches/${resubmit.id}/resubmit`, data)
-        : await apiPost("/api/coaches/register", data);
+        ? await apiPost(`/api/coaches/${resubmit.id}/resubmit`, payload)
+        : await apiPost("/api/coaches/register", payload);
       const { message } = await handleApiFetch<{ coachId: string }>(res);
       toast.success(message ?? (resubmit ? "Application resubmitted" : "Coach registration submitted"));
       router.refresh();
@@ -110,6 +133,21 @@ export function CoachAccountForm({
         onChange={onLocationChange}
         disabled={isSubmitting}
         errors={{ stateId: errors.stateId?.message, districtId: errors.districtId?.message }}
+      />
+      <GovernmentIdFields
+        value={governmentId}
+        onChange={(v) => {
+          for (const [key, val] of Object.entries(v)) {
+            setValue(key as keyof GovernmentIdValue, val as string, { shouldValidate: isSubmitted });
+          }
+        }}
+        errors={{
+          governmentIdType: errors.governmentIdType?.message,
+          governmentIdNumber: errors.governmentIdNumber?.message,
+          governmentIdDocumentId: errors.governmentIdDocumentId?.message,
+        }}
+        onFile={resubmit?.governmentId}
+        disabled={isSubmitting}
       />
       <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? "Submitting..." : resubmit ? "Resubmit Application" : "Submit Coach Registration"}

@@ -30,6 +30,9 @@ import { PlayerRegistrationFlow } from "./player-registration-flow";
 import { PlayerResubmitActions } from "./player-resubmit-actions";
 import { RequestsPanel, type RequestRow } from "@/shared/components/requests/requests-panel";
 import { ApplicationPendingNotice } from "@/shared/components/account/application-pending-notice";
+import { GovernmentIdSummary, governmentIdOnFile } from "@/shared/components/account/government-id-summary";
+import { getRegistrationChoice } from "@/modules/applications/registration-choice.server";
+import { RegistrationLockedNotice } from "@/shared/components/account/registration-locked-notice";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +44,10 @@ export const metadata: Metadata = {
 export default async function AccountPlayerPage() {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/account/login");
+
+  // One registration per account: another kind's page is locked (the APIs refuse it too).
+  const registration = await getRegistrationChoice(authUser.id);
+  if (!registration.allowed.includes("player")) return <RegistrationLockedNotice requested="player" choice={registration} />;
 
   const userWhere = authUser.id
     ? { id: authUser.id }
@@ -206,6 +213,7 @@ export default async function AccountPlayerPage() {
                   stateId: player.district.stateId ?? "",
                   districtId: player.districtId,
                   category: player.category ?? "",
+                  governmentId: governmentIdOnFile(player),
                 }}
               />
             </CardContent>
@@ -252,6 +260,14 @@ export default async function AccountPlayerPage() {
                 <div className="pt-2">
                   <span className="text-slate-500">Contact Number</span>
                   <p className="font-semibold text-slate-800 mt-0.5">{player.mobile}</p>
+                </div>
+                <div className="pt-2 sm:col-span-2">
+                  <span className="text-slate-500">Government ID</span>
+                  <GovernmentIdSummary
+                    type={player.governmentIdType}
+                    number={player.governmentIdNumber}
+                    documentId={player.governmentIdDocumentId}
+                  />
                 </div>
               </div>
             </CardContent>

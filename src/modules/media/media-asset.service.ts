@@ -1,11 +1,12 @@
 import prisma from "@/infrastructure/database/prisma";
 import { AppError } from "@/core/errors/app-error";
 
-export type MediaKind = "EQUIPMENT_IMAGE" | "REQUIREMENT_ATTACHMENT";
+export type MediaKind = "EQUIPMENT_IMAGE" | "REQUIREMENT_ATTACHMENT" | "GOVERNMENT_ID";
 
 const LIMITS: Record<MediaKind, { maxBytes: number; types: string[] }> = {
   EQUIPMENT_IMAGE: { maxBytes: 2 * 1024 * 1024, types: ["image/png", "image/jpeg", "image/webp"] },
   REQUIREMENT_ATTACHMENT: { maxBytes: 4 * 1024 * 1024, types: ["image/png", "image/jpeg", "image/webp", "application/pdf"] },
+  GOVERNMENT_ID: { maxBytes: 5 * 1024 * 1024, types: ["image/png", "image/jpeg", "image/webp", "application/pdf"] },
 };
 
 /** File type from the content itself (magic bytes) — the client-declared type is never trusted. */

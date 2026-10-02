@@ -7,6 +7,8 @@ import { getCurrentUser } from "@/security/auth/session";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
 import { Button } from "@/shared/components/ui/button";
 import { StatusBadge } from "@/shared/components/ui/status-badge";
+import { getRegistrationChoice } from "@/modules/applications/registration-choice.server";
+import { RegistrationLockedNotice } from "@/shared/components/account/registration-locked-notice";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +20,10 @@ export const metadata: Metadata = {
 export default async function AccountMembershipsIndexPage() {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/account/login");
+
+  // One registration per account: another kind's page is locked (the APIs refuse it too).
+  const registration = await getRegistrationChoice(authUser.id);
+  if (!registration.allowed.includes("membership")) return <RegistrationLockedNotice requested="membership" choice={registration} />;
 
   const membershipConditions = [
     authUser.id ? { userId: authUser.id } : null,

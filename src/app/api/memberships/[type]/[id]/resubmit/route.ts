@@ -9,6 +9,7 @@ import {
   resubmitAcademyMembership,
 } from "@/modules/memberships/membership-review.server";
 import { createAuditLog } from "@/services/audit/audit-service";
+import { assertRegistrationAllowed } from "@/modules/applications/registration-choice.server";
 
 const clubSchema = z.object({
   clubName: z.string().min(2).max(200),
@@ -57,6 +58,7 @@ export const POST = withApiHandler(
       throw AppError.notFound("Membership application not found");
     }
 
+    await assertRegistrationAllowed(authUser.id, "membership");
     const body = await request.json();
 
     if (type === "club") {

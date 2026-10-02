@@ -13,6 +13,8 @@ import { getMembershipPricing } from "@/modules/account/membership-pricing.serve
 import { getApplicationHistory } from "@/modules/applications/application-history.server";
 import { AcademyRegistrationFlow } from "./academy-registration-flow";
 import { AcademyResubmitActions } from "./academy-resubmit-actions";
+import { getRegistrationChoice } from "@/modules/applications/registration-choice.server";
+import { RegistrationLockedNotice } from "@/shared/components/account/registration-locked-notice";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +26,10 @@ export const metadata: Metadata = {
 export default async function AccountAcademyMembershipPage() {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/account/login");
+
+  // One registration per account: another kind's page is locked (the APIs refuse it too).
+  const registration = await getRegistrationChoice(authUser.id);
+  if (!registration.allowed.includes("membership")) return <RegistrationLockedNotice requested="membership" choice={registration} />;
 
   const [dbUser, membership] = await Promise.all([
     prisma.user.findFirst({

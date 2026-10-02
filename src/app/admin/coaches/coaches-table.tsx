@@ -7,6 +7,7 @@ import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import { StatusBadge } from "@/shared/components/ui/status-badge";
 import { DataTable, type ColumnDef } from "@/shared/components/ui/data-table";
+import { GovernmentIdCell, type GovernmentIdCellValue } from "@/shared/components/admin/government-id-cell";
 
 export interface CoachRow {
   id: string;
@@ -18,6 +19,7 @@ export interface CoachRow {
   certificationLevel: string;
   district: string;
   status: string;
+  governmentId: GovernmentIdCellValue | null;
   createdAt: string;
 }
 
@@ -84,6 +86,10 @@ export function CoachesTable({ coaches }: { coaches: CoachRow[] }) {
           {c.district}
         </span>
       ),
+    },
+    {
+      header: "Government ID",
+      cell: (c) => <GovernmentIdCell value={c.governmentId} />,
     },
     {
       header: "Status",

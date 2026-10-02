@@ -5,6 +5,7 @@ import { resubmitPlayer } from "@/modules/players/player.service";
 import { createAuditLog } from "@/services/audit/audit-service";
 import prisma from "@/infrastructure/database/prisma";
 import { applicationLocationFields, hasApplicationDistrict } from "@/modules/districts/registration-locations.server";
+import { governmentIdFields } from "@/modules/applications/government-id";
 
 const playerSchema = z.object({
   name: z.string().min(2).max(100),
@@ -13,6 +14,7 @@ const playerSchema = z.object({
   email: z.string().email().max(254),
   mobile: z.string().min(10).max(20),
   ...applicationLocationFields,
+  ...governmentIdFields,
   category: z.string().max(50).optional(),
 }).refine(hasApplicationDistrict, { message: "Select your district", path: ["districtId"] });
 
@@ -33,7 +35,7 @@ export const POST = withApiHandler(
     const body = await request.json();
     const data = playerSchema.parse(body);
 
-    const updated = await resubmitPlayer(id, data);
+    const updated = await resubmitPlayer(id, authUser.id, data);
 
     await createAuditLog({
       userId: authUser.id,

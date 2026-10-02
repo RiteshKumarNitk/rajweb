@@ -6,6 +6,7 @@ import prisma from "@/infrastructure/database/prisma";
 import { getCurrentUser } from "@/security/auth/session";
 import { getMemberHome } from "@/modules/account/member-home.server";
 import { MemberIdentityCard } from "@/shared/components/account/member-identity-card";
+import { getRegistrationChoice } from "@/modules/applications/registration-choice.server";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
 import { ProfileForm } from "./profile-form";
 import { calculateProfileCompletion } from "@/modules/account/profile-completion";
@@ -52,7 +53,7 @@ export default async function AccountProfilePage() {
     profile: user.profile,
   });
 
-  const home = await getMemberHome(authUser.id);
+  const [home, registration] = await Promise.all([getMemberHome(authUser.id), getRegistrationChoice(authUser.id)]);
   const initial = user.name ? user.name.charAt(0).toUpperCase() : "U";
 
   return (
@@ -66,7 +67,7 @@ export default async function AccountProfilePage() {
       </div>
 
       {/* District identity — the district is changed only through a District Change request */}
-      <MemberIdentityCard home={home} />
+      <MemberIdentityCard home={home} registration={registration} />
 
       {/* Profile Overview Card */}
       <Card className="overflow-hidden border-slate-200/80 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white shadow-md">

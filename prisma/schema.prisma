@@ -251,6 +251,12 @@ model Player {
   user                    User?                    @relation(fields: [userId], references: [id], onDelete: SetNull)
   state                   String                   @default("Rajasthan")
   category                String?
+  // Government ID — collected on account applications. The document is a
+  // private MediaAsset served only to the owner and in-scope reviewers.
+  governmentIdType        GovernmentIdType?
+  governmentIdNumber      String?
+  governmentIdDocumentId  String?
+  governmentIdDocument    MediaAsset?              @relation("PlayerGovernmentId", fields: [governmentIdDocumentId], references: [id], onDelete: SetNull)
   status                  ApprovalStatus           @default(PENDING)
   approvedAt              DateTime?
   approvedBy              String?
@@ -318,27 +324,32 @@ enum CertificationLevel {
 }
 
 model Coach {
-  id                 String             @id @default(cuid())
-  coachId            String             @unique
-  name               String
-  email              String
-  mobile             String
-  photo              String?
-  qualification      String
-  certificationLevel CertificationLevel
-  districtId         String
-  district           District           @relation(fields: [districtId], references: [id])
-  userId             String?            @unique
-  user               User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
-  status             ApprovalStatus     @default(PENDING)
-  approvedAt         DateTime?
-  approvedBy         String?
-  rejectionReason    String?
-  expiresAt          DateTime?
-  certificates       CoachCertificate[]
-  requests           Request[]
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+  id                     String             @id @default(cuid())
+  coachId                String             @unique
+  name                   String
+  email                  String
+  mobile                 String
+  photo                  String?
+  qualification          String
+  certificationLevel     CertificationLevel
+  districtId             String
+  district               District           @relation(fields: [districtId], references: [id])
+  userId                 String?            @unique
+  user                   User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  // Government ID — see Player.
+  governmentIdType       GovernmentIdType?
+  governmentIdNumber     String?
+  governmentIdDocumentId String?
+  governmentIdDocument   MediaAsset?        @relation("CoachGovernmentId", fields: [governmentIdDocumentId], references: [id], onDelete: SetNull)
+  status                 ApprovalStatus     @default(PENDING)
+  approvedAt             DateTime?
+  approvedBy             String?
+  rejectionReason        String?
+  expiresAt              DateTime?
+  certificates           CoachCertificate[]
+  requests               Request[]
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
 
   @@index([districtId])
   @@index([status])
@@ -1181,19 +1192,22 @@ enum RequirementPriority {
 
 // Uploaded files kept in the database (works on serverless hosts without a
 // file store). Equipment images are public; requirement attachments are
-// served only to admins in the owning district scope.
+// served only to admins in the owning district scope; government ID documents
+// only to their uploader and to Player/Coach reviewers in the district scope.
 model MediaAsset {
-  id           String         @id @default(cuid())
-  kind         MediaAssetKind
-  mimeType     String
-  size         Int
-  fileName     String?
-  data         Bytes
-  stateId      String?
-  districtId   String?
-  uploadedById String?
-  uploadedBy   User?          @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
-  createdAt    DateTime       @default(now())
+  id                  String         @id @default(cuid())
+  kind                MediaAssetKind
+  mimeType            String
+  size                Int
+  fileName            String?
+  data                Bytes
+  stateId             String?
+  districtId          String?
+  uploadedById        String?
+  uploadedBy          User?          @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt           DateTime       @default(now())
+  playerGovernmentIds Player[]       @relation("PlayerGovernmentId")
+  coachGovernmentIds  Coach[]        @relation("CoachGovernmentId")
 
   @@index([kind])
   @@map("media_assets")
@@ -1202,4 +1216,13 @@ model MediaAsset {
 enum MediaAssetKind {
   EQUIPMENT_IMAGE
   REQUIREMENT_ATTACHMENT
+  GOVERNMENT_ID
+}
+
+enum GovernmentIdType {
+  AADHAAR
+  PAN
+  PASSPORT
+  VOTER_ID
+  DRIVING_LICENCE
 }

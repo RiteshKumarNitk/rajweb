@@ -3,6 +3,7 @@ import { withApiHandler, jsonSuccess } from "@/core/api/with-api-handler";
 import { registerPlayer } from "@/modules/players/player.service";
 import { getCurrentUser } from "@/security/auth/session";
 import { applicationLocationFields, hasApplicationDistrict } from "@/modules/districts/registration-locations.server";
+import { governmentIdFields } from "@/modules/applications/government-id";
 
 const playerSchema = z.object({
   name: z.string().min(2).max(100),
@@ -11,6 +12,7 @@ const playerSchema = z.object({
   email: z.string().email().max(254),
   mobile: z.string().min(10).max(20),
   ...applicationLocationFields,
+  ...governmentIdFields,
   category: z.string().max(50).optional(),
 }).refine(hasApplicationDistrict, { message: "Select your district", path: ["districtId"] });
 

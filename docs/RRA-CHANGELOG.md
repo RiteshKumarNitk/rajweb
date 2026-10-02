@@ -617,6 +617,25 @@ District ids from the client are checked against the chosen state on the server 
 
 ---
 
+## One Registration per Account & Government ID — 2026-10-02
+
+### Summary
+An account now holds one registration — Player, Coach or Membership — chosen from the dashboard after Google sign-in. The rule is enforced by every registration API and page, not only hidden in the UI. Player and Coach applications collect a Government ID (type, number, private document). Details: [RRA-PROJECT-STATUS.md §21](RRA-PROJECT-STATUS.md#21-one-registration-per-account--government-id-2026-10-02).
+
+### Features Changed
+Dashboard "Choose Registration" (PLAYER / COACH / MEMBERSHIP) and "Your Registration"; one Registration section in the sidebar (no separate Membership section); locked notice on another type's pages; Government ID fields and upload on the Player/Coach forms (kept on resubmission); masked Government ID with a document link on the portals and in the admin Player/Coach lists; State picker fixed when only one state is active.
+
+### Database Changes (additive)
+Enum `GovernmentIdType`; `MediaAssetKind` value `GOVERNMENT_ID`; `players` / `coaches`: nullable `governmentIdType`, `governmentIdNumber`, `governmentIdDocumentId` (FK to `media_assets`, on delete set null). **Apply to production (`npx prisma db push`) before deploying.**
+
+### API Changes
+New: `POST /api/account/documents/government-id`. Changed: player/coach/membership register and resubmit refuse a second registration type (409) and, for Player/Coach, require a Government ID; `GET /api/media/{id}` serves Government ID documents privately.
+
+### Security
+One-registration rule enforced server-side under a per-account lock; Government ID documents private (uploader or in-scope reviewers only, no-store); the full ID number never reaches the browser; document types detected from content; documents cannot be reused across accounts or applications.
+
+---
+
 ## Upcoming (not started)
 
 Phases J–U are PLANNED — see [RRA-PROJECT-STATUS.md §10](RRA-PROJECT-STATUS.md#10-remaining-roadmap). Add an entry here using the template below when each lands:

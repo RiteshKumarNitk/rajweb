@@ -11,6 +11,8 @@ import {
   resolveApplicationDistrict,
 } from "@/modules/districts/registration-locations.server";
 import { duplicateApplicationError } from "@/modules/applications/duplicate-application";
+import { withRegistrationChoice } from "@/modules/applications/registration-choice.server";
+import { governmentIdFields, resolveGovernmentId, scopeGovernmentIdDocument } from "@/modules/applications/government-id";
 
 const coachSchema = z.object({
   name: z.string().min(2).max(100),
@@ -19,6 +21,7 @@ const coachSchema = z.object({
   qualification: z.string().min(2).max(500),
   certificationLevel: z.enum(["LEVEL_1", "LEVEL_2", "LEVEL_3", "INTERNATIONAL"]),
   ...applicationLocationFields,
+  ...governmentIdFields,
 }).refine(hasApplicationDistrict, { message: "Select your district", path: ["districtId"] });
 
 export const POST = withApiHandler(
@@ -26,28 +29,31 @@ export const POST = withApiHandler(
     const body = await request.json();
     const data = coachSchema.parse(body);
 
-    const authUser = await getCurrentUser();
-    if (authUser) {
-      const existing = await prisma.coach.findUnique({ where: { userId: authUser.id }, select: { status: true } });
-      if (existing) throw duplicateApplicationError("coach", existing.status);
-    }
-
     // Owning state is decided by the district, validated server-side against the submitted state.
-    const { districtId } = await resolveApplicationDistrict(data);
+    const { districtId, stateId } = await resolveApplicationDistrict(data);
+    const record = {
+      coachId: generateId("CCH"),
+      name: sanitizeText(data.name),
+      email: sanitizeEmail(data.email),
+      mobile: sanitizePhone(data.mobile),
+      qualification: sanitizeText(data.qualification),
+      certificationLevel: data.certificationLevel as CertificationLevel,
+      districtId,
+      status: "PENDING" as const,
+    };
 
-    const coach = await prisma.coach.create({
-      data: {
-        coachId: generateId("CCH"),
-        name: sanitizeText(data.name),
-        email: sanitizeEmail(data.email),
-        mobile: sanitizePhone(data.mobile),
-        qualification: sanitizeText(data.qualification),
-        certificationLevel: data.certificationLevel as CertificationLevel,
-        districtId,
-        userId: authUser?.id,
-        status: "PENDING",
-      },
-    });
+    // Account applications: one registration per account, Government ID required.
+    const userId = (await getCurrentUser())?.id || null;
+    const coach = userId
+      ? await withRegistrationChoice(userId, "coach", async (tx) => {
+          const existing = await tx.coach.findUnique({ where: { userId }, select: { status: true } });
+          if (existing) throw duplicateApplicationError("coach", existing.status);
+          const governmentId = await resolveGovernmentId(tx, data, { userId });
+          const created = await tx.coach.create({ data: { ...record, ...governmentId, userId } });
+          await scopeGovernmentIdDocument(tx, governmentId.governmentIdDocumentId, { stateId, districtId });
+          return created;
+        })
+      : await prisma.coach.create({ data: record });
 
     return jsonSuccess(
       { coachId: coach.coachId },

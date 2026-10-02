@@ -25,6 +25,9 @@ import { CoachResubmitActions } from "./coach-resubmit-actions";
 import { getApplicationHistory } from "@/modules/applications/application-history.server";
 import { RequestsPanel, type RequestRow } from "@/shared/components/requests/requests-panel";
 import { ApplicationPendingNotice } from "@/shared/components/account/application-pending-notice";
+import { GovernmentIdSummary, governmentIdOnFile } from "@/shared/components/account/government-id-summary";
+import { getRegistrationChoice } from "@/modules/applications/registration-choice.server";
+import { RegistrationLockedNotice } from "@/shared/components/account/registration-locked-notice";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +39,10 @@ export const metadata: Metadata = {
 export default async function AccountCoachPage() {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/account/login");
+
+  // One registration per account: another kind's page is locked (the APIs refuse it too).
+  const registration = await getRegistrationChoice(authUser.id);
+  if (!registration.allowed.includes("coach")) return <RegistrationLockedNotice requested="coach" choice={registration} />;
 
   const userWhere = authUser.id
     ? { id: authUser.id }
@@ -197,6 +204,7 @@ export default async function AccountCoachPage() {
                   districtId: coach.districtId,
                   qualification: coach.qualification,
                   certificationLevel: coach.certificationLevel,
+                  governmentId: governmentIdOnFile(coach),
                 }}
               />
             </CardContent>
@@ -238,6 +246,14 @@ export default async function AccountCoachPage() {
                 <div className="pt-2 sm:col-span-2">
                   <span className="text-slate-500">Academic & Sports Qualification</span>
                   <p className="font-medium text-slate-800 mt-0.5 leading-relaxed">{coach.qualification}</p>
+                </div>
+                <div className="pt-2 sm:col-span-2">
+                  <span className="text-slate-500">Government ID</span>
+                  <GovernmentIdSummary
+                    type={coach.governmentIdType}
+                    number={coach.governmentIdNumber}
+                    documentId={coach.governmentIdDocumentId}
+                  />
                 </div>
               </div>
             </CardContent>
