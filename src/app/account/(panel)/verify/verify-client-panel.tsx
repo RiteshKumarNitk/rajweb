@@ -92,7 +92,7 @@ export function VerifyClientPanel({ initialQuery = "" }: { initialQuery?: string
   return (
     <div className="space-y-6">
       {/* Search Criteria Card */}
-      <Card className="border-slate-200 shadow-sm">
+      <Card className="border-slate-200 shadow-sm print:hidden">
         <CardHeader className="pb-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -237,7 +237,7 @@ export function VerifyClientPanel({ initialQuery = "" }: { initialQuery?: string
 
       {/* Error Message Alert */}
       {errorMsg && (
-        <Card className="border-red-200 bg-red-50 text-red-800">
+        <Card className="border-red-200 bg-red-50 text-red-800 print:hidden">
           <CardContent className="flex items-center gap-3 p-4">
             <XCircle className="h-5 w-5 shrink-0 text-red-600" />
             <div>

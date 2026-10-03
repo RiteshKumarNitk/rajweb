@@ -9,7 +9,7 @@ const websiteUrl = siteConfig.url.startsWith("http")
 
 export function Footer() {
   return (
-    <footer className="bg-primary text-white">
+    <footer className="bg-primary text-white print:hidden">
       <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
         <div className="grid gap-10 md:grid-cols-2 lg:grid-cols-6 lg:items-start">
           <div className="md:col-span-2 lg:col-span-2">

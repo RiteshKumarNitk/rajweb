@@ -8,7 +8,7 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, description, eyebrow }: PageHeaderProps) {
   return (
-    <section className="bg-primary py-16 md:py-20">
+    <section className="bg-primary py-16 md:py-20 print:hidden">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {eyebrow && (
           <span className="text-sm font-bold uppercase tracking-wider text-accent">{eyebrow}</span>
@@ -30,6 +30,6 @@ export function PageContent({
   className?: string;
 }) {
   return (
-    <div className={cn("mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8", className)}>{children}</div>
+    <div className={cn("mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 print:max-w-none print:m-0 print:p-0", className)}>{children}</div>
   );
 }

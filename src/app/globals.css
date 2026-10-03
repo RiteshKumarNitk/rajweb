@@ -23,3 +23,74 @@ h1, h2, h3, h4, h5, h6 {
   background: #F59E0B;
   color: #0F172A;
 }
+
+/* ==========================================================================
+   Print Styles: Print ONLY the certificate on verification and certificate pages
+   ========================================================================== */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 6mm;
+  }
+
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+  }
+
+  /* Completely remove layout chrome and interactive controls */
+  header,
+  footer,
+  nav,
+  aside,
+  form,
+  .print\:hidden,
+  [role="dialog"],
+  [role="alert"],
+  [aria-modal="true"],
+  section[aria-label="Notifications alt+T"] {
+    display: none !important;
+  }
+
+  /* Hide all body elements by default */
+  body * {
+    visibility: hidden;
+  }
+
+  /* Make certificate container and all its children visible */
+  #official-certificate-container,
+  #official-certificate-container * {
+    visibility: visible;
+  }
+
+  /* Position certificate cleanly at top of print page with 1-page fit */
+  #official-certificate-container {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 16px 20px !important;
+    box-sizing: border-box !important;
+    box-shadow: none !important;
+    page-break-after: avoid !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+}
+
