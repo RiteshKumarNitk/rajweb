@@ -41,28 +41,52 @@ async function getSessionToken(request: NextRequest) {
     request.nextUrl.protocol === "https:" ||
     request.headers.get("x-forwarded-proto") === "https";
 
-  const candidateCookieNames = isHttps
-    ? [
-        "__Secure-authjs.session-token",
-        "authjs.session-token",
-        "__Secure-next-auth.session-token",
-        "next-auth.session-token",
-      ]
-    : [
-        "authjs.session-token",
-        "next-auth.session-token",
-        "__Secure-authjs.session-token",
-        "__Secure-next-auth.session-token",
-      ];
+  // 1. Try standard Auth.js v5 token retrieval with auto-detected HTTPS
+  try {
+    const token = await getToken({
+      req: request,
+      secret: authSecret,
+      secureCookie: isHttps,
+    });
+    if (token) return token;
+  } catch {
+    // try fallback
+  }
+
+  // 2. Try inverted HTTPS (in case behind proxy with different header)
+  try {
+    const token = await getToken({
+      req: request,
+      secret: authSecret,
+      secureCookie: !isHttps,
+    });
+    if (token) return token;
+  } catch {
+    // try next
+  }
+
+  // 3. Fallback: explicitly test candidate cookie names and salts
+  const candidateCookieNames = [
+    "__Secure-authjs.session-token",
+    "authjs.session-token",
+    "__Secure-next-auth.session-token",
+    "next-auth.session-token",
+  ];
 
   for (const cookieName of candidateCookieNames) {
-    if (request.cookies.has(cookieName)) {
+    const isSecure = cookieName.startsWith("__Secure-");
+    const hasCookie =
+      request.cookies.has(cookieName) ||
+      request.cookies.has(`${cookieName}.0`);
+
+    if (hasCookie) {
       try {
         const token = await getToken({
           req: request,
           secret: authSecret,
           cookieName,
-          secureCookie: cookieName.startsWith("__Secure-"),
+          secureCookie: isSecure,
+          salt: cookieName,
         });
         if (token) return token;
       } catch {
@@ -71,15 +95,7 @@ async function getSessionToken(request: NextRequest) {
     }
   }
 
-  try {
-    return await getToken({
-      req: request,
-      secret: authSecret,
-      secureCookie: isHttps,
-    });
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 export async function middleware(request: NextRequest) {
