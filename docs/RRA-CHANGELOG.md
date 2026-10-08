@@ -701,6 +701,11 @@ New tournament certificate design: the association's A4 background artwork (no f
 ### Testing
 Reference-data render compared side by side with the reference; 7 rendered stress cases (positions, categories, events, districts, missing parent name, very long title/names/venue/organisers, 4 signatories, preview stamp); 18/18 end-to-end on a fresh database; QR decoded on every issued certificate; 35/35 HTTP checks on the production build (vault, editor, preview, issue, scope, ownership); v1 pixel regression including the production certificate.
 
+### Follow-up (same day)
+- Add Tournament form has a private **Certificate details** section: line above the name, Organized By, Recognized By (one per line). Stored for certificates only; every public and member tournament query uses an explicit `select`, so they never reach the public site (verified over HTTP).
+- Certificate text is printed as plain text: values stored HTML-escaped by `sanitizeText()` (names, venues, tournament names) are decoded when the snapshot is built, so "&" and "'" no longer print as `&amp;` / `&#x27;`.
+- Production: the column was added and `npm run db:seed:certificates` installed template v2 (default) on 2026-10-08, after commit `8664d1d` had been deployed without the column.
+
 ### Known Limitations
 The supplied background is 1055 × 1491 px (~128 dpi on A4) — fine on screen, soft in print. A 300-dpi export (2480 × 3508) can be uploaded in Templates → Certificate images and used in a new template version.
 

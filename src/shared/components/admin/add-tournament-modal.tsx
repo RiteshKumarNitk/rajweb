@@ -44,6 +44,13 @@ const tournamentSchema = z
     contactPhone: z.string().optional(),
     contactEmail: z.string().email("Enter a valid email").optional().or(z.literal("")),
     requiresApprovedPlayer: z.boolean(),
+    certificateTournamentHeading: z.string().max(150).optional(),
+    certificateOrganizedBy: z.string().max(150).optional(),
+    certificateRecognizedBy: z
+      .string()
+      .optional()
+      .refine((v) => !v || v.split("\n").filter((l) => l.trim()).length <= 8, "At most 8 organisations")
+      .refine((v) => !v || v.split("\n").every((l) => l.trim().length <= 150), "Keep each line under 150 characters"),
   })
   .superRefine((data, ctx) => {
     const message = tournamentDateOrderError({
@@ -114,6 +121,12 @@ export function AddTournamentModal({
           contactName: data.contactName?.trim() || undefined,
           contactPhone: data.contactPhone?.trim() || undefined,
           contactEmail: data.contactEmail?.trim() || undefined,
+          certificateTournamentHeading: data.certificateTournamentHeading?.trim() || undefined,
+          certificateOrganizedBy: data.certificateOrganizedBy?.trim() || undefined,
+          certificateRecognizedBy: (data.certificateRecognizedBy ?? "")
+            .split("\n")
+            .map((l) => l.trim())
+            .filter(Boolean),
         }),
       });
       const { data: created, message } = await handleApiFetch<{ id: string }>(res);
@@ -270,6 +283,34 @@ export function AddTournamentModal({
                   <Input id="contactEmail" type="email" {...register("contactEmail")} />
                   {errors.contactEmail && <p className="text-sm text-secondary">{errors.contactEmail.message}</p>}
                 </div>
+              </div>
+            </div>
+
+            <div className="space-y-3 border-t border-slate-100 pt-4">
+              <div>
+                <p className="text-xs font-semibold uppercase text-slate-400">Certificate details</p>
+                <p className="text-xs text-slate-500">
+                  Printed on this tournament&apos;s certificates only — not shown on the public website. Can be changed later under Certificates on
+                  the tournament page.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="certificateTournamentHeading">Line above the tournament name (optional)</Label>
+                <Input id="certificateTournamentHeading" maxLength={150} placeholder="e.g. 1st Open Sub-Junior/ Junior/ Senior" {...register("certificateTournamentHeading")} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="certificateOrganizedBy">Organized By</Label>
+                <Input id="certificateOrganizedBy" maxLength={150} placeholder="e.g. Jaipur Racquetball Association" {...register("certificateOrganizedBy")} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="certificateRecognizedBy">Recognized By (one organisation per line)</Label>
+                <Textarea
+                  id="certificateRecognizedBy"
+                  rows={4}
+                  placeholder={"Rajasthan Racquetball Association\nIndian Racquetball Association\nInternational Racquetball Federation\n& Asian Racquetball Federation"}
+                  {...register("certificateRecognizedBy")}
+                />
+                {errors.certificateRecognizedBy && <p className="text-sm text-secondary">{errors.certificateRecognizedBy.message}</p>}
               </div>
             </div>
 

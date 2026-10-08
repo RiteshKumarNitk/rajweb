@@ -40,6 +40,10 @@ const createTournamentSchema = z.object({
   contactPhone: z.string().max(20).optional(),
   contactEmail: z.union([z.string().email().max(254), z.literal(""), z.null()]).optional(),
   requiresApprovedPlayer: z.boolean().optional(),
+  // Certificate-only details (not public): see Tournament certificate settings.
+  certificateTournamentHeading: z.string().trim().max(150).optional(),
+  certificateOrganizedBy: z.string().trim().max(150).optional(),
+  certificateRecognizedBy: z.array(z.string().trim().min(1).max(150)).max(8).optional(),
 });
 
 export const POST = withApiHandler(

@@ -55,6 +55,13 @@ export interface CreateTournamentInput extends TournamentDateInput {
   contactPhone?: string | null;
   contactEmail?: string | null;
   requiresApprovedPlayer?: boolean;
+  /**
+   * Certificate-only details (printed on certificates, never shown on the
+   * public site): line above the name, Organized By, Recognized By lines.
+   */
+  certificateTournamentHeading?: string | null;
+  certificateOrganizedBy?: string | null;
+  certificateRecognizedBy?: string[];
 }
 
 export async function createTournament(input: CreateTournamentInput) {
@@ -82,6 +89,11 @@ export async function createTournament(input: CreateTournamentInput) {
       contactPhone: input.contactPhone ? input.contactPhone.trim() : undefined,
       contactEmail: input.contactEmail ? input.contactEmail.trim().toLowerCase() : undefined,
       requiresApprovedPlayer: input.requiresApprovedPlayer ?? true,
+      // Plain text, as the certificate settings store it: printed into the PDF
+      // (not HTML) and escaped by React wherever an admin screen shows it.
+      certificateTournamentHeading: input.certificateTournamentHeading?.trim() || undefined,
+      certificateOrganizedBy: input.certificateOrganizedBy?.trim() || undefined,
+      certificateRecognizedBy: (input.certificateRecognizedBy ?? []).map((r) => r.trim()).filter(Boolean),
     },
     include: { district: true },
   });

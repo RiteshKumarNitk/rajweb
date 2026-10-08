@@ -72,9 +72,9 @@ async function loadContext(tournamentId: string) {
   const template = await templateForTournament(tournament.certificateTemplateId);
   const assets = await resolveAssetRefs(template.config);
   const signatories: SnapshotSignatory[] = tournament.signatories.map((ts) => ({
-    name: ts.signatory.name,
-    designation: ts.title?.trim() || ts.signatory.designation,
-    organization: ts.signatory.organization,
+    name: plain(ts.signatory.name),
+    designation: plain(ts.title?.trim() || ts.signatory.designation),
+    organization: plain(ts.signatory.organization),
     signatureImageUrl: ts.signatory.signatureImageUrl,
   }));
   const registrations = await prisma.tournamentRegistration.findMany({
@@ -111,18 +111,31 @@ export function certificateOptions(
   tournament: { certificateCategoryOptions: string[]; certificateEventOptions: string[]; registrationCategories: { name: string }[] },
   registrations: { player: { category: string | null } }[]
 ) {
-  const distinct = (values: (string | null | undefined)[]) => [...new Set(values.map((v) => v?.trim()).filter((v): v is string => Boolean(v)))];
+  const distinct = (values: (string | null | undefined)[]) => [...new Set(values.map((v) => plain(v)?.trim()).filter((v): v is string => Boolean(v)))];
   return {
     categoryOptions: tournament.certificateCategoryOptions.length
-      ? tournament.certificateCategoryOptions
+      ? tournament.certificateCategoryOptions.map((o) => plain(o))
       : distinct(registrations.map((r) => r.player.category)).sort((a, b) => a.localeCompare(b)),
     eventOptions: tournament.certificateEventOptions.length
-      ? tournament.certificateEventOptions
+      ? tournament.certificateEventOptions.map((o) => plain(o))
       : distinct(tournament.registrationCategories.map((c) => c.name)),
   };
 }
 
 const norm = (v: string) => v.toLowerCase().replace(/[\s_-]+/g, "");
+
+/**
+ * Text fields are stored HTML-escaped by sanitizeText() (names, venues,
+ * tournament names…). A PDF is not HTML, so the snapshot holds the plain
+ * text: "O&#x27;Brien" → "O'Brien", "Sports &amp; Rackets" → "Sports & Rackets".
+ */
+const ENTITIES: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#x27;": "'", "&#39;": "'" };
+function plain(value: string): string;
+function plain(value: string | null | undefined): string | null;
+function plain(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  return value.replace(/&(amp|lt|gt|quot|#x27|#39);/g, (m) => ENTITIES[m] ?? m);
+}
 
 /** Canonical option matching `value` (case/spacing/hyphen-insensitive), or null. */
 function matchOption(options: string[], value: string | null | undefined): string | null {
@@ -133,9 +146,9 @@ function matchOption(options: string[], value: string | null | undefined): strin
 /** Defaults an admin screen pre-selects for a registration. */
 export function defaultSelections(ctx: { categoryOptions: string[]; eventOptions: string[] }, registration: { category: { name: string; type: string } | null; player: { category: string | null } }) {
   return {
-    category: matchOption(ctx.categoryOptions, registration.player.category),
+    category: matchOption(ctx.categoryOptions, plain(registration.player.category)),
     event:
-      matchOption(ctx.eventOptions, registration.category?.name) ??
+      matchOption(ctx.eventOptions, plain(registration.category?.name)) ??
       matchOption(ctx.eventOptions, registration.category ? EVENT_TYPE_LABEL[registration.category.type] : null),
   };
 }
@@ -179,27 +192,27 @@ function buildSnapshot(ctx: Context, registration: Registration, entry: Tourname
     assets: ctx.assets,
     certificateNumber: numbering.certificateNumber,
     issueDate: issueDate.toISOString(),
-    heading: t.certificateTitle?.trim() || config.headingText,
+    heading: plain(t.certificateTitle?.trim() || config.headingText),
     tournament: {
       id: t.id,
-      headingLine: t.certificateTournamentHeading?.trim() || null,
-      name: t.name,
+      headingLine: plain(t.certificateTournamentHeading?.trim() || null),
+      name: plain(t.name),
       code: t.code,
-      organizedBy: t.certificateOrganizedBy?.trim() || null,
-      recognizedBy: t.certificateRecognizedBy.map((r) => r.trim()).filter(Boolean),
-      venue: [t.venue, t.city].map((v) => v?.trim()).filter(Boolean).join(", ") || null,
-      stateName: t.state?.name ?? null,
-      districtName: t.district?.name ?? null,
+      organizedBy: plain(t.certificateOrganizedBy?.trim() || null),
+      recognizedBy: t.certificateRecognizedBy.map((r) => plain(r).trim()).filter(Boolean),
+      venue: plain([t.venue, t.city].map((v) => v?.trim()).filter(Boolean).join(", ") || null),
+      stateName: plain(t.state?.name ?? null),
+      districtName: plain(t.district?.name ?? null),
       startDate: t.startDate.toISOString(),
       endDate: t.endDate.toISOString(),
     },
     player: {
       id: player.id,
       playerCode: player.playerId,
-      name: player.name.trim(),
-      parentName: player.parentName?.trim() || entry.parentName?.trim() || null,
-      districtName: player.district.name,
-      stateName: player.district.state?.name ?? null,
+      name: plain(player.name).trim(),
+      parentName: plain(player.parentName?.trim() || entry.parentName?.trim() || null),
+      districtName: plain(player.district.name),
+      stateName: plain(player.district.state?.name ?? null),
     },
     category: { value: category, options: ctx.categoryOptions },
     event: { value: event, options: ctx.eventOptions },
