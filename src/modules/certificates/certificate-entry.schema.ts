@@ -15,5 +15,7 @@ export const certificateEntrySchema = z.object({
 export const templateBodySchema = z.object({
   name: z.string().trim().min(3).max(120),
   description: z.union([z.string().trim().max(500), z.null()]).optional(),
+  /** Design layout key (see CERTIFICATE_LAYOUTS); omitted = keep / default. */
+  layout: z.string().trim().max(40).optional(),
   config: z.unknown(),
 });

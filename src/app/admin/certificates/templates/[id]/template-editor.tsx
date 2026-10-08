@@ -21,11 +21,14 @@ interface AssetOption {
 }
 
 interface Props {
-  template: { id: string; name: string; description: string | null; version: number; locked: boolean; tournamentCount: number; config: CertificateTemplateConfig } | null;
+  template: { id: string; name: string; description: string | null; version: number; layout: string; locked: boolean; tournamentCount: number; config: CertificateTemplateConfig } | null;
   defaultConfig: CertificateTemplateConfig;
   assets: AssetOption[];
   achievements: { code: string; label: string }[];
   dateFormats: { value: string; example: string }[];
+  layouts: { value: string; label: string }[];
+  defaultLayout: string;
+  optionDisplays: { value: string; label: string }[];
   placeholders: Record<string, string>;
 }
 
@@ -108,6 +111,8 @@ export function TemplateEditor(props: Props) {
   const router = useRouter();
   const [name, setName] = useState(props.template?.name ?? "");
   const [description, setDescription] = useState(props.template?.description ?? "");
+  const [layout, setLayout] = useState(props.template?.layout ?? props.defaultLayout);
+  const usesBackground = layout !== "rra-standard@1";
   const [c, setC] = useState<CertificateTemplateConfig>(props.template?.config ?? props.defaultConfig);
   const [abbreviations, setAbbreviations] = useState(
     Object.entries((props.template?.config ?? props.defaultConfig).stateAbbreviations)
@@ -134,7 +139,7 @@ export function TemplateEditor(props: Props) {
     if (c.positions.length === 0) return toast.error("Choose at least one position");
     setSaving(true);
     try {
-      const body = { name: name.trim(), description: description.trim() || null, config: buildConfig() };
+      const body = { name: name.trim(), description: description.trim() || null, layout, config: buildConfig() };
       const res =
         mode === "create"
           ? await apiFetch("/api/admin/certificate-templates", { method: "POST", body: JSON.stringify(body) })
@@ -169,6 +174,17 @@ export function TemplateEditor(props: Props) {
             <Input id="tpl-heading" value={c.headingText} maxLength={60} onChange={(e) => set("headingText", e.target.value)} />
           </div>
           <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="tpl-layout">Design</Label>
+            <select id="tpl-layout" value={layout} onChange={(e) => setLayout(e.target.value)} className={selectClass}>
+              {props.layouts.map((l) => (
+                <option key={l.value} value={l.value}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-500">The visual structure. Certificates keep the design of the version they were issued with.</p>
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="tpl-desc">Description (admins only)</Label>
             <Input id="tpl-desc" value={description} maxLength={500} onChange={(e) => setDescription(e.target.value)} />
           </div>
@@ -178,9 +194,20 @@ export function TemplateEditor(props: Props) {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Logos &amp; images</CardTitle>
-          <CardDescription className="text-xs">Add or upload images on the Templates page. The logo row is: left group · centre branding · right group.</CardDescription>
+          <CardDescription className="text-xs">
+            Add or upload images on the Templates page.{" "}
+            {usesBackground
+              ? "The A4 background carries the logos and map; the logo/watermark pickers below add extra layers and are normally left empty."
+              : "The logo row is: left group · centre branding · right group."}
+          </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-3">
+          {usesBackground && (
+            <div className="space-y-1.5 sm:col-span-3">
+              <Label htmlFor="tpl-background">A4 background (full page, portrait)</Label>
+              <AssetSelect id="tpl-background" value={c.backgroundAssetId} onChange={(v) => set("backgroundAssetId", v)} assets={props.assets} />
+            </div>
+          )}
           <AssetList label="Left logos (up to 4)" value={c.logos.left} onChange={(v) => set("logos", { ...c.logos, left: v })} assets={props.assets} max={4} />
           <div className="space-y-1.5">
             <Label htmlFor="tpl-center">Centre branding</Label>
@@ -279,9 +306,11 @@ export function TemplateEditor(props: Props) {
                 <input type="checkbox" checked={c[key]} onChange={(e) => set(key, e.target.checked)} /> {label}
               </label>
             ))}
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={c.frame.enabled} onChange={(e) => set("frame", { ...c.frame, enabled: e.target.checked })} /> Grey frame
-            </label>
+            {!usesBackground && (
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={c.frame.enabled} onChange={(e) => set("frame", { ...c.frame, enabled: e.target.checked })} /> Grey frame
+              </label>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label>Positions printed in the POSITION row (in this order)</Label>
@@ -305,6 +334,23 @@ export function TemplateEditor(props: Props) {
               ))}
             </div>
           </div>
+          {usesBackground && (
+            <div className="space-y-1.5">
+              <Label htmlFor="tpl-option-display">Category &amp; Event rows show</Label>
+              <select
+                id="tpl-option-display"
+                value={c.optionDisplay}
+                onChange={(e) => set("optionDisplay", e.target.value as CertificateTemplateConfig["optionDisplay"])}
+                className={selectClass}
+              >
+                {props.optionDisplays.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="grid gap-4 sm:grid-cols-5">
             <div className="space-y-1.5">
               <Label htmlFor="tpl-signers">Signatures (max)</Label>

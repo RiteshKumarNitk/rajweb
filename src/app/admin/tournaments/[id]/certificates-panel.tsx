@@ -31,6 +31,7 @@ export interface CertificateCandidate {
 export interface CertificateSettings {
   certificateTemplateId: string | null;
   certificateTitle: string | null;
+  certificateTournamentHeading: string | null;
   certificateOrganizedBy: string | null;
   certificateRecognizedBy: string[];
   /** YYYY-MM-DD (India) or null. */
@@ -89,6 +90,7 @@ export function CertificatesPanel(props: Props) {
   const s = props.settings;
   const [templateId, setTemplateId] = useState(s.certificateTemplateId ?? "");
   const [title, setTitle] = useState(s.certificateTitle ?? "");
+  const [headingLine, setHeadingLine] = useState(s.certificateTournamentHeading ?? "");
   const [organizedBy, setOrganizedBy] = useState(s.certificateOrganizedBy ?? "");
   const [recognizedBy, setRecognizedBy] = useState(s.certificateRecognizedBy.join("\n"));
   const [issueDate, setIssueDate] = useState(s.certificateIssueDate ?? "");
@@ -144,6 +146,7 @@ export function CertificatesPanel(props: Props) {
         body: JSON.stringify({
           certificateTemplateId: templateId || null,
           certificateTitle: title.trim() || null,
+          certificateTournamentHeading: headingLine.trim() || null,
           certificateOrganizedBy: organizedBy.trim() || null,
           certificateRecognizedBy: lines(recognizedBy),
           certificateIssueDate: issueDate || null,
@@ -268,6 +271,17 @@ export function CertificatesPanel(props: Props) {
             <div className="space-y-1.5">
               <Label htmlFor="cert-title">Certificate heading (optional)</Label>
               <Input id="cert-title" value={title} maxLength={60} placeholder="From template (e.g. Certificate)" onChange={(e) => setTitle(e.target.value)} />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="cert-heading-line">Line above the tournament name (optional)</Label>
+              <Input
+                id="cert-heading-line"
+                value={headingLine}
+                maxLength={150}
+                placeholder="e.g. 1st Open Sub-Junior/ Junior/ Senior"
+                onChange={(e) => setHeadingLine(e.target.value)}
+              />
+              <p className="text-xs text-slate-500">Printed above the tournament name on the certificate.</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="cert-org">Organized By</Label>

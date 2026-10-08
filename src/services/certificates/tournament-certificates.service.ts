@@ -182,6 +182,7 @@ function buildSnapshot(ctx: Context, registration: Registration, entry: Tourname
     heading: t.certificateTitle?.trim() || config.headingText,
     tournament: {
       id: t.id,
+      headingLine: t.certificateTournamentHeading?.trim() || null,
       name: t.name,
       code: t.code,
       organizedBy: t.certificateOrganizedBy?.trim() || null,

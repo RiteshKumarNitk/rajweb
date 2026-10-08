@@ -26,6 +26,13 @@ export type CertificateDateFormat = keyof typeof DATE_FORMATS;
 
 const achievementCodes = CERTIFICATE_ACHIEVEMENTS.map((a) => a.code) as [string, ...string[]];
 
+/** How the Category / Event rows print (layout v2+; layout v1 always prints the list). */
+export const OPTION_DISPLAYS = {
+  SELECTED: "Only the player's own value (e.g. \"Category: Junior\")",
+  LIST_WITH_TICK: "All options, the player's ticked",
+} as const;
+export type OptionDisplay = keyof typeof OPTION_DISPLAYS;
+
 export const templateConfigSchema = z.object({
   frame: z.object({ enabled: z.boolean(), color: hex }),
   colors: z.object({ ink: hex, highlight: hex, tick: hex, boxBorder: hex }),
@@ -35,6 +42,9 @@ export const templateConfigSchema = z.object({
     right: z.array(assetId).max(4),
   }),
   emblemAssetId: assetId.nullable(),
+  /** Full-page A4 background (layout v2+): logos, map watermark, decoration. */
+  backgroundAssetId: assetId.nullable(),
+  optionDisplay: z.enum(Object.keys(OPTION_DISPLAYS) as [OptionDisplay, ...OptionDisplay[]]),
   watermark: z.object({ assetId: assetId.nullable(), opacity: z.number().min(0).max(0.6) }),
   /** Script heading, e.g. "Certificate". A tournament's certificate title overrides it. */
   headingText: label(60).min(1),
@@ -71,6 +81,8 @@ export const DEFAULT_TEMPLATE_CONFIG: CertificateTemplateConfig = {
   colors: { ink: "#221E1F", highlight: "#ED1C23", tick: "#ED1C23", boxBorder: "#D1D3D4" },
   logos: { left: [], center: null, right: [] },
   emblemAssetId: null,
+  backgroundAssetId: null,
+  optionDisplay: "SELECTED",
   watermark: { assetId: null, opacity: 0.16 },
   headingText: "Certificate",
   labels: {
@@ -100,6 +112,7 @@ export const DEFAULT_TEMPLATE_CONFIG: CertificateTemplateConfig = {
 export const PLACEHOLDERS: Record<string, string> = {
   certificateNumber: "Certificate number",
   issueDate: "Issue date",
+  tournamentHeading: "Line above the tournament name",
   tournamentName: "Tournament name",
   tournamentCode: "Tournament code",
   organizedBy: "Organized by",
@@ -140,6 +153,7 @@ export function configAssetIds(config: CertificateTemplateConfig): string[] {
     ...(config.logos.center ? [config.logos.center] : []),
     ...config.logos.right,
     ...(config.emblemAssetId ? [config.emblemAssetId] : []),
+    ...(config.backgroundAssetId ? [config.backgroundAssetId] : []),
     ...(config.watermark.assetId ? [config.watermark.assetId] : []),
   ];
 }

@@ -583,62 +583,65 @@ enum TournamentStatus {
 }
 
 model Tournament {
-  id                         String                           @id @default(cuid())
-  name                       String
-  slug                       String                           @unique
-  description                String?
-  category                   TournamentCategory
-  status                     TournamentStatus                 @default(DRAFT)
+  id                           String                           @id @default(cuid())
+  name                         String
+  slug                         String                           @unique
+  description                  String?
+  category                     TournamentCategory
+  status                       TournamentStatus                 @default(DRAFT)
   // Owning state. Always set for new tournaments; for district tournaments
   // it must equal district.stateId. A tournament with no district is
   // state-wide for this state.
-  stateId                    String?
-  state                      State?                           @relation(fields: [stateId], references: [id])
-  districtId                 String?
-  district                   District?                        @relation(fields: [districtId], references: [id])
-  venue                      String?
-  city                       String?
-  startDate                  DateTime
-  endDate                    DateTime
-  registrationStart          DateTime?
-  registrationDeadline       DateTime?
-  maxParticipants            Int?
+  stateId                      String?
+  state                        State?                           @relation(fields: [stateId], references: [id])
+  districtId                   String?
+  district                     District?                        @relation(fields: [districtId], references: [id])
+  venue                        String?
+  city                         String?
+  startDate                    DateTime
+  endDate                      DateTime
+  registrationStart            DateTime?
+  registrationDeadline         DateTime?
+  maxParticipants              Int?
   // Google Drive poster link, per the client's approved requirement — not a
   // file upload. Reuses the pre-existing (previously unused) `banner` column
   // rather than adding a second field for the same concept.
-  banner                     String?
-  contactName                String?
-  contactPhone               String?
-  contactEmail               String?
-  requiresApprovedPlayer     Boolean                          @default(true)
+  banner                       String?
+  contactName                  String?
+  contactPhone                 String?
+  contactEmail                 String?
+  requiresApprovedPlayer       Boolean                          @default(true)
   // Short code, e.g. "1OP" — printed/stored on certificates, unique when set.
-  code                       String?                          @unique
+  code                         String?                          @unique
   // Tournament-specific certificate settings (certificates snapshot them).
-  certificateTitle           String?
-  certificateLogoUrl         String?
-  certificateTemplateId      String?
-  certificateTemplate        CertificateTemplate?             @relation(fields: [certificateTemplateId], references: [id], onDelete: SetNull)
-  certificateOrganizedBy     String?
+  certificateTitle             String?
+  certificateLogoUrl           String?
+  // Line printed above the tournament name on certificates, e.g.
+  // "1st Open Sub-Junior/ Junior/ Senior". Optional.
+  certificateTournamentHeading String?
+  certificateTemplateId        String?
+  certificateTemplate          CertificateTemplate?             @relation(fields: [certificateTemplateId], references: [id], onDelete: SetNull)
+  certificateOrganizedBy       String?
   // One organisation per printed line.
-  certificateRecognizedBy    String[]                         @default([])
-  certificateIssueDate       DateTime?
+  certificateRecognizedBy      String[]                         @default([])
+  certificateIssueDate         DateTime?
   // Numbering: "<prefix>/<serial padded to padding>", serial from start upward,
   // allocated atomically per prefix (CertificateNumberSequence).
-  certificateNumberPrefix    String?
-  certificateNumberStart     Int                              @default(1)
-  certificateNumberPadding   Int                              @default(2)
+  certificateNumberPrefix      String?
+  certificateNumberStart       Int                              @default(1)
+  certificateNumberPadding     Int                              @default(2)
   // Printed option lists ("Category: Sub-junior, Junior, Senior") — the
   // player's own option is ticked. Empty = derived from registrations.
-  certificateCategoryOptions String[]                         @default([])
-  certificateEventOptions    String[]                         @default([])
-  signatories                TournamentSignatory[]
-  certificates               PlayerCertificate[]
-  registrationCategories     TournamentRegistrationCategory[]
-  registrations              TournamentRegistration[]
-  fixtures                   Fixture[]
-  matches                    Match[]
-  createdAt                  DateTime                         @default(now())
-  updatedAt                  DateTime                         @updatedAt
+  certificateCategoryOptions   String[]                         @default([])
+  certificateEventOptions      String[]                         @default([])
+  signatories                  TournamentSignatory[]
+  certificates                 PlayerCertificate[]
+  registrationCategories       TournamentRegistrationCategory[]
+  registrations                TournamentRegistration[]
+  fixtures                     Fixture[]
+  matches                      Match[]
+  createdAt                    DateTime                         @default(now())
+  updatedAt                    DateTime                         @updatedAt
 
   @@index([status])
   @@index([districtId])

@@ -43,6 +43,8 @@ export interface CertificateSnapshot {
   heading: string;
   tournament: {
     id: string;
+    /** Line printed above the name (absent on certificates issued before it existed). */
+    headingLine?: string | null;
     name: string;
     code: string | null;
     organizedBy: string | null;
@@ -141,6 +143,7 @@ export function snapshotPlaceholderValues(s: CertificateSnapshot): Record<string
   return {
     certificateNumber: s.certificateNumber,
     issueDate: formatCertificateDate(s.issueDate, config.dateFormat),
+    tournamentHeading: s.tournament.headingLine ?? null,
     tournamentName: s.tournament.name,
     tournamentCode: s.tournament.code,
     organizedBy: s.tournament.organizedBy,

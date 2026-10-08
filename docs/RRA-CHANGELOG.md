@@ -683,6 +683,29 @@ Registration (non-tournament) and coach certificates still use the previous rend
 
 ---
 
+## Certificate Design v2 — A4 Background Artwork — 2026-10-08
+
+### Summary
+New tournament certificate design: the association's A4 background artwork (no frame; top logos, pink Rajasthan map and racquetball watermark in the image) with all certificate content drawn on top from the snapshot. Added as layout `rra-standard@2` and template **v2** (default); layout v1 and every certificate issued with it are unchanged (the production certificate `RRA/STC/RSC/01` re-renders pixel-identical).
+
+### Features Added
+- Two-part title: optional tournament heading line (`{{tournamentHeading}}`, e.g. "1st Open Sub-Junior/ Junior/ Senior") above the tournament name; up to 4 lines, shrink-to-fit.
+- Category and Event print only the player's own value (template option; the ticked list remains available). Position keeps the ticked list.
+- Template editor: Design (layout) choice per version, A4 background image picker, Category & Event display option.
+- Player vault cards: Category, Event, Position, View PDF, Download PDF (details page linked).
+- Shared drawing primitives (`templates/pdf-primitives.ts`); each layout file stays a complete, frozen design.
+
+### Database Changes (additive)
+`tournaments.certificateTournamentHeading` (nullable). **Production: apply the column, then run `npm run db:seed:certificates`** — it adds the background image and template v2 (default) without editing v1, tournaments or certificates. Deploy the code only after the column exists.
+
+### Testing
+Reference-data render compared side by side with the reference; 7 rendered stress cases (positions, categories, events, districts, missing parent name, very long title/names/venue/organisers, 4 signatories, preview stamp); 18/18 end-to-end on a fresh database; QR decoded on every issued certificate; 35/35 HTTP checks on the production build (vault, editor, preview, issue, scope, ownership); v1 pixel regression including the production certificate.
+
+### Known Limitations
+The supplied background is 1055 × 1491 px (~128 dpi on A4) — fine on screen, soft in print. A 300-dpi export (2480 × 3508) can be uploaded in Templates → Certificate images and used in a new template version.
+
+---
+
 ## Upcoming (not started)
 
 Phases J–U are PLANNED — see [RRA-PROJECT-STATUS.md §10](RRA-PROJECT-STATUS.md#10-remaining-roadmap). Add an entry here using the template below when each lands:

@@ -1,6 +1,7 @@
 import { AppError } from "@/core/errors/app-error";
 import type { CertificateSnapshot } from "./certificate-snapshot";
 import { renderRraStandardV1 } from "./rra-standard-v1";
+import { renderRraStandardV2 } from "./rra-standard-v2";
 
 /**
  * Structured input of the PDF generator. Everything printed is in the
@@ -27,10 +28,11 @@ type LayoutRenderer = (input: GenerateCertificateInput) => Promise<Buffer>;
  * because certificates issued with them must keep rendering identically.
  */
 export const CERTIFICATE_LAYOUTS: Record<string, { label: string; render: LayoutRenderer }> = {
-  "rra-standard@1": { label: "RRA Standard (A4 portrait) — layout v1", render: renderRraStandardV1 },
+  "rra-standard@1": { label: "RRA Standard, framed with drawn logos (layout v1)", render: renderRraStandardV1 },
+  "rra-standard@2": { label: "RRA Standard on A4 background artwork (layout v2)", render: renderRraStandardV2 },
 };
 
-export const DEFAULT_LAYOUT = "rra-standard@1";
+export const DEFAULT_LAYOUT = "rra-standard@2";
 
 export async function generateCertificate(input: GenerateCertificateInput): Promise<Buffer> {
   const layout = CERTIFICATE_LAYOUTS[input.snapshot.template.layout];

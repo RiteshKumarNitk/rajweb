@@ -12,11 +12,16 @@ export interface OwnCertificate {
   tournamentName: string | null;
   tournamentId: string | null;
   position: string | null;
+  /** Printed category / event (template certificates). */
+  category: string | null;
+  event: string | null;
   issuedAt: Date;
   expiresAt: Date | null;
   isRevoked: boolean;
   viewUrl: string | null;
   downloadUrl: string | null;
+  /** Same PDF, opened in the browser instead of downloaded. */
+  pdfViewUrl: string | null;
 }
 
 /**
@@ -71,19 +76,20 @@ export async function getOwnCertificates(userId: string, opts: { kinds?: Array<"
       id: c.id,
       kind: "player" as const,
       certificateNumber: c.certificateNumber,
-      // Template certificates: the type IS the achievement; the subtitle is what was ticked.
-      title: c.achievement
-        ? [c.categoryName, c.eventLabel].filter(Boolean).join(" · ") || "Tournament Certificate"
-        : c.title ?? (c.tournamentId ? "Tournament Certificate" : "Certificate of Registration"),
+      // Template certificates: the type IS the achievement; category/event are listed separately.
+      title: c.achievement ? "Tournament Certificate" : c.title ?? (c.tournamentId ? "Tournament Certificate" : "Certificate of Registration"),
       typeLabel: c.achievement ? c.position ?? "Tournament Certificate" : c.tournamentId ? "Tournament Certificate" : "Registration Certificate",
       tournamentName: c.eventName ?? c.tournament?.name ?? null,
       tournamentId: c.tournamentId,
-      position: c.achievement ? null : c.position,
+      position: c.position,
+      category: c.categoryName,
+      event: c.eventLabel,
       issuedAt: c.issuedAt,
       expiresAt: c.expiresAt,
       isRevoked: c.isRevoked,
       viewUrl: `/account/player/certificates/${c.id}`,
       downloadUrl: c.isRevoked ? null : `/api/certificates/${c.id}/pdf`,
+      pdfViewUrl: c.isRevoked ? null : `/api/certificates/${c.id}/pdf?view=1`,
     })),
     ...(coach?.certificates ?? []).map((c) => ({
       id: c.id,
@@ -94,11 +100,14 @@ export async function getOwnCertificates(userId: string, opts: { kinds?: Array<"
       tournamentName: null,
       tournamentId: null,
       position: null,
+      category: null,
+      event: null,
       issuedAt: c.issuedAt,
       expiresAt: c.expiresAt,
       isRevoked: c.isRevoked,
       viewUrl: null,
       downloadUrl: !c.isRevoked && c.pdfPath ? storage.getUrl(c.pdfPath) : null,
+      pdfViewUrl: null,
     })),
   ];
 }

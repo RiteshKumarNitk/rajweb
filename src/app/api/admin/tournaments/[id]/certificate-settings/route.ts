@@ -14,6 +14,8 @@ const settingsSchema = z.object({
   certificateTemplateId: z.union([z.string().min(1).max(40), z.null()]).optional(),
   /** Overrides the template's heading ("Certificate"). */
   certificateTitle: text(60),
+  /** Line printed above the tournament name, e.g. "1st Open Sub-Junior/ Junior/ Senior". */
+  certificateTournamentHeading: text(150),
   certificateOrganizedBy: text(150),
   certificateRecognizedBy: list(8, 150),
   /** YYYY-MM-DD, printed on every certificate of this tournament; null = the day of issue. */
@@ -35,6 +37,7 @@ const settingsSchema = z.object({
 const SCALAR_FIELDS = [
   "certificateTemplateId",
   "certificateTitle",
+  "certificateTournamentHeading",
   "certificateOrganizedBy",
   "certificateRecognizedBy",
   "certificateIssueDate",
@@ -91,6 +94,7 @@ export const PUT = withApiHandler(
     const update = {
       certificateTemplateId: data.certificateTemplateId,
       certificateTitle: data.certificateTitle === undefined ? undefined : data.certificateTitle || null,
+      certificateTournamentHeading: data.certificateTournamentHeading === undefined ? undefined : data.certificateTournamentHeading || null,
       certificateOrganizedBy: data.certificateOrganizedBy === undefined ? undefined : data.certificateOrganizedBy || null,
       certificateRecognizedBy: data.certificateRecognizedBy,
       certificateIssueDate:

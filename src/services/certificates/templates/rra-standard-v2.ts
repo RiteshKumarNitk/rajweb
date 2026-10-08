@@ -2,21 +2,16 @@ import QRCode from "qrcode";
 import { createPdfDocument } from "@/services/certificates/pdfkit-fonts";
 import { loadCertificateFonts } from "./fonts";
 import { findAchievement } from "./positions";
-import {
-  formatCertificateDate,
-  interpolateLine,
-  snapshotPlaceholderValues,
-  type CertificateSnapshot,
-} from "./certificate-snapshot";
+import { formatCertificateDate, interpolateLine, snapshotPlaceholderValues, type CertificateSnapshot } from "./certificate-snapshot";
 import type { GenerateCertificateInput } from "./generate-certificate";
 import {
   A4,
-  type OptionPiece,
   S,
   SANS,
   SCRIPT,
   SERIF_BI,
   type Token,
+  type OptionPiece,
   WHITE,
   X,
   Y,
@@ -33,25 +28,23 @@ import {
   wrapWords,
 } from "./pdf-primitives";
 
-
 /**
- * "rra-standard@1" — the RRA Standard Tournament Certificate, drawn to match
- * the association's reference design (CorelDRAW original, 648 × 864 pt) on
- * A4 portrait. Geometry below is in the reference's coordinates and scaled
- * by X/Y/S, so every element keeps its place relative to the original.
+ * "rra-standard@2" — the RRA tournament certificate on the association's
+ * A4 background artwork (no frame; top logos, pink Rajasthan map watermark
+ * and decoration are all in the background image). Everything printed on
+ * top comes from the snapshot. Geometry is in the reference design's units
+ * (648 × 864) via X/Y/S, in regions that never overlap:
  *
- * Pure: everything comes from the snapshot + already-loaded images. Each
- * dynamic text area has a fixed box and shrinks (then wraps) to fit — nothing
- * overflows into a neighbour, whatever the name/venue/title length.
+ *   background (full page) · title 158–244 · organisers box 248–371 ·
+ *   S.No./date 404 · emblem 382–451 · heading ~466–523 · recipient 537–593 ·
+ *   category 603–637 · event 639–673 · POSITION 680–719 · venue 726–748+ ·
+ *   signatures ≥ venue bottom → 834 · QR 786–836
  *
- * DO NOT change what this renders for existing inputs: certificates issued
- * with layout "rra-standard@1" are re-rendered by this exact code when their
- * stored PDF is missing. Design changes go into a new layout version.
+ * Every text region has a fixed box and shrinks, then wraps, to fit.
+ * DO NOT change what this renders for existing inputs once certificates are
+ * issued with it — a design change is a new layout version.
  */
-
-// ─── Renderer ───────────────────────────────────────────────────────────────
-
-export async function renderRraStandardV1(input: GenerateCertificateInput): Promise<Buffer> {
+export async function renderRraStandardV2(input: GenerateCertificateInput): Promise<Buffer> {
   const s: CertificateSnapshot = input.snapshot;
   const c = s.template.config;
   const ink = c.colors.ink;
@@ -61,7 +54,6 @@ export async function renderRraStandardV1(input: GenerateCertificateInput): Prom
     size: "A4",
     layout: "portrait",
     margin: 0,
-    // PDFKit cannot serialise an undefined info value — omit absent keys.
     info: {
       Title: `${s.heading} ${s.certificateNumber} — ${s.tournament.name}`,
       ...(s.tournament.organizedBy ? { Author: s.tournament.organizedBy } : {}),
@@ -70,9 +62,7 @@ export async function renderRraStandardV1(input: GenerateCertificateInput): Prom
     },
   });
   for (const [name, data] of loadCertificateFonts()) doc.registerFont(name, data);
-  const qrPng = c.showQr
-    ? await QRCode.toBuffer(s.verification.url, { type: "png", margin: 1, width: 360, errorCorrectionLevel: "M" })
-    : null;
+  const qrPng = c.showQr ? await QRCode.toBuffer(s.verification.url, { type: "png", margin: 1, width: 360, errorCorrectionLevel: "M" }) : null;
 
   return new Promise<Buffer>((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -80,15 +70,17 @@ export async function renderRraStandardV1(input: GenerateCertificateInput): Prom
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
-    // Frame + white sheet.
-    if (c.frame.enabled) {
-      doc.rect(0, 0, A4.w, A4.h).fill(c.frame.color);
-      doc.rect(X(25.2), Y(25.2), A4.w - 2 * X(25.2), A4.h - 2 * Y(25.2)).fill(WHITE);
-    } else {
-      doc.rect(0, 0, A4.w, A4.h).fill(WHITE);
+    // ── Fixed visual layer ────────────────────────────────────────────────
+    doc.rect(0, 0, A4.w, A4.h).fill(WHITE);
+    const background = img(c.backgroundAssetId);
+    if (background) {
+      try {
+        doc.image(background, 0, 0, { width: A4.w, height: A4.h });
+      } catch {
+        // An undecodable background leaves a white page; the content still renders.
+      }
     }
-
-    // Watermark (behind everything else).
+    // Optional extra layers (normally empty when the background carries them).
     const watermark = img(c.watermark.assetId);
     if (watermark && c.watermark.opacity > 0) {
       doc.save();
@@ -96,31 +88,39 @@ export async function renderRraStandardV1(input: GenerateCertificateInput): Prom
       drawImage(doc, watermark, X(76), Y(226), X(496), Y(465));
       doc.restore();
     }
+    drawLogoZone(doc, c.logos.left.map(img), { x0: 30, x1: 238, cy: 85, h: 50 });
+    drawImage(doc, img(c.logos.center), X(240), Y(22), X(168), Y(132));
+    drawLogoZone(doc, c.logos.right.map(img), { x0: 410, x1: 618, cy: 85, h: 50 });
 
-    // Logo row: left group · central branding · right group.
-    drawLogoZone(doc, c.logos.left.map(img), { x0: 56, x1: 252, cy: 105.5, h: 47 });
-    drawImage(doc, img(c.logos.center), X(245.5), Y(28.3), X(160.7), Y(150.6));
-    drawLogoZone(doc, c.logos.right.map(img), { x0: 399, x1: 590, cy: 103, h: 44 });
-
-    // Tournament title (≤ 2 lines, shrinks for long names).
+    // ── Tournament title: heading line + name (both dynamic, ≤ 4 lines) ──
     {
-      const area = { top: Y(181), height: Y(62), maxWidth: X(500) };
-      const fit = fitParagraph(doc, s.tournament.name, SANS, { maxSize: S(23.5), minSize: S(12), maxWidth: area.maxWidth, maxLines: 3, maxHeight: area.height, lineGap: 1.15 });
-      const lineH = fit.size * 1.15;
-      let y = area.top + (area.height - fit.lines.length * lineH) / 2;
-      for (const line of fit.lines) {
-        haloText(doc, line, A4.w / 2 - width(doc, line, SANS, fit.size) / 2, y, SANS, fit.size, ink);
+      const parts = [s.tournament.headingLine, s.tournament.name].map((p) => p?.trim()).filter((p): p is string => Boolean(p));
+      const area = { top: Y(158), height: Y(86), maxWidth: X(540) };
+      let size = S(23.5);
+      let lines: string[] = [];
+      for (; size >= S(10); size -= 0.25) {
+        lines = parts.flatMap((p) => wrapWords(doc, p, SANS, size, area.maxWidth));
+        if (lines.length <= 4 && lines.length * size * 1.18 <= area.height && lines.every((l) => width(doc, l, SANS, size) <= area.maxWidth)) break;
+      }
+      const lineH = size * 1.18;
+      let y = area.top + (area.height - lines.length * lineH) / 2;
+      for (const line of lines) {
+        const ls = fitLine(doc, line, SANS, size, 4, area.maxWidth);
+        haloText(doc, line, A4.w / 2 - width(doc, line, SANS, ls) / 2, y + (size - ls) / 2, SANS, ls, ink);
         y += lineH;
       }
     }
 
-    // Organized By / Recognized by box.
+    // ── Organized By / Recognized by box ──────────────────────────────────
     {
       const rows: { label: string; values: string[] }[] = [];
       if (s.tournament.organizedBy) rows.push({ label: c.labels.organizedBy, values: [s.tournament.organizedBy] });
       if (s.tournament.recognizedBy.length) rows.push({ label: c.labels.recognizedBy, values: s.tournament.recognizedBy });
       if (rows.length) {
         const box = { x: X(102.6), y: Y(248.1), w: X(435.2), h: Y(123.4) };
+        doc.save();
+        doc.roundedRect(box.x, box.y, box.w, box.h, S(13)).fillOpacity(0.55).fill(WHITE);
+        doc.restore();
         doc.save();
         doc.roundedRect(box.x, box.y, box.w, box.h, S(13)).lineWidth(S(2)).stroke(c.colors.boxBorder);
         doc.restore();
@@ -129,7 +129,6 @@ export async function renderRraStandardV1(input: GenerateCertificateInput): Prom
         const valueX = X(256.8);
         const valueW = box.x + box.w - valueX - X(10);
         const innerH = box.h - Y(12);
-        // Size so that every (wrapped) value line fits the box.
         let size = S(15.8);
         let laid: { label: string; lines: string[] }[] = [];
         for (; size >= 6; size -= 0.25) {
@@ -137,12 +136,11 @@ export async function renderRraStandardV1(input: GenerateCertificateInput): Prom
           const n = laid.reduce((sum, r) => sum + r.lines.length, 0);
           if (n * size * 1.35 <= innerH && laid.every((r) => r.lines.every((l) => width(doc, l, SANS, size) <= valueW))) break;
         }
-        const labelSize = Math.min(size, S(15.8));
         const lineH = size * 1.35;
         const n = laid.reduce((sum, r) => sum + r.lines.length, 0);
         let y = box.y + (box.h - n * lineH) / 2;
         for (const r of laid) {
-          const ls = fitLine(doc, r.label, SANS, labelSize, 6, colonX - box.x - X(14));
+          const ls = fitLine(doc, r.label, SANS, Math.min(size, S(15.8)), 6, colonX - box.x - X(14));
           haloText(doc, r.label, labelCx - width(doc, r.label, SANS, ls) / 2, y + (size - ls) / 2, SANS, ls, ink);
           haloText(doc, ":", colonX, y, SANS, size, ink);
           for (const line of r.lines) {
@@ -153,22 +151,20 @@ export async function renderRraStandardV1(input: GenerateCertificateInput): Prom
       }
     }
 
-    // Serial number (left) and date (right).
+    // ── S.No. (left) and date (right) ─────────────────────────────────────
     {
       const serial = `${c.labels.serialNumber} ${s.certificateNumber}`.trim();
       const date = `${c.labels.date} ${formatCertificateDate(s.issueDate, c.dateFormat)}`.trim();
       const serialSize = fitLine(doc, serial, SANS, S(12), S(8), X(215));
-      const dateSize = fitLine(doc, date, SANS, S(12), S(8), X(150));
-      haloText(doc, serial, X(67.3), Y(404.3), SANS, serialSize, ink);
-      haloText(doc, date, X(583.9) - width(doc, date, SANS, dateSize), Y(403.5), SANS, dateSize, ink);
+      const dateSize = fitLine(doc, date, SANS, S(12), S(8), X(160));
+      haloText(doc, serial, X(52), Y(404.3), SANS, serialSize, ink);
+      haloText(doc, date, X(596) - width(doc, date, SANS, dateSize), Y(403.5), SANS, dateSize, ink);
     }
 
-    // Racquetball emblem.
+    // ── Racquetball emblem + script heading ───────────────────────────────
     drawImage(doc, img(c.emblemAssetId), X(286.6), Y(382.6), X(74.8), Y(68.5));
-
-    // Script heading with drop shadow and white outline.
     {
-      const size = fitLine(doc, s.heading, SCRIPT, S(50), S(18), X(420));
+      const size = fitLine(doc, s.heading, SCRIPT, S(50), S(18), X(440));
       const w = width(doc, s.heading, SCRIPT, size);
       const x = A4.w / 2 - w / 2;
       const y = Y(493.7) - size * 0.95;
@@ -182,17 +178,17 @@ export async function renderRraStandardV1(input: GenerateCertificateInput): Prom
       doc.font(SCRIPT).fontSize(size).fillColor(ink).text(s.heading, x, y, { lineBreak: false });
     }
 
-    // Recipient + district lines (placeholder values highlighted).
+    // ── Recipient + district lines (values highlighted) ───────────────────
     {
       const values = snapshotPlaceholderValues(s);
       const paragraphs = [c.lines.recipient, c.lines.district]
         .filter((t) => t.trim())
         .map((t) => tokenize(interpolateLine(t, values)))
         .filter((t) => t.length);
-      const area = { top: Y(537), height: Y(56), maxWidth: X(540) };
+      const area = { top: Y(535), height: Y(60), maxWidth: X(560) };
       let size = S(18);
       let laid: Token[][] = [];
-      for (; size >= S(9); size -= 0.25) {
+      for (; size >= S(8); size -= 0.25) {
         laid = paragraphs.flatMap((p) => wrapTokens(doc, p, SERIF_BI, size, area.maxWidth));
         if (laid.length * size * 1.3 <= area.height && laid.every((l) => lineWidth(doc, l, SERIF_BI, size) <= area.maxWidth)) break;
       }
@@ -208,17 +204,21 @@ export async function renderRraStandardV1(input: GenerateCertificateInput): Prom
       }
     }
 
-    // Category and Event rows — the full printed list with the player's option ticked.
-    const plain = (options: string[], value: string | null): OptionPiece[] =>
-      options.map((o) => ({ prefix: "", main: o, selected: value !== null && o === value }));
-    if (c.showCategoryRow && s.category.options.length) {
-      drawOptionRow(doc, { label: c.labels.category || null, pieces: plain(s.category.options, s.category.value), separator: ", ", top: Y(603), height: Y(34), maxSize: S(14.7), maxWidth: X(480), ink, tick: c.colors.tick });
+    // ── Category / Event: the player's own value (or the ticked list) ─────
+    const pieces = (row: { value: string | null; options: string[] }): OptionPiece[] =>
+      c.optionDisplay === "LIST_WITH_TICK"
+        ? row.options.map((o) => ({ prefix: "", main: o, selected: row.value !== null && o === row.value }))
+        : row.value
+          ? [{ prefix: "", main: row.value, selected: false }]
+          : [];
+    if (c.showCategoryRow) {
+      drawOptionRow(doc, { label: c.labels.category || null, pieces: pieces(s.category), separator: ", ", top: Y(603), height: Y(34), maxSize: S(14.7), maxWidth: X(540), ink, tick: c.colors.tick });
     }
-    if (c.showEventRow && s.event.options.length) {
-      drawOptionRow(doc, { label: c.labels.event || null, pieces: plain(s.event.options, s.event.value), separator: ", ", top: Y(639.5), height: Y(34), maxSize: S(14.7), maxWidth: X(480), ink, tick: c.colors.tick });
+    if (c.showEventRow) {
+      drawOptionRow(doc, { label: c.labels.event || null, pieces: pieces(s.event), separator: ", ", top: Y(639.5), height: Y(34), maxSize: S(14.7), maxWidth: X(540), ink, tick: c.colors.tick });
     }
 
-    // POSITION badge + achievement row.
+    // ── POSITION badge + achievement row (actual position ticked) ─────────
     {
       if (c.labels.position) {
         const ls = S(10.8);
@@ -231,29 +231,29 @@ export async function renderRraStandardV1(input: GenerateCertificateInput): Prom
         doc.polygon([bx, by + bh / 2], [bx + tip, by], [bx + bw - tip, by], [bx + bw, by + bh / 2], [bx + bw - tip, by + bh], [bx + tip, by + bh]).fill(ink);
         doc.font(SANS).fontSize(ls).fillColor(WHITE).text(c.labels.position, A4.w / 2 - tw / 2, by + (bh - ls * 1.36) / 2, { lineBreak: false });
       }
-      const pieces: OptionPiece[] = c.positions
+      const row: OptionPiece[] = c.positions
         .map((code) => findAchievement(code))
         .filter((a): a is NonNullable<typeof a> => Boolean(a))
         .map((a) => ({ prefix: a.print.prefix, superscript: a.print.superscript, main: a.print.main, selected: a.code === s.achievement.code }));
-      drawOptionRow(doc, { label: null, pieces, separator: " / ", top: Y(695.5), height: Y(24), maxSize: S(14.4), maxWidth: X(520), ink, tick: c.colors.tick });
+      drawOptionRow(doc, { label: null, pieces: row, separator: " / ", top: Y(695.5), height: Y(24), maxSize: S(14.4), maxWidth: X(560), ink, tick: c.colors.tick });
     }
 
-    // Venue bar (may grow to two lines; the signature area starts below it).
+    // ── Venue bar (grows to two lines; signatures start below it) ─────────
     let venueBottom = Y(747.9);
     if (s.tournament.venue) {
-      const bar = { x: X(105.3), y: Y(726.6), w: X(437.4), h: Y(21.3) };
+      const bar = { x: X(90), y: Y(726.6), w: X(468), h: Y(21.3) };
       const labelW = X(76.4);
-      const venueText = s.tournament.venue;
       const valueMaxW = bar.w - labelW - X(16);
-      let size = fitLine(doc, venueText, SANS, S(14.2), S(8), valueMaxW);
-      let lines = [venueText];
-      if (width(doc, venueText, SANS, size) > valueMaxW || size < S(8)) {
-        const fit = fitParagraph(doc, venueText, SANS, { maxSize: S(11), minSize: S(6), maxWidth: valueMaxW, maxLines: 2, maxHeight: bar.h + Y(10), lineGap: 1.15 });
+      let size = fitLine(doc, s.tournament.venue, SANS, S(14.2), S(8), valueMaxW);
+      let lines = [s.tournament.venue];
+      if (width(doc, s.tournament.venue, SANS, size) > valueMaxW || size < S(8)) {
+        const fit = fitParagraph(doc, s.tournament.venue, SANS, { maxSize: S(11), minSize: S(6), maxWidth: valueMaxW, maxLines: 2, maxHeight: bar.h + Y(10), lineGap: 1.15 });
         size = fit.size;
         lines = fit.lines;
       }
       const barH = Math.max(bar.h, lines.length * size * 1.15 + Y(3));
       venueBottom = bar.y + barH;
+      doc.rect(bar.x, bar.y, bar.w, barH).fill(WHITE);
       doc.rect(bar.x, bar.y, labelW, barH).fill(ink);
       doc.rect(bar.x, bar.y, bar.w, barH).lineWidth(S(1)).stroke(ink);
       const ls = fitLine(doc, c.labels.venue, SANS, S(14.2), 6, labelW - X(10));
@@ -266,20 +266,13 @@ export async function renderRraStandardV1(input: GenerateCertificateInput): Prom
       }
     }
 
-    // Signatories either side of the centred QR code. Two signers sit exactly
-    // where the reference has them; more split into a left zone (the extra
-    // one) and a right zone, each divided into equal columns.
+    // ── Signatories either side of the centred QR ─────────────────────────
     {
       const signers = s.signatories.slice(0, c.maxSignatories);
       const n = signers.length;
-      let slots: { cx: number; w: number }[];
-      if (n <= 2) {
-        slots = [{ cx: 156, w: 182 }, { cx: 492, w: 182 }].slice(0, n);
-      } else {
-        const zone = (x0: number, x1: number, count: number) =>
-          Array.from({ length: count }, (_, i) => ({ cx: x0 + ((x1 - x0) / count) * (i + 0.5), w: (x1 - x0) / count - 6 }));
-        slots = [...zone(40, 287, Math.ceil(n / 2)), ...zone(361, 608, Math.floor(n / 2))];
-      }
+      const zone = (x0: number, x1: number, count: number) =>
+        Array.from({ length: count }, (_, i) => ({ cx: x0 + ((x1 - x0) / count) * (i + 0.5), w: (x1 - x0) / count - 6 }));
+      const slots = n <= 2 ? [{ cx: 150, w: 200 }, { cx: 498, w: 200 }].slice(0, n) : [...zone(28, 290, Math.ceil(n / 2)), ...zone(358, 620, Math.floor(n / 2))];
       const imgTop = Math.max(Y(749), venueBottom + Y(2));
       const imgH = Math.max(Y(14), Y(788) - imgTop);
       signers.forEach((sig, i) => {
@@ -298,8 +291,8 @@ export async function renderRraStandardV1(input: GenerateCertificateInput): Prom
     }
 
     if (qrPng) {
-      const q = S(50);
-      doc.image(qrPng, A4.w / 2 - q / 2, Y(836) - q, { width: q, height: q });
+      const q = S(52);
+      doc.image(qrPng, A4.w / 2 - q / 2, Y(840) - q, { width: q, height: q });
     }
 
     // Preview stamp — never on an issued certificate.

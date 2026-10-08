@@ -5,7 +5,8 @@ import { requireAdminScope } from "@/security/rbac/admin-scope";
 import { PERMISSIONS } from "@/security/rbac/permissions";
 import { AppError } from "@/core/errors/app-error";
 import { assetUrl, getTemplate, listAssets } from "@/modules/certificates/certificate-template.service";
-import { DEFAULT_TEMPLATE_CONFIG, DATE_FORMATS, PLACEHOLDERS } from "@/services/certificates/templates/template-config";
+import { DEFAULT_TEMPLATE_CONFIG, DATE_FORMATS, OPTION_DISPLAYS, PLACEHOLDERS } from "@/services/certificates/templates/template-config";
+import { CERTIFICATE_LAYOUTS, DEFAULT_LAYOUT } from "@/services/certificates/templates/generate-certificate";
 import { CERTIFICATE_ACHIEVEMENTS } from "@/services/certificates/templates/positions";
 import { TemplateEditor } from "./template-editor";
 
@@ -51,6 +52,7 @@ export default async function CertificateTemplateEditPage({ params }: { params: 
                 name: template.name,
                 description: template.description,
                 version: template.version,
+                layout: template.layout,
                 locked: template._count.certificates > 0,
                 tournamentCount: template._count.tournaments,
                 config: template.config,
@@ -61,6 +63,9 @@ export default async function CertificateTemplateEditPage({ params }: { params: 
         assets={assets.map((a) => ({ id: a.id, name: a.name, category: a.category, isActive: a.isActive, url: assetUrl(a) }))}
         achievements={CERTIFICATE_ACHIEVEMENTS.map((a) => ({ code: a.code, label: a.label }))}
         dateFormats={Object.entries(DATE_FORMATS).map(([value, example]) => ({ value, example }))}
+        layouts={Object.entries(CERTIFICATE_LAYOUTS).map(([value, l]) => ({ value, label: l.label }))}
+        defaultLayout={DEFAULT_LAYOUT}
+        optionDisplays={Object.entries(OPTION_DISPLAYS).map(([value, label]) => ({ value, label }))}
         placeholders={PLACEHOLDERS}
       />
     </div>

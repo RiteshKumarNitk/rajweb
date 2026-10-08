@@ -122,7 +122,15 @@ async function assertAssetsUsable(config: CertificateTemplateConfig) {
 export interface TemplateInput {
   name: string;
   description?: string | null;
+  /** Design layout key; must be a registered layout. */
+  layout?: string;
   config: unknown;
+}
+
+function validLayout(layout: string | undefined, fallback: string): string {
+  const key = layout ?? fallback;
+  if (!(key in CERTIFICATE_LAYOUTS)) throw AppError.validation(`Unknown design layout "${key}"`);
+  return key;
 }
 
 function validConfig(value: unknown): CertificateTemplateConfig {
@@ -141,7 +149,7 @@ export async function createTemplate(input: TemplateInput, userId: string) {
       name: input.name,
       description: input.description ?? null,
       version: 1,
-      layout: DEFAULT_LAYOUT,
+      layout: validLayout(input.layout, DEFAULT_LAYOUT),
       config: config as unknown as Prisma.InputJsonValue,
       createdById: userId,
     },
@@ -162,7 +170,12 @@ export async function updateTemplate(id: string, input: TemplateInput) {
   await assertAssetsUsable(config);
   return prisma.certificateTemplate.update({
     where: { id },
-    data: { name: input.name, description: input.description ?? null, config: config as unknown as Prisma.InputJsonValue },
+    data: {
+      name: input.name,
+      description: input.description ?? null,
+      layout: validLayout(input.layout, existing.layout),
+      config: config as unknown as Prisma.InputJsonValue,
+    },
   });
 }
 
@@ -183,7 +196,7 @@ export async function createTemplateVersion(sourceId: string, input: TemplateInp
         name: input.name,
         description: input.description ?? null,
         version: (top._max.version ?? source.version) + 1,
-        layout: source.layout in CERTIFICATE_LAYOUTS ? source.layout : DEFAULT_LAYOUT,
+        layout: validLayout(input.layout, source.layout in CERTIFICATE_LAYOUTS ? source.layout : DEFAULT_LAYOUT),
         config: config as unknown as Prisma.InputJsonValue,
         isDefault: source.isDefault,
         createdById: userId,

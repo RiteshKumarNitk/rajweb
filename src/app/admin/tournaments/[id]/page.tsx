@@ -244,6 +244,7 @@ export default async function AdminTournamentDetailPage({
             settings={{
               certificateTemplateId: tournament.certificateTemplateId,
               certificateTitle: tournament.certificateTitle,
+              certificateTournamentHeading: tournament.certificateTournamentHeading,
               certificateOrganizedBy: tournament.certificateOrganizedBy,
               certificateRecognizedBy: tournament.certificateRecognizedBy,
               certificateIssueDate: tournament.certificateIssueDate

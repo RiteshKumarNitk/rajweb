@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Download, Eye } from "lucide-react";
+import { Download, Eye, FileText } from "lucide-react";
 import { Button } from "@/shared/components/ui/button";
 import { StatusBadge } from "@/shared/components/ui/status-badge";
 import { EmptyState } from "@/shared/components/ui/empty-state";
@@ -52,21 +52,33 @@ export function CertificateCollection({ certificates }: { certificates: OwnCerti
                 <dt className="text-slate-500">Issued</dt>
                 <dd className="font-semibold text-slate-900">{formatDate(c.issuedAt)}</dd>
               </div>
-              {c.position && (
+              {c.category && (
+                <div>
+                  <dt className="text-slate-500">Category</dt>
+                  <dd className="font-semibold text-slate-900">{c.category}</dd>
+                </div>
+              )}
+              {c.event && (
+                <div>
+                  <dt className="text-slate-500">Event</dt>
+                  <dd className="font-semibold text-slate-900">{c.event}</dd>
+                </div>
+              )}
+              {c.position && c.position !== c.typeLabel && (
                 <div className="col-span-2">
-                  <dt className="text-slate-500">Achievement</dt>
+                  <dt className="text-slate-500">Position</dt>
                   <dd className="font-semibold text-slate-900">{c.position}</dd>
                 </div>
               )}
             </dl>
             <div className="mt-auto flex flex-wrap gap-2 border-t border-slate-100 pt-3">
-              {c.viewUrl && (
+              {c.pdfViewUrl ? (
                 <Button size="sm" variant="outline" asChild>
-                  <Link href={c.viewUrl}>
-                    <Eye className="h-3.5 w-3.5" /> View Certificate
-                  </Link>
+                  <a href={c.pdfViewUrl} target="_blank" rel="noopener noreferrer">
+                    <Eye className="h-3.5 w-3.5" /> View PDF
+                  </a>
                 </Button>
-              )}
+              ) : null}
               {c.downloadUrl ? (
                 <Button size="sm" asChild>
                   <a href={c.downloadUrl}>
@@ -75,6 +87,11 @@ export function CertificateCollection({ certificates }: { certificates: OwnCerti
                 </Button>
               ) : (
                 <span className="self-center text-xs text-slate-400">{c.isRevoked ? "Revoked — no download" : "PDF not available"}</span>
+              )}
+              {c.viewUrl && (
+                <Link href={c.viewUrl} className="ml-auto inline-flex items-center gap-1 self-center text-xs font-semibold text-primary hover:underline">
+                  <FileText className="h-3.5 w-3.5" /> Details
+                </Link>
               )}
             </div>
           </div>

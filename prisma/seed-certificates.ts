@@ -5,19 +5,30 @@
  *
  * Installs ONLY what the certificate template system needs: the bundled
  * certificate images (certificate_assets → files under public/images/certificates/,
- * which ship with the app) and the default "RRA Standard Tournament Certificate"
- * v1. Idempotent: existing images are reused by path, and nothing is created
- * when any template already exists (design changes are new versions made in
- * the admin, never by this script). It never reads or writes users, roles,
- * states, districts, players, coaches, tournaments, orders, signatories or
- * certificates. The full development seed (prisma/seed.ts) calls the same
- * function.
+ * which ship with the app) and the "RRA Standard Tournament Certificate" on
+ * the A4 background design (layout rra-standard@2) as the default template.
+ *
+ * Idempotent:
+ *  - images are reused by path;
+ *  - no template family yet → creates it with the background design as v1;
+ *  - family exists without a background-design version → adds the NEXT
+ *    version (e.g. v2) with that design and makes it the default. Existing
+ *    versions are never edited (only the default flag moves), so certificates
+ *    issued with them keep their design. Tournaments that picked a version
+ *    explicitly keep it; tournaments on "Default template" get the new design;
+ *  - otherwise nothing changes.
+ * It never reads or writes users, roles, states, districts, players, coaches,
+ * tournaments, orders, signatories or certificates. The full development seed
+ * (prisma/seed.ts) calls the same function.
  */
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
-import { DEFAULT_TEMPLATE_CONFIG } from "../src/services/certificates/templates/template-config";
+import { DEFAULT_TEMPLATE_CONFIG, parseTemplateConfig } from "../src/services/certificates/templates/template-config";
+
+const FAMILY_ID = "rra-standard-tournament";
+const BACKGROUND_LAYOUT = "rra-standard@2";
 
 const CERTIFICATE_IMAGES = [
   { key: "rra", name: "Rajasthan Racquetball Association", category: "BRANDING", imagePath: "/images/certificates/rra-branding.png" },
@@ -28,6 +39,7 @@ const CERTIFICATE_IMAGES = [
   { key: "twg", name: "The World Games", category: "LOGO", imagePath: "/images/certificates/the-world-games.png" },
   { key: "oca", name: "Olympic Council of Asia", category: "LOGO", imagePath: "/images/certificates/oca.png" },
   { key: "emblem", name: "Racquetball emblem", category: "EMBLEM", imagePath: "/images/certificates/racquetball-emblem.png" },
+  { key: "background", name: "RRA A4 certificate background", category: "BRANDING", imagePath: "/images/certificates/background-a4.jpg" },
 ] as const;
 
 export async function seedCertificateTemplates(prisma: PrismaClient) {
@@ -42,27 +54,59 @@ export async function seedCertificateTemplates(prisma: PrismaClient) {
     }
   }
 
-  if ((await prisma.certificateTemplate.count()) > 0) {
-    console.log("Certificate templates already exist — left unchanged.");
+  // The background carries the logos and the map watermark; the emblem is drawn on top.
+  const backgroundDesign = (base: typeof DEFAULT_TEMPLATE_CONFIG) => ({
+    ...base,
+    frame: { ...base.frame, enabled: false },
+    logos: { left: [], center: null, right: [] },
+    watermark: { assetId: null, opacity: base.watermark.opacity },
+    emblemAssetId: assetIds.emblem,
+    backgroundAssetId: assetIds.background,
+    optionDisplay: "SELECTED" as const,
+  });
+
+  const family = await prisma.certificateTemplate.findMany({ where: { familyId: FAMILY_ID }, orderBy: { version: "desc" } });
+  if (family.length === 0) {
+    if ((await prisma.certificateTemplate.count()) > 0) {
+      console.log("Other certificate templates exist — RRA Standard not installed; add it from the admin if needed.");
+      return;
+    }
+    await prisma.certificateTemplate.create({
+      data: {
+        familyId: FAMILY_ID,
+        name: "RRA Standard Tournament Certificate",
+        description: "A4 portrait tournament certificate on the association's background artwork.",
+        version: 1,
+        layout: BACKGROUND_LAYOUT,
+        isDefault: true,
+        config: backgroundDesign(DEFAULT_TEMPLATE_CONFIG),
+      },
+    });
+    console.log("Certificate template created: RRA Standard Tournament Certificate v1 (background design, default)");
     return;
   }
-  await prisma.certificateTemplate.create({
-    data: {
-      familyId: "rra-standard-tournament",
-      name: "RRA Standard Tournament Certificate",
-      description: "A4 portrait tournament certificate — the association's reference design.",
-      version: 1,
-      layout: "rra-standard@1",
-      isDefault: true,
-      config: {
-        ...DEFAULT_TEMPLATE_CONFIG,
-        logos: { left: [assetIds.ira, assetIds.irf, assetIds.arf], center: assetIds.rra, right: [assetIds.ioc, assetIds.twg, assetIds.oca] },
-        emblemAssetId: assetIds.emblem,
-        watermark: { assetId: assetIds.rra, opacity: DEFAULT_TEMPLATE_CONFIG.watermark.opacity },
+  if (family.some((t) => t.layout === BACKGROUND_LAYOUT)) {
+    console.log("RRA Standard background design already installed — left unchanged.");
+    return;
+  }
+  const latest = family[0];
+  // Wording, labels, colours and positions carry over from the latest version.
+  const config = backgroundDesign(parseTemplateConfig(latest.config));
+  await prisma.$transaction([
+    prisma.certificateTemplate.updateMany({ where: { isDefault: true }, data: { isDefault: false } }),
+    prisma.certificateTemplate.create({
+      data: {
+        familyId: FAMILY_ID,
+        name: latest.name,
+        description: "A4 portrait tournament certificate on the association's background artwork.",
+        version: latest.version + 1,
+        layout: BACKGROUND_LAYOUT,
+        isDefault: true,
+        config,
       },
-    },
-  });
-  console.log("Certificate template created: RRA Standard Tournament Certificate v1 (default)");
+    }),
+  ]);
+  console.log(`Certificate template added: ${latest.name} v${latest.version + 1} (background design, now default); v${latest.version} unchanged`);
 }
 
 // Run directly (not when imported by prisma/seed.ts).
