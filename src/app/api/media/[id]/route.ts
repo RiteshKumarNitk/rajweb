@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/infrastructure/database/prisma";
 import { withApiHandler, AppError } from "@/core/api/with-api-handler";
-import { requireAuth, requirePermission } from "@/security/auth/session";
+import { requireAnyPermission, requireAuth, requirePermission } from "@/security/auth/session";
 import { PERMISSIONS, hasPermission } from "@/security/rbac/permissions";
 import { assertInScope } from "@/security/rbac/org-scope";
 
@@ -11,7 +11,9 @@ import { assertInScope } from "@/security/rbac/org-scope";
  * owning district/state in the caller's scope. A Government ID document is
  * served to the member who uploaded it, and otherwise only to someone who may
  * read the linked Player/Coach application (`players:read` / `coaches:read`)
- * within its district scope. Anything else: 404, like a missing file.
+ * within its district scope. Certificate images (logos, signatures) go to
+ * certificate admins — scoped ones only within their state/district.
+ * Anything else: 404, like a missing file.
  */
 export const GET = withApiHandler(
   async (_request, { params }) => {
@@ -44,6 +46,9 @@ export const GET = withApiHandler(
         if (!application || !hasPermission(user, permission)) throw AppError.notFound("File not found");
         assertInScope(user, { stateId: application.district.stateId, districtId: application.districtId }, "File not found");
       }
+    } else if (asset.kind === "CERTIFICATE_IMAGE") {
+      const user = await requireAnyPermission([PERMISSIONS.CERTIFICATES_READ, PERMISSIONS.CERTIFICATE_TEMPLATES_MANAGE]);
+      if (asset.stateId || asset.districtId) assertInScope(user, { stateId: asset.stateId, districtId: asset.districtId }, "File not found");
     } else if (!isPublic) {
       const user = await requirePermission(PERMISSIONS.EQUIPMENT_READ);
       assertInScope(user, { stateId: asset.stateId, districtId: asset.districtId }, "File not found");

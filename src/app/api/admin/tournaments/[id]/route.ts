@@ -20,6 +20,9 @@ const isValidUrl = (value: string) => {
 
 const updateTournamentSchema = z.object({
   name: z.string().min(3).max(200).optional(),
+  code: z
+    .union([z.string().trim().max(20).regex(/^[A-Za-z0-9-]*$/, "Code may use letters, digits and -"), z.null()])
+    .optional(),
   description: z.string().max(2000).optional(),
   category: z.enum(["JUNIOR", "SENIOR", "OPEN", "PROFESSIONAL"]).optional(),
   status: z.enum(["DRAFT", "REGISTRATION_OPEN", "REGISTRATION_CLOSED", "IN_PROGRESS", "COMPLETED", "CANCELLED"]).optional(),

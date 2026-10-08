@@ -15,6 +15,7 @@ import { apiPost, handleApiFetch } from "@/lib/api-client";
 const playerSchema = z.object({
   firstName: z.string().min(2, "First name is required"),
   lastName: z.string().min(2, "Last name is required"),
+  parentName: z.string().max(100).optional(),
   email: z.string().email("Please enter a valid email"),
   phone: z.string().min(10, "Please enter a valid phone number"),
   dateOfBirth: z.string().min(1, "Date of birth is required"),
@@ -46,6 +47,7 @@ export function PlayerRegistrationForm() {
     try {
       const response = await apiPost("/api/players/register", {
           name: `${data.firstName} ${data.lastName}`,
+          parentName: data.parentName?.trim() || undefined,
           dateOfBirth: data.dateOfBirth,
           gender: data.gender.toUpperCase(),
           email: data.email,
@@ -76,6 +78,10 @@ export function PlayerRegistrationForm() {
           <Input id="lastName" placeholder="Last name" {...register("lastName")} />
           {errors.lastName && <p className="text-sm text-secondary">{errors.lastName.message}</p>}
         </div>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="parentName">Father&apos;s / Mother&apos;s Name</Label>
+        <Input id="parentName" placeholder="As it should appear on certificates" {...register("parentName")} />
       </div>
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="space-y-2">

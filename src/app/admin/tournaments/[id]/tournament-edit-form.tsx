@@ -16,6 +16,7 @@ import { OwnerOptions, ownerValue, parseOwnerValue, type OwnerGroup } from "@/sh
 export interface TournamentDetail {
   id: string;
   name: string;
+  code: string | null;
   description: string | null;
   category: "JUNIOR" | "SENIOR" | "OPEN" | "PROFESSIONAL";
   status: "DRAFT" | "REGISTRATION_OPEN" | "REGISTRATION_CLOSED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
@@ -37,6 +38,7 @@ export interface TournamentDetail {
 
 interface TournamentFormData {
   name: string;
+  code: string;
   description: string;
   category: string;
   status: string;
@@ -76,6 +78,7 @@ export function TournamentEditForm({
   } = useForm<TournamentFormData>({
     defaultValues: {
       name: tournament.name,
+      code: tournament.code ?? "",
       description: tournament.description ?? "",
       category: tournament.category,
       status: tournament.status,
@@ -118,6 +121,7 @@ export function TournamentEditForm({
           // District admins cannot re-home a tournament: omit owner fields entirely.
           ...(lockedDistrictId ? { districtId: undefined } : parseOwnerValue(data.districtId) ?? { districtId: undefined }),
           maxParticipants: data.maxParticipants ? Number(data.maxParticipants) : null,
+          code: data.code.trim() || null,
           description: data.description.trim() || undefined,
           venue: data.venue.trim() || undefined,
           city: data.city.trim() || undefined,
@@ -146,6 +150,12 @@ export function TournamentEditForm({
             <Label htmlFor="name">Tournament Name</Label>
             <Input id="name" {...register("name", { required: true, minLength: 3 })} />
             {errors.name && <p className="text-sm text-secondary">Name is required</p>}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="code">Tournament Code</Label>
+            <Input id="code" maxLength={20} placeholder="e.g. 1OP" {...register("code", { pattern: /^[A-Za-z0-9-]*$/ })} />
+            {errors.code && <p className="text-sm text-secondary">Letters, digits and - only</p>}
+            <p className="text-xs text-slate-400">Short unique code, stored on this tournament&apos;s certificates.</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="description">Description</Label>

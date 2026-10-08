@@ -14,6 +14,7 @@ import { TournamentEditForm } from "./tournament-edit-form";
 import { CategoriesManager } from "./categories-manager";
 import { CertificatesPanel } from "./certificates-panel";
 import { applicableSignatoryWhere } from "@/modules/certificates/signatory.service";
+import { certificateOptions, tournamentIssueOptions } from "@/services/certificates/tournament-certificates.service";
 
 export default async function AdminTournamentDetailPage({
   params,
@@ -37,12 +38,12 @@ export default async function AdminTournamentDetailPage({
       include: {
         district: true,
         registrationCategories: { orderBy: { createdAt: "asc" } },
-        signatories: { orderBy: { sortOrder: "asc" }, select: { signatoryId: true } },
-        certificates: { select: { id: true, playerId: true, certificateNumber: true, pdfPath: true } },
+        signatories: { orderBy: { sortOrder: "asc" }, select: { signatoryId: true, title: true } },
+        certificates: { select: { id: true, playerId: true, certificateNumber: true, position: true, isRevoked: true } },
         registrations: {
           orderBy: { registeredAt: "desc" },
           include: {
-            player: { select: { name: true, playerId: true } },
+            player: { select: { name: true, playerId: true, parentName: true, category: true } },
             category: { select: { name: true } },
           },
         },
@@ -63,6 +64,19 @@ export default async function AdminTournamentDetailPage({
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
   const certByPlayer = new Map(tournament.certificates.map((c) => [c.playerId, c]));
+  const [templates, issueOptions] = await Promise.all([
+    prisma.certificateTemplate.findMany({
+      where: { OR: [{ status: "ACTIVE" }, ...(tournament.certificateTemplateId ? [{ id: tournament.certificateTemplateId }] : [])] },
+      orderBy: [{ name: "asc" }, { version: "desc" }],
+      select: { id: true, name: true, version: true, status: true, isDefault: true },
+    }),
+    tournamentIssueOptions(tournament.id),
+  ]);
+  // What the printed lists would be if left unconfigured (offered as suggestions).
+  const suggested = certificateOptions(
+    { certificateCategoryOptions: [], certificateEventOptions: [], registrationCategories: tournament.registrationCategories.filter((c) => c.isActive) },
+    tournament.registrations
+  );
 
   return (
     <div>
@@ -125,6 +139,7 @@ export default async function AdminTournamentDetailPage({
               tournament={{
                 id: tournament.id,
                 name: tournament.name,
+                code: tournament.code,
                 description: tournament.description,
                 category: tournament.category,
                 status: tournament.status,
@@ -226,25 +241,42 @@ export default async function AdminTournamentDetailPage({
           <CertificatesPanel
             tournamentId={tournament.id}
             status={tournament.status}
-            certificateTitle={tournament.certificateTitle}
-            certificateLogoUrl={tournament.certificateLogoUrl}
+            settings={{
+              certificateTemplateId: tournament.certificateTemplateId,
+              certificateTitle: tournament.certificateTitle,
+              certificateOrganizedBy: tournament.certificateOrganizedBy,
+              certificateRecognizedBy: tournament.certificateRecognizedBy,
+              certificateIssueDate: tournament.certificateIssueDate
+                ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(tournament.certificateIssueDate)
+                : null,
+              certificateNumberPrefix: tournament.certificateNumberPrefix,
+              certificateNumberStart: tournament.certificateNumberStart,
+              certificateNumberPadding: tournament.certificateNumberPadding,
+              certificateCategoryOptions: tournament.certificateCategoryOptions,
+              certificateEventOptions: tournament.certificateEventOptions,
+              signatories: tournament.signatories.map((s) => ({ signatoryId: s.signatoryId, title: s.title })),
+            }}
+            suggestedOptions={{ categories: suggested.categoryOptions, events: suggested.eventOptions }}
+            templates={templates.map((t) => ({ id: t.id, label: `${t.name} — v${t.version}${t.isDefault ? " (default)" : ""}${t.status !== "ACTIVE" ? " (deactivated)" : ""}`, isDefault: t.isDefault }))}
             availableSignatories={availableSignatories.map((s) => ({
               id: s.id,
               name: s.name,
               designation: s.designation,
               scopeName: s.district ? s.district.name : s.state ? s.state.name : "Federation level",
             }))}
-            assignedSignatoryIds={tournament.signatories.map((s) => s.signatoryId)}
+            issueOptions={issueOptions}
             candidates={tournament.registrations.map((r) => {
               const cert = certByPlayer.get(r.playerId);
               return {
                 playerId: r.playerId,
                 playerName: r.player.name,
                 playerCode: r.player.playerId,
-                categoryName: r.category?.name ?? null,
+                parentName: r.player.parentName,
+                registrationCategory: r.category?.name ?? null,
                 registrationStatus: r.status,
-                certificateNumber: cert?.certificateNumber ?? null,
-                pdfUrl: cert ? `/api/certificates/${cert.id}/pdf` : null,
+                certificate: cert
+                  ? { id: cert.id, number: cert.certificateNumber, position: cert.position, isRevoked: cert.isRevoked, pdfUrl: `/api/certificates/${cert.id}/pdf` }
+                  : null,
               };
             })}
             canManageSettings={canManage}

@@ -5,26 +5,19 @@ import { requirePermission } from "@/security/auth/session";
 import { PERMISSIONS } from "@/security/rbac/permissions";
 import { assertInScope } from "@/security/rbac/org-scope";
 import { createAuditLog } from "@/services/audit/audit-service";
-import { issueTournamentCertificates } from "@/services/certificates/certificate-service";
+import { issueTournamentCertificates } from "@/services/certificates/tournament-certificates.service";
+import { certificateEntrySchema } from "@/modules/certificates/certificate-entry.schema";
 
 const issueSchema = z.object({
-  entries: z
-    .array(
-      z.object({
-        playerId: z.string().min(1),
-        position: z.union([z.string().trim().max(120), z.literal(""), z.null()]).optional(),
-      })
-    )
-    .min(1)
-    .max(200),
+  entries: z.array(certificateEntrySchema).min(1).max(100),
 });
 
 /**
- * Generates tournament certificates for registered players. Authorisation:
- * certificates:issue + the tournament inside the caller's scope (a district
- * admin only for their own district's tournaments, a state admin within
- * their state, Super Admin anywhere). Tournament/eligibility rules live in
- * issueTournamentCertificates().
+ * Issues template certificates for registered players (one or many).
+ * Authorisation: certificates:issue + the tournament inside the caller's
+ * scope (district admin → own district's tournaments, state admin → own
+ * state, Super Admin → all). Every certificate is its own transaction; the
+ * response lists which were issued and which failed (and why).
  */
 export const POST = withApiHandler(
   async (request, { requestId, params }) => {
@@ -64,11 +57,11 @@ export const POST = withApiHandler(
     return jsonSuccess(
       {
         issued: result.issued.map((c) => ({ ...c, pdfUrl: `/api/certificates/${c.id}/pdf` })),
-        skipped: result.skipped,
+        failed: result.failed,
       },
       requestId,
-      `${result.issued.length} certificate(s) issued${result.skipped.length ? `, ${result.skipped.length} skipped` : ""}`
+      `${result.issued.length} certificate(s) issued${result.failed.length ? `, ${result.failed.length} not issued` : ""}`
     );
   },
-  { module: "admin-tournament-certificates", requireCsrf: true, rateLimit: { limit: 20, windowMs: 60000 } }
+  { module: "admin-tournament-certificates", requireCsrf: true, rateLimit: { limit: 30, windowMs: 60000 } }
 );

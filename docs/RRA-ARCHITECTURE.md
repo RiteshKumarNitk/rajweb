@@ -488,3 +488,22 @@ To replace an image: add it under `public/images/`, update the path in `site.ts`
 - **Order model** (`modules/equipment/purchase.service.ts`): `paymentStatus` (PENDING/PAID/FAILED/CANCELLED/REFUNDED) is separate from the fulfilment `status` (PENDING_PAYMENT → PLACED → CONFIRMED → PROCESSING → SHIPPED → DELIVERED, or CANCELLED while unpaid; legacy PAID/COMPLETED read as PLACED/DELIVERED). Each step has a timestamp; SHIPPED stores courier/tracking. Buyer, delivery and item snapshots are written at order time.
 - **Payments** (`modules/payments/payment-provider.ts`): a `PaymentProvider` interface (`createOrder`, `verifySignature`) with one implementation — the dummy Razorpay-style test gateway. Its signing key is derived server-side from the auth secret. `verifyAndMarkPaid()` remains the only place an order becomes paid. A real Razorpay provider can replace the dummy without changing callers; `PAYMENT_PROVIDER=disabled` switches payments off.
 - **Uploads** are stored in `MediaAsset` (database bytes) and served by `/api/media/{id}` — chosen because Vercel has no persistent disk.
+
+## 17. Certificate Templates (2026-10-08)
+
+```text
+CertificateTemplate (family + version, layout key, structured config)
+  → Tournament settings (template, organisers, numbering, option lists, signatories + printed titles)
+  → registration / player → category · event · achievement
+  → CertificateSnapshot (immutable JSON on player_certificates.snapshot)
+  → generateCertificate(snapshot, loaded images) → stored PDF (write-once)
+  → player vault · public verification (/verify?qrCode=…)
+```
+
+- **Data vs drawing.** `services/certificates/tournament-certificates.service.ts` loads data, builds the snapshot, allocates numbers and stores PDFs. `services/certificates/templates/generate-certificate.ts` dispatches on the snapshot's `layout` key to a pure renderer (`rra-standard-v1.ts`) that never queries the database.
+- **Versioning.** A design change is a new layout key (e.g. `rra-standard@2`) plus a new template version; existing layout code is never altered. A template version with issued certificates cannot be edited — changes become version N+1. Old certificates keep `templateVersion` and their config copy in the snapshot.
+- **Numbering.** `certificate_number_sequences` holds the last serial per prefix; one `INSERT … ON CONFLICT DO UPDATE … RETURNING` inside the same transaction that inserts the certificate, so concurrent issues serialise on the row and a rolled-back issue consumes no number. `certificateNumber` stays globally unique as the final guard.
+- **Positions** are a registry (`templates/positions.ts`); adding a type is one entry. Templates choose which codes their POSITION row prints.
+- **Legacy.** Certificates without `snapshot` render with the original renderer in `certificate-service.ts`.
+- **Fonts** (Open Sans Bold, Pacifico — OFL) live in `services/certificates/fonts/` and are shipped with `/api/**` via `outputFileTracingIncludes`.
+

@@ -13,9 +13,10 @@ import { getPlayerCertificatePdf } from "@/services/certificates/certificate-ser
  * `certificates:read` whose scope covers it (a tournament certificate belongs
  * to the tournament's state/district, a registration certificate to the
  * player's district). Everyone else gets 404 — no existence oracle.
+ * `?view=1` opens the same PDF in the browser instead of downloading it.
  */
 export const GET = withApiHandler(
-  async (_request, { params }) => {
+  async (request, { params }) => {
     const user = await requireAuth();
     const id = String(params?.id ?? "");
     if (!/^[a-z0-9]{10,40}$/i.test(id)) throw AppError.notFound("Certificate not found");
@@ -45,7 +46,7 @@ export const GET = withApiHandler(
     return new NextResponse(new Uint8Array(pdf.data), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${pdf.fileName.replace(/[^\w.-]+/g, "_")}"`,
+        "Content-Disposition": `${new URL(request.url).searchParams.get("view") === "1" ? "inline" : "attachment"}; filename="${pdf.fileName.replace(/[^\w.-]+/g, "_")}"`,
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
       },

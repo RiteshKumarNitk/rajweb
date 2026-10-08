@@ -14,6 +14,7 @@ export const getOwnPlayer = cache(async (userId: string | null | undefined) => {
       id: true,
       playerId: true,
       name: true,
+      parentName: true,
       dateOfBirth: true,
       gender: true,
       email: true,

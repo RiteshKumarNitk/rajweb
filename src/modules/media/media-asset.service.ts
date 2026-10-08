@@ -1,12 +1,14 @@
 import prisma from "@/infrastructure/database/prisma";
 import { AppError } from "@/core/errors/app-error";
 
-export type MediaKind = "EQUIPMENT_IMAGE" | "REQUIREMENT_ATTACHMENT" | "GOVERNMENT_ID";
+export type MediaKind = "EQUIPMENT_IMAGE" | "REQUIREMENT_ATTACHMENT" | "GOVERNMENT_ID" | "CERTIFICATE_IMAGE";
 
 const LIMITS: Record<MediaKind, { maxBytes: number; types: string[] }> = {
   EQUIPMENT_IMAGE: { maxBytes: 2 * 1024 * 1024, types: ["image/png", "image/jpeg", "image/webp"] },
   REQUIREMENT_ATTACHMENT: { maxBytes: 4 * 1024 * 1024, types: ["image/png", "image/jpeg", "image/webp", "application/pdf"] },
   GOVERNMENT_ID: { maxBytes: 5 * 1024 * 1024, types: ["image/png", "image/jpeg", "image/webp", "application/pdf"] },
+  // Embedded into certificate PDFs — PDFKit takes PNG/JPEG only.
+  CERTIFICATE_IMAGE: { maxBytes: 2 * 1024 * 1024, types: ["image/png", "image/jpeg"] },
 };
 
 /** File type from the content itself (magic bytes) — the client-declared type is never trusted. */
@@ -34,7 +36,11 @@ export async function createMediaAsset(input: {
   const mimeType = sniffMimeType(input.bytes);
   if (!mimeType || !limit.types.includes(mimeType)) {
     throw AppError.validation(
-      input.kind === "EQUIPMENT_IMAGE" ? "Upload a PNG, JPEG or WebP image" : "Upload a PNG, JPEG, WebP image or a PDF"
+      input.kind === "EQUIPMENT_IMAGE"
+        ? "Upload a PNG, JPEG or WebP image"
+        : input.kind === "CERTIFICATE_IMAGE"
+          ? "Upload a PNG or JPEG image (transparent PNG works best)"
+          : "Upload a PNG, JPEG, WebP image or a PDF"
     );
   }
   return prisma.mediaAsset.create({

@@ -136,6 +136,7 @@ export default async function AccountPlayerPage() {
               prefill={{ name: player.name, email: player.email, phone: player.mobile }}
               resubmit={{
                 id: player.id,
+                parentName: player.parentName ?? "",
                 dateOfBirth: player.dateOfBirth.toISOString().slice(0, 10),
                 gender: player.gender,
                 stateId: player.district.stateId ?? "",
@@ -174,6 +175,7 @@ export default async function AccountPlayerPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Section title="Personal Information" icon={UserCheck}>
           <Field label="Full Name" value={player.name} />
+          <Field label="Father's / Mother's Name" value={player.parentName || "Not provided"} />
           <Field label="Date of Birth" value={formatDate(player.dateOfBirth)} />
           <Field label="Gender" value={GENDER_LABELS[player.gender] ?? player.gender} />
           <Field label="Email" value={player.email} />

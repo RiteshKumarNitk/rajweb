@@ -2,13 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
-import { ArrowLeft, Award, Download, ShieldCheck, PenLine } from "lucide-react";
+import { ArrowLeft, Award, Download, Eye, ShieldCheck, PenLine } from "lucide-react";
 import prisma from "@/infrastructure/database/prisma";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Button } from "@/shared/components/ui/button";
 import { StatusBadge } from "@/shared/components/ui/status-badge";
 import { formatDate } from "@/lib/utils";
 import { certificateVerificationUrl } from "@/modules/verify/verification-url";
+import { isCertificateSnapshot } from "@/services/certificates/templates/certificate-snapshot";
 import { requireOwnPlayer } from "../../require-own-player";
 import { certificateKind, certificateStatus, certificateTitle } from "../certificate-status";
 
@@ -47,6 +48,13 @@ export default async function PlayerCertificatePage({ params }: { params: Promis
       position: true,
       signatories: true,
       recipientName: true,
+      parentName: true,
+      categoryName: true,
+      eventLabel: true,
+      tournamentCode: true,
+      templateVersion: true,
+      template: { select: { name: true } },
+      snapshot: true,
       issuedAt: true,
       expiresAt: true,
       isRevoked: true,
@@ -58,7 +66,8 @@ export default async function PlayerCertificatePage({ params }: { params: Promis
   if (!c) notFound();
 
   const status = certificateStatus(c);
-  const verifyUrl = certificateVerificationUrl(c.qrCode);
+  // The QR printed on the PDF: the snapshot's (template certificates) or rebuilt for older ones.
+  const verifyUrl = isCertificateSnapshot(c.snapshot) ? c.snapshot.verification.url : certificateVerificationUrl(c.qrCode);
   const qrImage = await QRCode.toDataURL(verifyUrl, { width: 160 });
   const signatories = (Array.isArray(c.signatories) ? c.signatories : []) as Signatory[];
   const eventDates =
@@ -78,7 +87,13 @@ export default async function PlayerCertificatePage({ params }: { params: Promis
     ["State", c.stateName ?? "—"],
     ["District", c.districtName ?? "—"],
     ["Player Name", c.recipientName ?? player.name],
-    ...(c.position ? ([["Achievement", c.position]] as Array<[string, React.ReactNode]>) : []),
+    ...(c.parentName ? ([["Son / Daughter of", c.parentName]] as Array<[string, React.ReactNode]>) : []),
+    ...(c.categoryName ? ([["Category", c.categoryName]] as Array<[string, React.ReactNode]>) : []),
+    ...(c.eventLabel ? ([["Event", c.eventLabel]] as Array<[string, React.ReactNode]>) : []),
+    ...(c.position ? ([["Position", c.position]] as Array<[string, React.ReactNode]>) : []),
+    ...(c.template && c.templateVersion
+      ? ([["Design", `${c.template.name} v${c.templateVersion}`]] as Array<[string, React.ReactNode]>)
+      : []),
     ["Issued", formatDate(c.issuedAt)],
     ["Valid Until", c.expiresAt ? formatDate(c.expiresAt) : "No expiry"],
     ["Status", <StatusBadge key="s" status={status.status} label={status.label} />],
@@ -150,11 +165,18 @@ export default async function PlayerCertificatePage({ params }: { params: Promis
             <p className="break-all text-xs text-slate-500">{verifyUrl}</p>
             <div className="flex flex-col gap-2">
               {!c.isRevoked && (
-                <Button asChild>
-                  <a href={`/api/certificates/${c.id}/pdf`}>
-                    <Download className="h-4 w-4" /> Download PDF
-                  </a>
-                </Button>
+                <>
+                  <Button variant="outline" asChild>
+                    <a href={`/api/certificates/${c.id}/pdf?view=1`} target="_blank" rel="noopener noreferrer">
+                      <Eye className="h-4 w-4" /> View PDF
+                    </a>
+                  </Button>
+                  <Button asChild>
+                    <a href={`/api/certificates/${c.id}/pdf`}>
+                      <Download className="h-4 w-4" /> Download PDF
+                    </a>
+                  </Button>
+                </>
               )}
             </div>
           </CardContent>

@@ -4,7 +4,10 @@ const imageRef = z
   .string()
   .trim()
   .max(500)
-  .refine((v) => v.startsWith("/images/") || /^https:\/\//i.test(v), "Signature image must be a /images/... path or an https URL");
+  .refine(
+    (v) => v.startsWith("/images/") || /^\/api\/media\/[a-z0-9]{10,40}$/i.test(v) || /^https:\/\//i.test(v),
+    "Signature image must be an uploaded image, a /images/... path or an https URL"
+  );
 
 const optionalText = (max: number) =>
   z

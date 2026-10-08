@@ -13,6 +13,11 @@ const nextConfig: NextConfig = {
   // every certificate PDF failed with ENOENT, so it must stay a real
   // node_modules dependency on the server.
   serverExternalPackages: ["pdfkit"],
+  // Certificate PDFs read their embedded fonts and bundled images from disk
+  // at runtime (fs, not imports), so ship them with the API routes.
+  outputFileTracingIncludes: {
+    "/api/**": ["./src/services/certificates/fonts/**", "./public/images/certificates/**"],
+  },
   poweredByHeader: false,
   reactStrictMode: true,
   compress: true,

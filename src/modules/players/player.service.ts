@@ -17,6 +17,8 @@ const log = createModuleLogger("players");
 
 export interface RegisterPlayerInput extends GovernmentIdInput {
   name: string;
+  /** Father's / mother's / guardian's name (printed on tournament certificates). */
+  parentName?: string;
   dateOfBirth: string;
   gender: Gender;
   email: string;
@@ -41,6 +43,7 @@ export async function registerPlayer(input: RegisterPlayerInput) {
   const data = {
     playerId: generateId("PLR"),
     name: sanitizeText(input.name),
+    parentName: input.parentName?.trim() ? sanitizeText(input.parentName) : undefined,
     dateOfBirth: new Date(input.dateOfBirth),
     gender: input.gender,
     email: sanitizeEmail(input.email),
@@ -85,6 +88,7 @@ export async function approvePlayer(playerId: string, approvedBy: string) {
 
 export interface ResubmitPlayerInput extends GovernmentIdInput {
   name: string;
+  parentName?: string;
   dateOfBirth: string;
   gender: Gender;
   email: string;
@@ -118,6 +122,7 @@ export async function resubmitPlayer(playerId: string, userId: string, input: Re
       where: { id: playerId, userId, status: "REJECTED" },
       data: {
         name: sanitizeText(input.name),
+        parentName: input.parentName?.trim() ? sanitizeText(input.parentName) : null,
         dateOfBirth: new Date(input.dateOfBirth),
         gender: input.gender,
         email: sanitizeEmail(input.email),

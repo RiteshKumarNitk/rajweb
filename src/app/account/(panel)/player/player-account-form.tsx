@@ -21,6 +21,7 @@ import { apiPost, handleApiFetch } from "@/lib/api-client";
 
 const playerShape = {
   name: z.string().min(2, "Name is required"),
+  parentName: z.string().max(100).optional(),
   email: z.string().email("Enter a valid email"),
   mobile: z.string().min(10, "Enter a valid phone number"),
   dateOfBirth: z.string().min(1, "Date of birth is required"),
@@ -47,6 +48,7 @@ export interface PlayerPrefill {
 
 export interface PlayerResubmitData {
   id: string;
+  parentName: string;
   dateOfBirth: string;
   gender: "MALE" | "FEMALE" | "OTHER";
   stateId: string;
@@ -77,6 +79,7 @@ export function PlayerAccountForm({
     resolver: zodResolver(schema),
     defaultValues: {
       name: prefill.name,
+      parentName: resubmit?.parentName ?? "",
       email: prefill.email,
       mobile: prefill.phone,
       gender: resubmit?.gender ?? prefill.gender ?? "MALE",
@@ -125,6 +128,7 @@ export function PlayerAccountForm({
         errors={errors}
         fields={[
           { name: "name", label: "Full Name", placeholder: "Your full name" },
+          { name: "parentName", label: "Father's / Mother's Name", placeholder: "As it should appear on certificates" },
           { name: "email", label: "Email", type: "email" },
           { name: "mobile", label: "Mobile Number", type: "tel", placeholder: "10-digit mobile number" },
           { name: "dateOfBirth", label: "Date of Birth", type: "date" },

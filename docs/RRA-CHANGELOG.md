@@ -652,6 +652,37 @@ Every member route resolves ownership from the session; certificate PDFs, docume
 
 ---
 
+## Certificate Template System — 2026-10-08
+
+### Summary
+Tournament certificates are rendered from one reusable, versioned template (RRA Standard Tournament Certificate, A4 portrait, matching the association's reference design) filled with tournament, player, category/event/position and signatory data. Every certificate stores an immutable snapshot and its PDF is always rendered from that snapshot.
+
+### Features Added
+- Templates with versions (`/admin/certificates/templates`): structured editor (logos, emblem, watermark, wording with `{{placeholders}}`, labels, colours, printed positions, signature count), preview, duplicate, new version, (de)activate, default. A version with issued certificates is locked.
+- Certificate image library on the existing media storage (`MediaAsset` kind `CERTIFICATE_IMAGE`); the reference logos are bundled under `public/images/certificates/`.
+- Per-tournament settings: template, heading, Organized By, Recognized By, issue date, numbering (prefix / start / padding), printed category and event lists, signatories with a per-tournament printed designation; tournament code.
+- Automatic numbering (`RRA/STC/1OP/01` …), allocated atomically per prefix.
+- Issue screen: per-player category / event / position, bulk apply, preview with real data, chunked bulk issue with an issued / not-issued report.
+- Player parent name (registration, resubmission, profile, admin review); player vault shows the achievement type; inline "View PDF".
+- Signature image upload for signatories (optional).
+
+### Database Changes (additive)
+`players.parentName`; `tournaments.code` (unique) and `certificate*` settings columns; `tournament_signatories.title`; `player_certificates.templateId/templateVersion/parentName/categoryName/eventLabel/achievement/tournamentCode/snapshot`; tables `certificate_templates`, `certificate_assets`, `certificate_number_sequences`; enum values `MediaAssetKind.CERTIFICATE_IMAGE`, `CertificateTemplateStatus`. **Production (applied 2026-10-08):** the reviewed additive SQL was applied with `prisma db execute` (`db push` stops on its generic warning for the new unique index on the brand-new, all-NULL `tournaments.code`), then `npm run db:seed:certificates` — the certificate-only bootstrap (8 images + template v1; idempotent; touches no users, roles, players, tournaments, signatories or certificates). **Never run the full `npm run db:seed` against production** — it creates demo accounts and records. Existing certificates are untouched and keep rendering with the previous renderer.
+
+### API Changes
+New: `POST /api/admin/tournaments/{id}/certificates/preview`, `POST /api/admin/certificate-templates`, `PATCH /api/admin/certificate-templates/{id}`, `GET /api/admin/certificate-templates/{id}/preview`, `POST /api/admin/certificate-assets`, `PATCH /api/admin/certificate-assets/{id}`. Changed: `POST /api/admin/tournaments/{id}/certificates` (entries carry category / event / achievement / parentName; response `issued` + `failed`), `PUT …/certificate-settings` (all certificate settings), `PATCH /api/admin/tournaments/{id}` (`code`), `GET /api/certificates/{id}/pdf` (`?view=1`).
+
+### Security Changes
+New permission `certificate-templates:manage` (Super Admin by default). Issuing and previews keep `certificates:issue` + tournament scope; PDF access unchanged (owner or in-scope admin). Certificate images are served only to certificate admins.
+
+### Testing
+End-to-end on a local database: 2 tournaments, 9 players (short/long names, missing parent name, 7 districts), all four positions, different categories/events/signatories/template versions, concurrent issuing, failure mid-batch, signatory rename/deactivate/delete, legacy certificate, QR decoding, role-based HTTP access.
+
+### Known Limitations
+Registration (non-tournament) and coach certificates still use the previous renderer. Bundled `/images/` files referenced by a snapshot should not be overwritten in place (add a new file instead).
+
+---
+
 ## Upcoming (not started)
 
 Phases J–U are PLANNED — see [RRA-PROJECT-STATUS.md §10](RRA-PROJECT-STATUS.md#10-remaining-roadmap). Add an entry here using the template below when each lands:

@@ -7,7 +7,7 @@ export interface OwnCertificate {
   certificateNumber: string;
   /** e.g. "Certificate of Participation" / "Certificate of Registration". */
   title: string;
-  /** "Tournament Certificate", "Registration Certificate", "Coach Certificate". */
+  /** "Participation" / "1st Place" … for template certificates; else "Tournament Certificate", "Registration Certificate", "Coach Certificate". */
   typeLabel: string;
   tournamentName: string | null;
   tournamentId: string | null;
@@ -40,6 +40,9 @@ export async function getOwnCertificates(userId: string, opts: { kinds?: Array<"
                 tournamentId: true,
                 eventName: true,
                 position: true,
+                achievement: true,
+                categoryName: true,
+                eventLabel: true,
                 issuedAt: true,
                 expiresAt: true,
                 isRevoked: true,
@@ -68,11 +71,14 @@ export async function getOwnCertificates(userId: string, opts: { kinds?: Array<"
       id: c.id,
       kind: "player" as const,
       certificateNumber: c.certificateNumber,
-      title: c.title ?? (c.tournamentId ? "Tournament Certificate" : "Certificate of Registration"),
-      typeLabel: c.tournamentId ? "Tournament Certificate" : "Registration Certificate",
+      // Template certificates: the type IS the achievement; the subtitle is what was ticked.
+      title: c.achievement
+        ? [c.categoryName, c.eventLabel].filter(Boolean).join(" · ") || "Tournament Certificate"
+        : c.title ?? (c.tournamentId ? "Tournament Certificate" : "Certificate of Registration"),
+      typeLabel: c.achievement ? c.position ?? "Tournament Certificate" : c.tournamentId ? "Tournament Certificate" : "Registration Certificate",
       tournamentName: c.eventName ?? c.tournament?.name ?? null,
       tournamentId: c.tournamentId,
-      position: c.position,
+      position: c.achievement ? null : c.position,
       issuedAt: c.issuedAt,
       expiresAt: c.expiresAt,
       isRevoked: c.isRevoked,

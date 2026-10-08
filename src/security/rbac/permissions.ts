@@ -55,6 +55,8 @@ export const PERMISSIONS = {
   // Certificates
   CERTIFICATES_READ: "certificates:read",
   CERTIFICATES_ISSUE: "certificates:issue",
+  // Certificate templates + their image library (designs used by every scope).
+  CERTIFICATE_TEMPLATES_MANAGE: "certificate-templates:manage",
   // States (organisational hierarchy: State -> District)
   STATES_READ: "states:read",
   STATES_MANAGE: "states:manage",

@@ -59,6 +59,24 @@ function SignatoryModal({
             : ""
   );
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  async function uploadSignature(file: File) {
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.set("file", file);
+      form.set("purpose", "signature");
+      const res = await apiFetch("/api/admin/certificate-assets", { method: "POST", body: form });
+      const { data } = await handleApiFetch<{ url: string }>(res);
+      setSignatureImageUrl(data.url);
+      toast.success("Signature image uploaded — save to apply");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   async function save() {
     setSaving(true);
@@ -117,14 +135,33 @@ function SignatoryModal({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="sig-image">Signature image (optional)</Label>
+            <div className="flex items-center gap-2">
+              {signatureImageUrl.startsWith("/api/media/") || signatureImageUrl.startsWith("/images/") ? (
+                // eslint-disable-next-line @next/next/no-img-element -- admin preview of the signature image
+                <img src={signatureImageUrl} alt="Signature" className="h-10 w-24 rounded border border-slate-200 object-contain" />
+              ) : null}
+              <Input
+                id="sig-image"
+                value={signatureImageUrl}
+                maxLength={500}
+                placeholder="Upload, or /images/… path / https link"
+                onChange={(e) => setSignatureImageUrl(e.target.value)}
+              />
+            </div>
             <Input
-              id="sig-image"
-              value={signatureImageUrl}
-              maxLength={500}
-              placeholder="/images/signatures/president.png or https://…"
-              onChange={(e) => setSignatureImageUrl(e.target.value)}
+              type="file"
+              accept="image/png,image/jpeg"
+              aria-label="Upload signature image"
+              disabled={uploading}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void uploadSignature(file);
+              }}
             />
-            <p className="text-xs text-slate-500">PNG or JPEG. A /images/… path is most reliable; https links that redirect are skipped.</p>
+            <p className="text-xs text-slate-500">
+              Optional — without an image the certificate shows the typed name only. Transparent PNG works best. Issued certificates keep the image they were
+              signed with.
+            </p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -155,7 +192,7 @@ function SignatoryModal({
           <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={save} disabled={saving || name.trim().length < 2 || designation.trim().length < 2}>
+          <Button onClick={save} disabled={saving || uploading || name.trim().length < 2 || designation.trim().length < 2}>
             {saving ? "Saving…" : row ? "Save changes" : "Add signatory"}
           </Button>
         </div>

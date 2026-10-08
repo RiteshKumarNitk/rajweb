@@ -2,6 +2,7 @@ import prisma from "@/infrastructure/database/prisma";
 import { AppError } from "@/core/errors/app-error";
 import { createModuleLogger } from "@/core/logger";
 import { certificateVerificationUrl } from "./verification-url";
+import { isCertificateSnapshot } from "@/services/certificates/templates/certificate-snapshot";
 
 const log = createModuleLogger("verify");
 
@@ -291,6 +292,11 @@ function formatPlayerCert(cert: {
   stateName?: string | null;
   position?: string | null;
   signatories?: unknown;
+  recipientName?: string | null;
+  parentName?: string | null;
+  categoryName?: string | null;
+  eventLabel?: string | null;
+  snapshot?: unknown;
   player: {
     name: string;
     playerId: string;
@@ -299,6 +305,8 @@ function formatPlayerCert(cert: {
   };
 }): CertificateVerificationResult {
   const isTournament = Boolean(cert.tournamentId);
+  // Template certificates verify exactly what was printed (their snapshot).
+  const snapshot = isCertificateSnapshot(cert.snapshot) ? cert.snapshot : null;
   const district = cert.districtName ?? cert.player.district.name;
   const stateName = cert.stateName ?? cert.player.district.state?.name ?? undefined;
   const signatoryList = signatoryListFrom(cert.signatories);
@@ -312,15 +320,16 @@ function formatPlayerCert(cert: {
   return {
     valid: true,
     certificateNumber: cert.certificateNumber,
-    name: cert.player.name,
+    name: snapshot?.player.name ?? cert.recipientName ?? cert.player.name,
+    ...(snapshot?.player.parentName ? { fatherName: snapshot.player.parentName } : {}),
     title: cert.title ?? (isTournament ? "Certificate of Participation" : "Certificate of Registration"),
     championshipName: isTournament ? cert.eventName ?? "Tournament" : cert.title ?? "Player Registration",
-    organizedBy: stateName ? `${district}, ${stateName}` : district,
-    recognizedBy: [],
+    organizedBy: snapshot?.tournament.organizedBy ?? (stateName ? `${district}, ${stateName}` : district),
+    recognizedBy: snapshot?.tournament.recognizedBy ?? [],
     district,
     stateName,
-    category: cert.player.category ?? "",
-    event: isTournament ? cert.eventName ?? "" : "Player Registration",
+    category: snapshot ? cert.categoryName ?? "" : cert.player.category ?? "",
+    event: snapshot ? cert.eventLabel ?? "" : isTournament ? cert.eventName ?? "" : "Player Registration",
     position: cert.position ?? "",
     type: isTournament ? "championship" : "player",
     venue: cert.venue ?? undefined,
@@ -328,7 +337,11 @@ function formatPlayerCert(cert: {
     issuedAt: cert.issuedAt,
     expiresAt: cert.expiresAt,
     playerId: cert.player.playerId,
-    ...(cert.qrCode ? { verificationUrl: certificateVerificationUrl(cert.qrCode) } : {}),
+    ...(snapshot
+      ? { verificationUrl: snapshot.verification.url }
+      : cert.qrCode
+        ? { verificationUrl: certificateVerificationUrl(cert.qrCode) }
+        : {}),
     ...(signatoryList ? { signatoryList } : {}),
     // Legacy pair: shown only for certificates issued before signatory snapshots.
     signatories: OFFICIAL_SIGNATORIES,

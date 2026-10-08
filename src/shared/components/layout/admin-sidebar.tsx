@@ -109,6 +109,7 @@ const navSections: NavGroup[] = [
       { name: "Tournaments", href: "/admin/tournaments", icon: Trophy, permission: PERMISSIONS.TOURNAMENTS_READ },
       { name: "Certificates", href: "/admin/certificates", icon: Award, permission: PERMISSIONS.CERTIFICATES_READ },
       { name: "Signatories", href: "/admin/certificates/signatories", icon: PenTool, permission: PERMISSIONS.CERTIFICATES_READ },
+      { name: "Certificate Templates", href: "/admin/certificates/templates", icon: Award, permission: PERMISSIONS.CERTIFICATES_READ },
       { name: "Equipment Orders", href: "/admin/equipment-orders", icon: ShoppingBag, permission: PERMISSIONS.EQUIPMENT_READ },
     ],
   },

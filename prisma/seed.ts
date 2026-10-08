@@ -6,6 +6,7 @@ import { Pool } from "pg";
 import { ROLES, PERMISSIONS, ROLE_PERMISSIONS } from "../src/security/rbac/permissions";
 import { rajasthanDistricts } from "../src/shared/config/site";
 import { OFFICIAL_SIGNATORIES } from "../src/modules/verify/verify.types";
+import { seedCertificateTemplates } from "./seed-certificates";
 
 // Seed DATA for the association's founding state. Application logic never
 // refers to a specific state — further states are added via /admin/states.
@@ -149,6 +150,9 @@ async function main() {
     }
     console.log(`Created ${officials.length} state-level certificate signatories for ${foundingState.name}`);
   }
+
+  // Certificate image library + default template (same code as `npm run db:seed:certificates`).
+  await seedCertificateTemplates(prisma);
 
   await Promise.all(
     rajasthanDistricts.map((name, index) => {

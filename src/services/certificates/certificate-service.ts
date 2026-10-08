@@ -8,6 +8,8 @@ import { loadCertificateImage } from "@/services/certificates/certificate-images
 import { createModuleLogger } from "@/core/logger";
 import { siteConfig } from "@/shared/config/site";
 import { certificateVerificationUrl } from "@/modules/verify/verification-url";
+import { isCertificateSnapshot } from "@/services/certificates/templates/certificate-snapshot";
+import { certificatePdfFileName, renderSnapshotPdf } from "@/services/certificates/tournament-certificates.service";
 
 const log = createModuleLogger("certificates");
 
@@ -303,154 +305,9 @@ export async function issuePlayerCertificate(playerId: string, issuedById: strin
 }
 
 // ─── Tournament certificates ────────────────────────────────────────────────
-
-export interface TournamentCertificateEntry {
-  playerId: string;
-  /** Optional achievement printed on the certificate, e.g. "Winner — Senior Singles". */
-  position?: string | null;
-}
-
-export interface TournamentCertificateResult {
-  issued: { id: string; playerId: string; playerName: string; certificateNumber: string; pdfPath: string | null }[];
-  skipped: { playerId: string; reason: string }[];
-}
-
-const ELIGIBLE_REGISTRATION_STATUSES = ["PENDING", "APPROVED"] as const;
-
-/**
- * Issues certificates for one tournament. Server-enforced rules:
- *  - the tournament must be COMPLETED (no certificates for unfinished events);
- *  - it must have at least one active signatory assigned;
- *  - each player must hold a (non-rejected) registration for THIS tournament;
- *  - one certificate per player per tournament (DB unique + pre-check).
- * Everything printed is snapshotted from this tournament, so certificates of
- * different tournaments never share titles, signers, dates or numbers.
- * The caller must already have checked the tournament is in the admin's scope.
- */
-export async function issueTournamentCertificates(
-  tournamentId: string,
-  entries: TournamentCertificateEntry[],
-  issuedById: string
-): Promise<TournamentCertificateResult> {
-  const tournament = await prisma.tournament.findUnique({
-    where: { id: tournamentId },
-    include: {
-      district: { select: { name: true } },
-      state: { select: { name: true } },
-      signatories: {
-        where: { signatory: { isActive: true } },
-        orderBy: { sortOrder: "asc" },
-        include: { signatory: true },
-      },
-    },
-  });
-  if (!tournament) throw AppError.notFound("Tournament not found");
-  if (tournament.status !== "COMPLETED") {
-    throw AppError.validation("Certificates can only be generated after the tournament is marked COMPLETED.");
-  }
-  if (tournament.signatories.length === 0) {
-    throw AppError.validation("Assign at least one active certificate signatory to this tournament first.");
-  }
-
-  const signatories = tournament.signatories.map((ts) => toSnapshot(ts.signatory));
-  const title = tournament.certificateTitle?.trim() || "Certificate of Participation";
-  const venue = [tournament.venue, tournament.city].filter(Boolean).join(", ") || null;
-
-  const byPlayer = new Map<string, TournamentCertificateEntry>();
-  for (const e of entries) byPlayer.set(e.playerId, e);
-
-  const registrations = await prisma.tournamentRegistration.findMany({
-    where: { tournamentId, playerId: { in: [...byPlayer.keys()] } },
-    include: { player: { select: { id: true, name: true, playerId: true } } },
-  });
-  const existing = await prisma.playerCertificate.findMany({
-    where: { tournamentId, playerId: { in: [...byPlayer.keys()] } },
-    select: { playerId: true, certificateNumber: true },
-  });
-  const alreadyIssued = new Map(existing.map((c) => [c.playerId, c.certificateNumber]));
-  const registrationByPlayer = new Map(registrations.map((r) => [r.playerId, r]));
-
-  const result: TournamentCertificateResult = { issued: [], skipped: [] };
-
-  for (const [playerId, entry] of byPlayer) {
-    const registration = registrationByPlayer.get(playerId);
-    if (!registration || !ELIGIBLE_REGISTRATION_STATUSES.includes(registration.status as (typeof ELIGIBLE_REGISTRATION_STATUSES)[number])) {
-      result.skipped.push({ playerId, reason: "Not registered for this tournament" });
-      continue;
-    }
-    const issuedNumber = alreadyIssued.get(playerId);
-    if (issuedNumber) {
-      result.skipped.push({ playerId, reason: `Already issued: ${issuedNumber}` });
-      continue;
-    }
-
-    const certificateNumber = generateId("CERT");
-    const qrCode = generateId("QR");
-    const issuedAt = new Date();
-    const position = entry.position?.trim() || null;
-    const recipientIdLine = `Player ID: ${registration.player.playerId}`;
-
-    const pdfPath = await renderAndStore(
-      tournamentCertificateContent({
-        title,
-        recipientName: registration.player.name,
-        recipientIdLine,
-        eventName: tournament.name,
-        position,
-        eventStartDate: tournament.startDate,
-        eventEndDate: tournament.endDate,
-        venue,
-        districtName: tournament.district?.name ?? null,
-        stateName: tournament.state?.name ?? null,
-        certificateNumber,
-        issuedAt,
-        signatories,
-        logoUrl: tournament.certificateLogoUrl,
-      }),
-      qrCode
-    );
-
-    let createdId: string;
-    try {
-      const created = await prisma.playerCertificate.create({
-        data: {
-          certificateNumber,
-          playerId,
-          tournamentId,
-          qrCode,
-          issuedAt,
-          pdfPath,
-          title,
-          eventName: tournament.name,
-          eventStartDate: tournament.startDate,
-          eventEndDate: tournament.endDate,
-          venue,
-          districtName: tournament.district?.name ?? null,
-          stateName: tournament.state?.name ?? null,
-          position,
-          logoUrl: tournament.certificateLogoUrl,
-          signatories: signatories as unknown as object[],
-          recipientName: registration.player.name,
-          recipientIdLine,
-          issuedById,
-        },
-      });
-      createdId = created.id;
-    } catch (err) {
-      // P2002: a concurrent request issued it first — report, don't fail the batch.
-      if ((err as { code?: string }).code === "P2002") {
-        result.skipped.push({ playerId, reason: "Already issued" });
-        continue;
-      }
-      throw err;
-    }
-
-    result.issued.push({ id: createdId, playerId, playerName: registration.player.name, certificateNumber, pdfPath });
-  }
-
-  log.info({ tournamentId, issued: result.issued.length, skipped: result.skipped.length }, "Tournament certificates issued");
-  return result;
-}
+// Issued through the template system: see tournament-certificates.service.ts.
+// The renderer above stays only for certificates issued before templates
+// existed (no `snapshot`), so their PDFs keep rendering exactly as issued.
 
 // ─── PDF of an issued player certificate ────────────────────────────────────
 
@@ -468,9 +325,29 @@ export async function getPlayerCertificatePdf(certificateId: string): Promise<{ 
     include: { player: { select: { name: true, playerId: true } } },
   });
   if (!cert) throw AppError.notFound("Certificate not found");
-  const fileName = `${cert.certificateNumber}.pdf`;
   const storage = getStorage();
 
+  // Template certificate: always its own snapshot + the layout version it was issued with.
+  if (isCertificateSnapshot(cert.snapshot)) {
+    const fileName = certificatePdfFileName(cert.certificateNumber);
+    if (cert.pdfPath) {
+      const stored = await storage.read(cert.pdfPath);
+      if (stored) return { data: stored.data, fileName };
+    }
+    const data = await renderSnapshotPdf(cert.snapshot);
+    try {
+      const pdfPath = await storage.upload(data, `${cert.id}-${fileName}`, "certificates");
+      await prisma.playerCertificate.updateMany({ where: { id: cert.id }, data: { pdfPath } });
+      log.info({ certificateNumber: cert.certificateNumber }, "Certificate PDF rendered from its snapshot and stored");
+    } catch (err) {
+      const stored = await storage.read(`certificates/${cert.id}-${fileName}`);
+      if (stored) return { data: stored.data, fileName };
+      log.error({ err, certificateNumber: cert.certificateNumber }, "Certificate PDF could not be stored");
+    }
+    return { data, fileName };
+  }
+
+  const fileName = `${cert.certificateNumber}.pdf`;
   if (cert.pdfPath) {
     const stored = await storage.read(cert.pdfPath);
     if (stored) return { data: stored.data, fileName };

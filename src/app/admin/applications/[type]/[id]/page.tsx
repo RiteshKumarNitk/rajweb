@@ -173,6 +173,7 @@ export default async function ApplicationReviewPage({
 
             {type === "player" && (
               <>
+                <p><span className="text-slate-500">Father&apos;s / Mother&apos;s Name:</span> <span className="font-medium">{(record as { parentName: string | null }).parentName || "Not provided"}</span></p>
                 <p><span className="text-slate-500">Gender:</span> <span className="font-medium">{(record as { gender: string }).gender}</span></p>
                 {(record as { category: string | null }).category && (
                   <p><span className="text-slate-500">Playing Category:</span> <span className="font-medium">{(record as { category: string | null }).category}</span></p>

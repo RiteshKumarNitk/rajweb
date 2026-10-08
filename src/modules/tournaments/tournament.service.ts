@@ -90,7 +90,10 @@ export async function createTournament(input: CreateTournamentInput) {
   return tournament;
 }
 
-export type UpdateTournamentInput = Partial<CreateTournamentInput>;
+export type UpdateTournamentInput = Partial<CreateTournamentInput> & {
+  /** Short tournament code (e.g. "1OP"); unique; null clears it. */
+  code?: string | null;
+};
 
 export async function updateTournament(id: string, input: UpdateTournamentInput) {
   const existing = await prisma.tournament.findUnique({ where: { id } });
@@ -108,10 +111,17 @@ export async function updateTournament(id: string, input: UpdateTournamentInput)
   };
   validateTournamentDates(merged);
 
+  const code = input.code?.trim().toUpperCase();
+  if (code && code !== existing.code) {
+    const taken = await prisma.tournament.findFirst({ where: { code, NOT: { id } }, select: { id: true } });
+    if (taken) throw AppError.conflict(`Tournament code "${code}" is already used by another tournament`);
+  }
+
   const tournament = await prisma.tournament.update({
     where: { id },
     data: {
       name: input.name !== undefined ? sanitizeText(input.name) : undefined,
+      code: input.code !== undefined ? input.code?.trim().toUpperCase() || null : undefined,
       description: input.description !== undefined ? (input.description ? sanitizeText(input.description) : null) : undefined,
       category: input.category,
       status: input.status,

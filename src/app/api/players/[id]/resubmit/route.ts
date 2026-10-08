@@ -9,6 +9,7 @@ import { governmentIdFields } from "@/modules/applications/government-id";
 
 const playerSchema = z.object({
   name: z.string().min(2).max(100),
+  parentName: z.string().trim().max(100).optional(),
   dateOfBirth: z.string(),
   gender: z.enum(["MALE", "FEMALE", "OTHER"]),
   email: z.string().email().max(254),

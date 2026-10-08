@@ -381,6 +381,9 @@ export default async function AdminCertificatesPage({ searchParams }: { searchPa
         <div className="flex items-center gap-2">
           <StateFilter states={states} selectedStateId={selectedStateId} />
           <Button variant="outline" size="sm" asChild>
+            <Link href="/admin/certificates/templates">Templates</Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
             <Link href="/account/verify" target="_blank" className="flex items-center gap-1.5">
               <ShieldCheck className="h-4 w-4 text-emerald-600" /> Open Verification Portal
             </Link>

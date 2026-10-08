@@ -251,6 +251,9 @@ model Player {
   user                    User?                    @relation(fields: [userId], references: [id], onDelete: SetNull)
   state                   String                   @default("Rajasthan")
   category                String?
+  // Father's / mother's / guardian's name — printed on tournament certificates
+  // ("Son / Daughter of …"). Optional; older records have none.
+  parentName              String?
   // Government ID — collected on account applications. The document is a
   // private MediaAsset served only to the owner and in-scope reviewers.
   governmentIdType        GovernmentIdType?
@@ -281,17 +284,17 @@ model Player {
 // Everything printed on the certificate is snapshotted at issue time so a
 // later rename/re-designation never changes an issued certificate.
 model PlayerCertificate {
-  id                String      @id @default(cuid())
-  certificateNumber String      @unique
+  id                String               @id @default(cuid())
+  certificateNumber String               @unique
   playerId          String
-  player            Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  player            Player               @relation(fields: [playerId], references: [id], onDelete: Cascade)
   tournamentId      String?
-  tournament        Tournament? @relation(fields: [tournamentId], references: [id], onDelete: Restrict)
-  qrCode            String      @unique
-  issuedAt          DateTime    @default(now())
+  tournament        Tournament?          @relation(fields: [tournamentId], references: [id], onDelete: Restrict)
+  qrCode            String               @unique
+  issuedAt          DateTime             @default(now())
   expiresAt         DateTime?
   pdfPath           String?
-  isRevoked         Boolean     @default(false)
+  isRevoked         Boolean              @default(false)
   revokedAt         DateTime?
   revokedReason     String?
   // Issue-time snapshots (null on certificates issued before these existed).
@@ -311,10 +314,27 @@ model PlayerCertificate {
   recipientName     String?
   recipientIdLine   String?
   issuedById        String?
+  // Template-based tournament certificates (null on certificates issued by the
+  // earlier renderer, which keep rendering exactly as before).
+  templateId        String?
+  template          CertificateTemplate? @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  templateVersion   Int?
+  // Searchable copies of what is printed; the full render input is `snapshot`.
+  parentName        String?
+  categoryName      String?
+  eventLabel        String?
+  // Achievement code, e.g. PARTICIPATION / FIRST_PLACE (see certificate positions).
+  achievement       String?
+  tournamentCode    String?
+  // Immutable render input (CertificateSnapshot): template config, tournament,
+  // player, category/event/position option lists, signatories, QR payload.
+  // The PDF is always rendered from this — never from live records.
+  snapshot          Json?
 
   @@unique([tournamentId, playerId])
   @@index([playerId])
   @@index([tournamentId])
+  @@index([templateId])
   @@map("player_certificates")
 }
 
@@ -563,45 +583,62 @@ enum TournamentStatus {
 }
 
 model Tournament {
-  id                     String                           @id @default(cuid())
-  name                   String
-  slug                   String                           @unique
-  description            String?
-  category               TournamentCategory
-  status                 TournamentStatus                 @default(DRAFT)
+  id                         String                           @id @default(cuid())
+  name                       String
+  slug                       String                           @unique
+  description                String?
+  category                   TournamentCategory
+  status                     TournamentStatus                 @default(DRAFT)
   // Owning state. Always set for new tournaments; for district tournaments
   // it must equal district.stateId. A tournament with no district is
   // state-wide for this state.
-  stateId                String?
-  state                  State?                           @relation(fields: [stateId], references: [id])
-  districtId             String?
-  district               District?                        @relation(fields: [districtId], references: [id])
-  venue                  String?
-  city                   String?
-  startDate              DateTime
-  endDate                DateTime
-  registrationStart      DateTime?
-  registrationDeadline   DateTime?
-  maxParticipants        Int?
+  stateId                    String?
+  state                      State?                           @relation(fields: [stateId], references: [id])
+  districtId                 String?
+  district                   District?                        @relation(fields: [districtId], references: [id])
+  venue                      String?
+  city                       String?
+  startDate                  DateTime
+  endDate                    DateTime
+  registrationStart          DateTime?
+  registrationDeadline       DateTime?
+  maxParticipants            Int?
   // Google Drive poster link, per the client's approved requirement — not a
   // file upload. Reuses the pre-existing (previously unused) `banner` column
   // rather than adding a second field for the same concept.
-  banner                 String?
-  contactName            String?
-  contactPhone           String?
-  contactEmail           String?
-  requiresApprovedPlayer Boolean                          @default(true)
+  banner                     String?
+  contactName                String?
+  contactPhone               String?
+  contactEmail               String?
+  requiresApprovedPlayer     Boolean                          @default(true)
+  // Short code, e.g. "1OP" — printed/stored on certificates, unique when set.
+  code                       String?                          @unique
   // Tournament-specific certificate settings (certificates snapshot them).
-  certificateTitle       String?
-  certificateLogoUrl     String?
-  signatories            TournamentSignatory[]
-  certificates           PlayerCertificate[]
-  registrationCategories TournamentRegistrationCategory[]
-  registrations          TournamentRegistration[]
-  fixtures               Fixture[]
-  matches                Match[]
-  createdAt              DateTime                         @default(now())
-  updatedAt              DateTime                         @updatedAt
+  certificateTitle           String?
+  certificateLogoUrl         String?
+  certificateTemplateId      String?
+  certificateTemplate        CertificateTemplate?             @relation(fields: [certificateTemplateId], references: [id], onDelete: SetNull)
+  certificateOrganizedBy     String?
+  // One organisation per printed line.
+  certificateRecognizedBy    String[]                         @default([])
+  certificateIssueDate       DateTime?
+  // Numbering: "<prefix>/<serial padded to padding>", serial from start upward,
+  // allocated atomically per prefix (CertificateNumberSequence).
+  certificateNumberPrefix    String?
+  certificateNumberStart     Int                              @default(1)
+  certificateNumberPadding   Int                              @default(2)
+  // Printed option lists ("Category: Sub-junior, Junior, Senior") — the
+  // player's own option is ticked. Empty = derived from registrations.
+  certificateCategoryOptions String[]                         @default([])
+  certificateEventOptions    String[]                         @default([])
+  signatories                TournamentSignatory[]
+  certificates               PlayerCertificate[]
+  registrationCategories     TournamentRegistrationCategory[]
+  registrations              TournamentRegistration[]
+  fixtures                   Fixture[]
+  matches                    Match[]
+  createdAt                  DateTime                         @default(now())
+  updatedAt                  DateTime                         @updatedAt
 
   @@index([status])
   @@index([districtId])
@@ -1113,6 +1150,9 @@ model TournamentSignatory {
   signatoryId  String
   signatory    CertificateSignatory @relation(fields: [signatoryId], references: [id], onDelete: Cascade)
   sortOrder    Int                  @default(0)
+  // Designation printed for THIS tournament (e.g. "Org. Secretary"); null =
+  // the signatory's own designation.
+  title        String?
 
   @@id([tournamentId, signatoryId])
   @@index([signatoryId])
@@ -1204,7 +1244,7 @@ enum RequirementPriority {
 // served only to admins in the owning district scope; government ID documents
 // only to their uploader and to Player/Coach reviewers in the district scope.
 model MediaAsset {
-  id                  String         @id @default(cuid())
+  id                  String             @id @default(cuid())
   kind                MediaAssetKind
   mimeType            String
   size                Int
@@ -1213,10 +1253,11 @@ model MediaAsset {
   stateId             String?
   districtId          String?
   uploadedById        String?
-  uploadedBy          User?          @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
-  createdAt           DateTime       @default(now())
-  playerGovernmentIds Player[]       @relation("PlayerGovernmentId")
-  coachGovernmentIds  Coach[]        @relation("CoachGovernmentId")
+  uploadedBy          User?              @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt           DateTime           @default(now())
+  playerGovernmentIds Player[]           @relation("PlayerGovernmentId")
+  coachGovernmentIds  Coach[]            @relation("CoachGovernmentId")
+  certificateAssets   CertificateAsset[]
 
   @@index([kind])
   @@map("media_assets")
@@ -1226,6 +1267,8 @@ enum MediaAssetKind {
   EQUIPMENT_IMAGE
   REQUIREMENT_ATTACHMENT
   GOVERNMENT_ID
+  // Logos / emblems / signatures uploaded for certificates (PNG or JPEG).
+  CERTIFICATE_IMAGE
 }
 
 enum GovernmentIdType {
@@ -1247,4 +1290,68 @@ model StoredFile {
   createdAt DateTime @default(now())
 
   @@map("stored_files")
+}
+
+// ─── Certificate templates ───────────────────────────────────────
+// One template family (e.g. "RRA Standard Tournament Certificate") has
+// numbered versions. A version that has issued certificates is never edited:
+// changes go into a new version, and every certificate snapshots the exact
+// version + config it was rendered with, so old certificates never change.
+// `layout` selects the renderer code (e.g. "rra-standard@1"); `config` is the
+// structured, validated content (logos, labels, line templates, colours).
+enum CertificateTemplateStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model CertificateTemplate {
+  id           String                    @id @default(cuid())
+  familyId     String
+  name         String
+  description  String?
+  version      Int
+  layout       String
+  config       Json
+  status       CertificateTemplateStatus @default(ACTIVE)
+  // Used by tournaments that have not picked a template.
+  isDefault    Boolean                   @default(false)
+  createdById  String?
+  tournaments  Tournament[]
+  certificates PlayerCertificate[]
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+
+  @@unique([familyId, version])
+  @@index([status])
+  @@map("certificate_templates")
+}
+
+// Image library for certificate templates: a bundled site file (/images/…)
+// or an uploaded MediaAsset (kind CERTIFICATE_IMAGE — immutable; a new upload
+// is a new asset). Templates reference these by id.
+model CertificateAsset {
+  id           String      @id @default(cuid())
+  name         String
+  // LOGO | BRANDING | EMBLEM | WATERMARK — a hint for pickers only.
+  category     String      @default("LOGO")
+  imagePath    String?
+  mediaAssetId String?
+  mediaAsset   MediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  isActive     Boolean     @default(true)
+  createdById  String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@map("certificate_assets")
+}
+
+// Last serial allocated per certificate-number prefix. Incremented with a
+// single atomic upsert inside the transaction that creates the certificate,
+// so concurrent issuing can never hand out the same number.
+model CertificateNumberSequence {
+  prefix    String   @id
+  lastValue Int
+  updatedAt DateTime @updatedAt
+
+  @@map("certificate_number_sequences")
 }
